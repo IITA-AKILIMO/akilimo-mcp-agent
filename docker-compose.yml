@@ -1,3 +1,6 @@
+name: akilimo-mcp
+
+
 services:
   akilimo-mcp:
     build: .
@@ -10,6 +13,9 @@ services:
       - AKILIMO_API_BASE_URL=${AKILIMO_API_BASE_URL:-https://api.akilimo.org}
       - AKILIMO_API_KEY=${AKILIMO_API_KEY}
     restart: always
+    networks:
+      - dokploy-network
+      - internal
 
   open-webui:
     image: ghcr.io/open-webui/open-webui:main
@@ -23,6 +29,20 @@ services:
     depends_on:
       - akilimo-mcp
     restart: always
+    networks:
+      - dokploy-network
+      - internal
+
+
+networks:
+  internal:
+    name: internal
+    external: false
+  dokploy-network:
+    name: dokploy-network
+    external: true
 
 volumes:
   open-webui:
+    name: open-webui
+    driver: local
