@@ -1,0 +1,50 @@
+import {
+  ComputeFieldsSchema,
+  ComputeRequestSchema,
+  FertilizerSchema,
+  UserInfoSchema,
+} from "@akilimo/shared";
+import { z } from "zod/v4";
+import { randomUUID } from "node:crypto";
+import { config } from "../config.js";
+import { errorResult, jsonResult, type ToolDefinition } from "./types.js";
+
+// The API requires user_info; the agent sends an anonymous profile unless the caller overrides it
+export const DEFAULT_USER_INFO = {
+  device_token: config.deviceToken || randomUUID(),
+  risk_attitude: 0,
+  user_name: "akilimo-mcp",
+  first_name: "Akilimo",
+  last_name: "MCP",
+  gender: "M" as const,
+  send_sms: false,
+  send_email: false,
+};
+
+const ComputeToolInputSchema = z.object({
+  compute_request: ComputeFieldsSchema,
+  fertilizer_list: z.array(FertilizerSchema).default([])
+    .describe("Fertilizers available to the farmer; get keys and names from get_reference_data 'fertilizers'"),
+  user_info: UserInfoSchema.partial().optional()
+    .describe("Optional overrides for the farmer profile; an anonymous profile is used by default"),
+});
+
+export const computeRecommendationsTool: ToolDefinition = {
+  name: "compute_recommendations",
+  description: "Compute fertilizer, intercropping and planting recommendations for a farm. Only farm location, size, use case and planting/harvest dates are required; other fields default to neutral values.",
+  // Generated from the shared schema so the model sees exactly what validation accepts
+  inputSchema: z.toJSONSchema(ComputeToolInputSchema, { io: "input" }) as ToolDefinition["inputSchema"],
+
+  async handler(args, api) {
+    const validation = ComputeRequestSchema.safeParse({
+      compute_request: args?.compute_request,
+      fertilizer_list: args?.fertilizer_list,
+      user_info: { ...DEFAULT_USER_INFO, ...(args?.user_info as object | undefined) },
+    });
+    if (!validation.success) {
+      return errorResult(`Invalid payload:\n${z.prettifyError(validation.error)}`);
+    }
+
+    return jsonResult(await api.post("/v1/recommendations/compute", validation.data));
+  },
+};

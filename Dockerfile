@@ -34,7 +34,7 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
 FROM node:24-alpine AS runner
 
 ENV NODE_ENV=production
-ENV TRANSPORT=sse
+ENV TRANSPORT=http
 ENV PORT=3000
 
 WORKDIR /app
