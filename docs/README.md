@@ -35,6 +35,13 @@ pnpm dev
 TRANSPORT=sse pnpm dev
 ```
 
+### Showcase UI (For Demos)
+We have a dedicated Showcase Dashboard to demonstrate the MCP flow to stakeholders.
+1. Navigate to the web folder: `cd web`
+2. Install dependencies: `pnpm install`
+3. Start the UI: `pnpm dev`
+4. Open `http://localhost:5173`
+
 ### Docker Compose (Local Stack)
 Run the agent and Open WebUI (connects to Ollama running on your host):
 ```bash
