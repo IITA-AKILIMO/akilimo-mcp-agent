@@ -1,9 +1,10 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { CallToolResult, Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { MCPEvent } from '@akilimo/shared';
-import { MCP_SERVERS } from './servers';
+import { loadKeys } from './keys';
+import { gatewayUrl, listServers, needsKey, type McpServerConfig } from './servers';
 
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
 
@@ -13,35 +14,59 @@ export interface ServerState {
   error?: string;
 }
 
-const initialState = (): Record<string, ServerState> =>
-  Object.fromEntries(MCP_SERVERS.map(s => [s.id, { status: 'disconnected', tools: [] }]));
-
+const DISCONNECTED: ServerState = { status: 'disconnected', tools: [] };
 const newId = () => crypto.randomUUID();
 
-// Connects to the configured MCP servers over streamable HTTP and logs every call
-export function useMcpServers() {
-  const [servers, setServers] = useState<Record<string, ServerState>>(initialState);
+interface Options {
+  // Called for every new activity event, e.g. to save it for a signed-in user
+  onLog?: (event: MCPEvent) => void;
+}
+
+// Loads the MCP server registry from the gateway, connects over streamable HTTP through it,
+// and logs every connection and call
+export function useMcpServers({ onLog }: Options = {}) {
+  const onLogRef = useRef(onLog);
+  onLogRef.current = onLog;
+  const [configs, setConfigs] = useState<McpServerConfig[]>([]);
+  const [editable, setEditable] = useState(false);
+  const [registryError, setRegistryError] = useState<string | null>(null);
+  const [servers, setServers] = useState<Record<string, ServerState>>({});
   const [events, setEvents] = useState<MCPEvent[]>([]);
-  // Clients are not render state; keys stay in memory only and are never persisted
+  // Clients are not render state
   const clients = useRef<Record<string, Client>>({});
+  const configsRef = useRef<McpServerConfig[]>([]);
 
   const log = useCallback((type: MCPEvent['type'], server: string, message: string, payload?: unknown) => {
-    setEvents(prev => [...prev, { id: newId(), timestamp: new Date(), type, server, message, payload }]);
+    const event: MCPEvent = { id: newId(), timestamp: new Date(), type, server, message, payload };
+    setEvents(prev => [...prev, event]);
+    onLogRef.current?.(event);
   }, []);
 
   const update = (id: string, state: ServerState) => setServers(prev => ({ ...prev, [id]: state }));
 
-  const connect = useCallback(async (id: string, key?: string) => {
-    const config = MCP_SERVERS.find(s => s.id === id);
+  const disconnect = useCallback(async (id: string, quiet = false) => {
+    const client = clients.current[id];
+    if (!client) return;
+    delete clients.current[id];
+    await client.close().catch(() => undefined);
+    update(id, DISCONNECTED);
+    if (!quiet) log('connection', id, 'Disconnected');
+  }, [log]);
+
+  const connect = useCallback(async (id: string) => {
+    const config = configsRef.current.find(s => s.id === id);
     if (!config) return;
-    if (config.needsKey && !key?.trim()) {
+    const key = loadKeys()[id];
+    if (needsKey(config) && !key) {
       update(id, { status: 'error', tools: [], error: 'Enter a key first' });
       return;
     }
 
+    await disconnect(id, true);
     update(id, { status: 'connecting', tools: [] });
-    const transport = new StreamableHTTPClientTransport(new URL(config.url, window.location.origin), {
-      requestInit: key ? { headers: { Authorization: `Bearer ${key.trim()}` } } : undefined,
+    const transport = new StreamableHTTPClientTransport(new URL(gatewayUrl(id), window.location.origin), {
+      // The gateway forwards the key upstream in the form the registry entry specifies
+      requestInit: key ? { headers: { 'X-Mcp-Key': key } } : undefined,
     });
     const client = new Client({ name: 'akilimo-web', version: '1.0.0' });
 
@@ -57,14 +82,38 @@ export function useMcpServers() {
       update(id, { status: 'error', tools: [], error: message });
       log('error', id, `Connection failed: ${message}`);
     }
-  }, [log]);
+  }, [disconnect, log]);
 
-  const disconnect = useCallback(async (id: string) => {
-    await clients.current[id]?.close().catch(() => undefined);
-    delete clients.current[id];
-    update(id, { status: 'disconnected', tools: [] });
-    log('connection', id, 'Disconnected');
-  }, [log]);
+  // Reloads the registry; servers that were removed or disabled are disconnected
+  const reload = useCallback(async () => {
+    try {
+      const { servers: list, editable: canEdit } = await listServers();
+      const enabled = list.filter(s => s.enabled);
+      for (const id of Object.keys(clients.current)) {
+        if (!enabled.some(s => s.id === id)) await disconnect(id);
+      }
+      configsRef.current = enabled;
+      setConfigs(enabled);
+      setEditable(canEdit);
+      setRegistryError(null);
+      setServers(prev => Object.fromEntries(enabled.map(s => [s.id, prev[s.id] ?? DISCONNECTED])));
+      return enabled;
+    } catch (error) {
+      setRegistryError(error instanceof Error ? error.message : String(error));
+      return [];
+    }
+  }, [disconnect]);
+
+  // On load, connect every server that needs no key or has a remembered one
+  const started = useRef(false);
+  useEffect(() => {
+    if (started.current) return;
+    started.current = true;
+    reload().then(list => {
+      const keys = loadKeys();
+      list.filter(s => !needsKey(s) || keys[s.id]).forEach(s => connect(s.id));
+    });
+  }, [reload, connect]);
 
   const callTool = useCallback(async (id: string, name: string, args: Record<string, unknown>) => {
     const client = clients.current[id];
@@ -84,6 +133,8 @@ export function useMcpServers() {
   }, [log]);
 
   const clearEvents = useCallback(() => setEvents([]), []);
+  // Shows saved history (e.g. after sign-in) followed by anything logged in this visit
+  const replaceEvents = useCallback((saved: MCPEvent[]) => setEvents(prev => [...saved, ...prev]), []);
 
-  return { servers, events, connect, disconnect, callTool, clearEvents };
+  return { configs, editable, registryError, servers, events, connect, disconnect, reload, callTool, clearEvents, replaceEvents };
 }

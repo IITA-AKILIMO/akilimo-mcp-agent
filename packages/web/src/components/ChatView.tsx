@@ -1,0 +1,355 @@
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import { Bot, History, Loader2, MapPin, RotateCcw, Send, Square, Trash2, User, Wrench, X } from 'lucide-react';
+import {
+  appendMessages, createConversation, deleteConversation, getConversation, listConversations,
+  type ConversationSummary, type User as Account,
+} from '../account/api';
+import { buildTools, runAgent, type AgentStep } from '../llm/agent';
+import { listToolModels, pickDefaultModel, type ChatMessage } from '../llm/ollama';
+import type { McpServerConfig } from '../mcp/servers';
+import type { ServerState } from '../mcp/useMcpServers';
+import { MapPicker } from './MapPicker';
+
+interface Props {
+  configs: McpServerConfig[];
+  servers: Record<string, ServerState>;
+  callTool: (server: string, name: string, args: Record<string, unknown>) => Promise<CallToolResult>;
+  accountsEnabled: boolean;
+  user: Account | null;
+}
+
+type Item =
+  | { id: string; kind: 'user' | 'assistant'; text: string }
+  | { id: string; kind: 'step'; step: AgentStep };
+
+const SUGGESTIONS = [
+  'I grow cassava in Tanzania. Which fertilizer should I use?',
+  'Which fertilizers are available in Nigeria and what do they cost?',
+  'What is the typical cassava price in Rwanda?',
+];
+
+const newId = () => crypto.randomUUID();
+
+// Only the fields the model needs; saved messages also carry ids and timestamps
+const toChatMessage = (m: ChatMessage): ChatMessage => ({
+  role: m.role,
+  content: m.content ?? '',
+  ...(m.tool_calls ? { tool_calls: m.tool_calls } : {}),
+  ...(m.tool_name ? { tool_name: m.tool_name } : {}),
+});
+
+export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accountsEnabled, user }) => {
+  const [models, setModels] = useState<string[]>([]);
+  const [model, setModel] = useState('');
+  const [modelError, setModelError] = useState<string | null>(null);
+
+  const [items, setItems] = useState<Item[]>([]);
+  const history = useRef<ChatMessage[]>([]);
+  const [input, setInput] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const abort = useRef<AbortController | null>(null);
+
+  const [showMap, setShowMap] = useState(false);
+  const [picked, setPicked] = useState<{ lat?: number; lon?: number; country?: string }>({});
+
+  // Saved conversation of a signed-in user; writes are chained so messages keep their order
+  const conversationId = useRef<string | null>(null);
+  const saveChain = useRef<Promise<void>>(Promise.resolve());
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const tools = useMemo(() => buildTools(configs, servers), [configs, servers]);
+
+  const persist = (messages: ChatMessage[], titleHint: string) => {
+    if (!user) return;
+    saveChain.current = saveChain.current
+      .then(async () => {
+        if (!conversationId.current) {
+          conversationId.current = (await createConversation(titleHint.slice(0, 80) || 'Conversation', model)).id;
+        }
+        await appendMessages(conversationId.current, messages.map(toChatMessage));
+        setSaveError(null);
+      })
+      .catch(e => setSaveError(`Not saved: ${e instanceof Error ? e.message : String(e)}`));
+  };
+
+  // Maps "akilimo-1_0__get_cassava_price" back to the registered server id and tool name
+  const splitToolName = (name = '') => {
+    const [prefix, ...rest] = name.split('__');
+    const server = configs.find(c => c.id.replace(/[^a-zA-Z0-9_-]/g, '_') === prefix)?.id ?? prefix;
+    return { server, tool: rest.join('__') || name };
+  };
+
+  const itemsFromHistory = (messages: ChatMessage[]): Item[] => messages.flatMap((m): Item[] => {
+    if (m.role === 'user') return [{ id: newId(), kind: 'user', text: m.content }];
+    if (m.role === 'tool') {
+      return [{ id: newId(), kind: 'step', step: { type: 'tool_result', ...splitToolName(m.tool_name), result: m.content, isError: m.content.startsWith('Error:') } }];
+    }
+    if (m.role === 'assistant') {
+      return [
+        ...(m.tool_calls ?? []).map((c): Item => ({ id: newId(), kind: 'step', step: { type: 'tool_call', ...splitToolName(c.function.name), args: c.function.arguments } })),
+        ...(m.content ? [{ id: newId(), kind: 'assistant' as const, text: m.content }] : []),
+      ];
+    }
+    return [];
+  });
+
+  useEffect(() => {
+    listToolModels()
+      .then(list => {
+        setModels(list);
+        setModel(pickDefaultModel(list) ?? '');
+        if (list.length === 0) setModelError('No Ollama model with tool support found. Run: ollama pull qwen3:8b');
+      })
+      .catch(() => setModelError('Cannot reach Ollama. Make sure it is running (default http://localhost:11434).'));
+  }, []);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [items, busy]);
+
+  const add = (item: Item) => setItems(prev => [...prev, item]);
+
+  const send = async (text: string) => {
+    const message = text.trim();
+    if (!message || busy || !model) return;
+    setInput('');
+    setError(null);
+    add({ id: newId(), kind: 'user', text: message });
+    const userMessage: ChatMessage = { role: 'user', content: message };
+    history.current = [...history.current, userMessage];
+    persist([userMessage], message);
+
+    const controller = new AbortController();
+    abort.current = controller;
+    setBusy(true);
+    try {
+      await runAgent({
+        model,
+        history: history.current,
+        tools,
+        callTool,
+        signal: controller.signal,
+        onMessage: (m) => {
+          history.current = [...history.current, m];
+          persist([m], message);
+          if (m.role === 'assistant' && m.content) add({ id: newId(), kind: 'assistant', text: m.content });
+        },
+        onStep: (step) => add({ id: newId(), kind: 'step', step }),
+      });
+    } catch (e) {
+      if (!controller.signal.aborted) setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+      abort.current = null;
+    }
+  };
+
+  const reset = () => {
+    abort.current?.abort();
+    history.current = [];
+    conversationId.current = null;
+    setItems([]);
+    setError(null);
+    setSaveError(null);
+  };
+
+  // A different account (or signing out) never continues the previous person's chat
+  useEffect(() => {
+    reset();
+    setShowHistory(false);
+  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggleHistory = async () => {
+    if (showHistory) { setShowHistory(false); return; }
+    setShowHistory(true);
+    setHistoryError(null);
+    try {
+      setConversations((await listConversations()).conversations);
+    } catch (e) {
+      setHistoryError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const openConversation = async (id: string) => {
+    try {
+      const { conversation, messages } = await getConversation(id);
+      abort.current?.abort();
+      const restored = messages.map(toChatMessage);
+      history.current = restored;
+      conversationId.current = conversation.id;
+      setItems(itemsFromHistory(restored));
+      setError(null);
+      setSaveError(null);
+      setShowHistory(false);
+    } catch (e) {
+      setHistoryError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const removeConversation = async (id: string) => {
+    try {
+      await deleteConversation(id);
+      setConversations(prev => prev.filter(c => c.id !== id));
+      if (conversationId.current === id) reset();
+    } catch (e) {
+      setHistoryError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const sendLocation = () => {
+    if (picked.lat === undefined || picked.lon === undefined) return;
+    setShowMap(false);
+    send(`My field is at ${picked.lat}, ${picked.lon}${picked.country ? ` (${picked.country})` : ''}`);
+  };
+
+  const noTools = tools.length === 0;
+
+  return (
+    <div className="card h-100 shadow-sm">
+      <div className="card-header d-flex flex-wrap align-items-center gap-2 position-relative">
+        <Bot size={16} className="text-akilimo" />
+        <span className="small fw-semibold">AKILIMO assistant</span>
+        <select className="form-select form-select-sm w-auto ms-auto" aria-label="Model" value={model}
+          onChange={e => setModel(e.target.value)} disabled={models.length === 0 || busy}>
+          {models.length === 0 && <option value="">No model</option>}
+          {models.map(m => <option key={m} value={m}>{m}</option>)}
+        </select>
+        {user && (
+          <button type="button" className={`btn btn-sm d-inline-flex align-items-center gap-1 ${showHistory ? 'btn-secondary' : 'btn-outline-secondary'}`}
+            onClick={toggleHistory} aria-expanded={showHistory} disabled={busy} title="Your saved conversations">
+            <History size={14} /> History
+          </button>
+        )}
+        <button type="button" className="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1"
+          onClick={reset} disabled={items.length === 0} title="Start a new conversation">
+          <RotateCcw size={14} /> New
+        </button>
+
+        {showHistory && (
+          <div className="dropdown-menu show end-0 top-100 me-2 shadow p-0" style={{ width: 'min(24rem, 90vw)', maxHeight: '22rem', overflowY: 'auto' }}>
+            {historyError && <div className="alert alert-danger small m-2">{historyError}</div>}
+            {!historyError && conversations.length === 0 && <div className="small text-body-secondary p-3">No saved conversations yet.</div>}
+            {conversations.map(c => (
+              <div key={c.id} className="d-flex align-items-center border-bottom">
+                <button type="button" className="dropdown-item text-truncate py-2" onClick={() => openConversation(c.id)} title={c.title}>
+                  <div className="text-truncate">{c.title}</div>
+                  <div className="small text-body-secondary">{new Date(c.updated_at).toLocaleString()}</div>
+                </button>
+                <button type="button" className="btn btn-sm btn-link text-danger flex-shrink-0" aria-label={`Delete ${c.title}`}
+                  onClick={() => removeConversation(c.id)}>
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="card-body overflow-auto min-h-0 d-flex flex-column gap-3">
+        {modelError && <div className="alert alert-warning small mb-0">{modelError}</div>}
+        {noTools && !modelError && (
+          <div className="alert alert-info small mb-0">Connecting to the AKILIMO servers… switch one on in the MCP servers panel if this persists.</div>
+        )}
+
+        {items.length === 0 && (
+          <div className="m-auto text-center" style={{ maxWidth: '32rem' }}>
+            <Bot size={40} className="text-akilimo mb-2" />
+            <p className="mb-1">Ask about fertilizer for your cassava field.</p>
+            <p className="small text-body-secondary">I will ask for the details I need, such as where the field is and when you plan to plant.</p>
+            <div className="d-flex flex-column gap-2 mt-3">
+              {SUGGESTIONS.map(s => (
+                <button key={s} type="button" className="btn btn-sm btn-outline-success text-start"
+                  onClick={() => send(s)} disabled={busy || !model || noTools}>{s}</button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {items.map(item => {
+          if (item.kind === 'step') {
+            const { step } = item;
+            return (
+              <details key={item.id} className="small text-body-secondary ms-5">
+                <summary className={step.isError ? 'text-danger' : undefined}>
+                  <Wrench size={12} className="me-1" />
+                  {step.type === 'tool_call' ? 'Using' : step.isError ? 'Failed' : 'Got result from'} {step.tool}
+                  <span className="badge text-bg-secondary ms-1">{step.server}</span>
+                </summary>
+                <pre className="event-payload p-2 bg-body-secondary rounded mt-1 mb-0">
+                  {step.type === 'tool_call' ? JSON.stringify(step.args, null, 2) : step.result}
+                </pre>
+              </details>
+            );
+          }
+          const mine = item.kind === 'user';
+          return (
+            <div key={item.id} className={`d-flex gap-2 ${mine ? 'flex-row-reverse' : ''}`}>
+              <div className={`avatar rounded-circle d-flex align-items-center justify-content-center ${mine ? 'bg-akilimo' : 'bg-secondary'}`}>
+                {mine ? <User size={18} color="white" /> : <Bot size={18} color="white" />}
+              </div>
+              <div className={`chat-bubble px-3 py-2 rounded-3 ${mine ? 'bg-akilimo text-white' : 'bg-body-tertiary border'}`}>
+                {mine ? item.text : <div className="markdown"><ReactMarkdown>{item.text}</ReactMarkdown></div>}
+              </div>
+            </div>
+          );
+        })}
+
+        {busy && (
+          <div className="d-flex gap-2 align-items-center text-body-secondary small">
+            <Loader2 size={16} className="spin" /> Thinking…
+          </div>
+        )}
+        {error && <div className="alert alert-danger small mb-0">{error}</div>}
+        {saveError && <div className="small text-warning-emphasis">{saveError}</div>}
+        {accountsEnabled && !user && items.length > 0 && (
+          <div className="small text-body-secondary text-center">Sign in to keep this conversation in your history.</div>
+        )}
+        <div ref={bottomRef} />
+      </div>
+
+      <div className="card-footer">
+        {showMap && (
+          <div className="border rounded p-2 mb-2 bg-body">
+            <div className="d-flex align-items-center mb-1">
+              <span className="small fw-semibold">Where is the field?</span>
+              <button type="button" className="btn btn-sm btn-link ms-auto p-0" onClick={() => setShowMap(false)} aria-label="Close map">
+                <X size={16} />
+              </button>
+            </div>
+            <MapPicker lat={picked.lat} lon={picked.lon} country={picked.country}
+              onChange={(lat, lon) => setPicked(p => ({ ...p, lat, lon }))}
+              onCountry={(country) => setPicked(p => ({ ...p, country }))} />
+            <button type="button" className="btn btn-sm btn-akilimo mt-2" onClick={sendLocation}
+              disabled={picked.lat === undefined || busy}>
+              Send this location
+            </button>
+          </div>
+        )}
+        <form className="input-group" onSubmit={e => { e.preventDefault(); send(input); }}>
+          <button type="button" className="btn btn-outline-secondary" onClick={() => setShowMap(v => !v)}
+            title="Share the field location on a map" aria-label="Share field location" disabled={busy}>
+            <MapPin size={16} />
+          </button>
+          <input className="form-control" placeholder={model ? 'Type your question…' : 'Waiting for a model…'}
+            value={input} onChange={e => setInput(e.target.value)} aria-label="Message" disabled={!model} />
+          {busy ? (
+            <button type="button" className="btn btn-outline-danger d-inline-flex align-items-center gap-1" onClick={() => abort.current?.abort()}>
+              <Square size={14} /> Stop
+            </button>
+          ) : (
+            <button type="submit" className="btn btn-akilimo d-inline-flex align-items-center gap-1" disabled={!input.trim() || !model || noTools}>
+              <Send size={16} /> <span className="d-none d-sm-inline">Send</span>
+            </button>
+          )}
+        </form>
+      </div>
+    </div>
+  );
+};

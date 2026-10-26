@@ -31,8 +31,12 @@ RUN pnpm --filter @akilimo/web build
 # Unprivileged nginx runs as a non-root user and listens on 8080
 FROM nginxinc/nginx-unprivileged:1.27-alpine AS runner
 
-COPY packages/web/nginx.conf /etc/nginx/conf.d/default.conf
+# Rendered to /etc/nginx/conf.d/default.conf at start; only OLLAMA_* variables are substituted
+COPY packages/web/nginx.conf /etc/nginx/templates/default.conf.template
 COPY --from=builder /app/packages/web/dist /usr/share/nginx/html
+
+ENV NGINX_ENVSUBST_FILTER=OLLAMA
+ENV OLLAMA_UPSTREAM=http://host.docker.internal:11434
 
 EXPOSE 8080
 

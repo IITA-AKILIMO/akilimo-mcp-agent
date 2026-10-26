@@ -8,11 +8,12 @@ interface Props {
   onClear: () => void;
 }
 
-// Bootstrap contextual colour per MCP server
-const ServerColors: Record<string, string> = {
-  'akilimo-1.0': 'success',
-  'akilimo-2.0': 'info',
-  default: 'secondary',
+// Stable Bootstrap colour per MCP server id, so any registered server gets one
+const PALETTE = ['success', 'info', 'primary', 'warning', 'secondary'];
+const colorOf = (server: string) => {
+  let hash = 0;
+  for (const ch of server) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+  return PALETTE[hash % PALETTE.length];
 };
 
 const IconMap: Record<MCPEvent['type'], React.ReactNode> = {
@@ -42,7 +43,7 @@ export const ActivityFeed: React.FC<Props> = ({ events, onClear }) => {
         <ul className="list-unstyled mb-0 d-flex flex-column gap-2">
           <AnimatePresence>
             {[...events].reverse().map((event) => {
-              const color = event.type === 'error' ? 'danger' : (ServerColors[event.server] || ServerColors.default);
+              const color = event.type === 'error' ? 'danger' : colorOf(event.server);
               return (
                 <motion.li
                   key={event.id}
@@ -52,7 +53,7 @@ export const ActivityFeed: React.FC<Props> = ({ events, onClear }) => {
                 >
                   <div className="d-flex align-items-center gap-2 mb-1 small">
                     {IconMap[event.type]}
-                    <span className={`badge text-bg-${ServerColors[event.server] || ServerColors.default}`}>{event.server}</span>
+                    <span className={`badge text-bg-${colorOf(event.server)}`}>{event.server}</span>
                     <span className="text-uppercase text-body-secondary" style={{ fontSize: '0.7rem' }}>
                       {event.type.replace('_', ' ')}
                     </span>

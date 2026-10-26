@@ -2,11 +2,12 @@ import React, { useEffect, useMemo, useState } from 'react';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { Braces, Loader2, Play, Plug, Wand2, Wrench } from 'lucide-react';
 import { TOOL_PRESETS, type ToolPreset } from '../mcp/presets';
-import { MCP_SERVERS } from '../mcp/servers';
+import type { McpServerConfig } from '../mcp/servers';
 import type { ServerState } from '../mcp/useMcpServers';
 import { SchemaForm, type JsonSchema } from './SchemaForm';
 
 interface Props {
+  configs: McpServerConfig[];
   servers: Record<string, ServerState>;
   callTool: (server: string, name: string, args: Record<string, unknown>) => Promise<CallToolResult>;
 }
@@ -18,11 +19,11 @@ const renderContent = (result: CallToolResult) =>
     try { return JSON.stringify(JSON.parse(c.text), null, 2); } catch { return c.text; }
   }).join('\n\n');
 
-export const ToolRunner: React.FC<Props> = ({ servers, callTool }) => {
-  const connected = MCP_SERVERS.filter(s => servers[s.id]?.status === 'connected');
+export const ToolRunner: React.FC<Props> = ({ configs, servers, callTool }) => {
+  const connected = configs.filter(s => servers[s.id]?.status === 'connected');
   const options = useMemo(
     () => connected.flatMap(s => servers[s.id].tools.map(tool => ({ key: `${s.id}::${tool.name}`, server: s, tool }))),
-    [servers] // eslint-disable-line react-hooks/exhaustive-deps
+    [configs, servers] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   const [selected, setSelected] = useState('');

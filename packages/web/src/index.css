@@ -33,9 +33,13 @@
   --bs-btn-disabled-border-color: var(--akilimo-green);
 }
 
-/* Lets flex children scroll instead of growing past the viewport */
+/* Lets flex children scroll or truncate instead of growing past their container */
 .min-h-0 {
   min-height: 0;
+}
+
+.min-w-0 {
+  min-width: 0;
 }
 
 /* Stacked panels get a fixed height on small screens and fill the viewport from lg up */
@@ -48,6 +52,26 @@
   .panel-col {
     height: 100%;
   }
+}
+
+.chat-bubble {
+  max-width: 80%;
+  overflow-wrap: anywhere;
+}
+
+/* Tighten markdown spacing inside chat bubbles */
+.markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown table {
+  font-size: 0.875rem;
+}
+
+.avatar {
+  width: 2rem;
+  height: 2rem;
+  flex-shrink: 0;
 }
 
 .event-payload {

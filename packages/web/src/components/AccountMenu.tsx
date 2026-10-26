@@ -1,0 +1,104 @@
+import React, { useState } from 'react';
+import { LogIn, LogOut, UserCircle } from 'lucide-react';
+import type { User } from '../account/api';
+
+interface Props {
+  enabled: boolean;
+  user: User | null;
+  onLogin: (email: string, password: string) => Promise<void>;
+  onRegister: (name: string, email: string, password: string) => Promise<void>;
+  onLogout: () => Promise<void>;
+}
+
+const AuthDialog: React.FC<Omit<Props, 'enabled' | 'user' | 'onLogout'> & { onClose: () => void }> = ({ onLogin, onRegister, onClose }) => {
+  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      if (mode === 'login') await onLogin(email, password);
+      else await onRegister(name, email, password);
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="modal d-block" tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="auth-title"
+      style={{ background: 'rgba(0,0,0,0.5)' }} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal-dialog modal-dialog-centered" style={{ maxWidth: '24rem' }}>
+        <form className="modal-content" onSubmit={submit}>
+          <div className="modal-header">
+            <h2 id="auth-title" className="modal-title h5">{mode === 'login' ? 'Sign in' : 'Create an account'}</h2>
+            <button type="button" className="btn-close" aria-label="Close" onClick={onClose} />
+          </div>
+          <div className="modal-body d-flex flex-column gap-2">
+            <p className="small text-body-secondary mb-1">Your chats and activity are saved to your account so you can come back to them.</p>
+            {mode === 'register' && (
+              <div>
+                <label className="form-label small mb-1" htmlFor="auth-name">Name</label>
+                <input id="auth-name" className="form-control" autoComplete="name" value={name} onChange={e => setName(e.target.value)} required />
+              </div>
+            )}
+            <div>
+              <label className="form-label small mb-1" htmlFor="auth-email">Email</label>
+              <input id="auth-email" type="email" className="form-control" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} required />
+            </div>
+            <div>
+              <label className="form-label small mb-1" htmlFor="auth-password">Password</label>
+              <input id="auth-password" type="password" className="form-control" minLength={mode === 'register' ? 8 : undefined}
+                autoComplete={mode === 'login' ? 'current-password' : 'new-password'} value={password} onChange={e => setPassword(e.target.value)} required />
+              {mode === 'register' && <div className="form-text">At least 8 characters</div>}
+            </div>
+            {error && <div className="alert alert-danger small mb-0">{error}</div>}
+          </div>
+          <div className="modal-footer justify-content-between">
+            <button type="button" className="btn btn-link btn-sm px-0" onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError(null); }}>
+              {mode === 'login' ? 'New here? Create an account' : 'Already have an account? Sign in'}
+            </button>
+            <button type="submit" className="btn btn-akilimo" disabled={busy}>
+              {busy ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+export const AccountMenu: React.FC<Props> = ({ enabled, user, onLogin, onRegister, onLogout }) => {
+  const [open, setOpen] = useState(false);
+  if (!enabled) return null;
+
+  if (user) {
+    return (
+      <div className="d-flex align-items-center gap-2">
+        <span className="small d-none d-md-inline-flex align-items-center gap-1" title={user.email}>
+          <UserCircle size={16} className="text-akilimo" /> {user.name}
+        </span>
+        <button type="button" className="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1" onClick={onLogout} title="Sign out">
+          <LogOut size={14} /> <span className="d-none d-sm-inline">Sign out</span>
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <button type="button" className="btn btn-sm btn-outline-success d-inline-flex align-items-center gap-1" onClick={() => setOpen(true)}>
+        <LogIn size={14} /> Sign in
+      </button>
+      {open && <AuthDialog onLogin={onLogin} onRegister={onRegister} onClose={() => setOpen(false)} />}
+    </>
+  );
+};
