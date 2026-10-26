@@ -32,6 +32,10 @@ services:
     environment:
       OLLAMA_BASE_URL: http://127.0.0.1:11434
       WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY:?WEBUI_SECRET_KEY is not set}
+      AKILIMO_API_BASE_URL: ${AKILIMO_API_BASE_URL:-https://api.akilimo.org}
+      AKILIMO_API_KEY: ${AKILIMO_API_KEY}
+      AKILIMO_V2_API_KEY: ${AKILIMO_V2_API_KEY}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173}
     volumes:
       - webui:/app/backend/data
 #    depends_on:
