@@ -1,33 +1,37 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { ChatInterface } from './components/ChatInterface';
 import { ActivityFeed } from './components/ActivityFeed';
 import { Message, MCPEvent, Scenario } from './types/mcp';
 
 const DEMO_SCENARIOS: Scenario[] = [
   {
+    id: 'multi-agent-harvest',
+    name: 'Maize Harvest Cycle',
+    description: 'Demonstrate orchestration between Akilimo, Weather, and Market agents',
+    steps: [
+      { type: 'user_message', content: 'I am planning to harvest my maize. Should I do it this week?', delay: 0 },
+      { type: 'tool_call', server: 'akilimo', content: 'Checking planting history and crop stage...', payload: { tool: 'get_recommendation_history', args: { userId: 'user_123' } }, delay: 1000 },
+      { type: 'tool_response', server: 'akilimo', content: 'Crop is at maturity stage. Planting date: May 12.', payload: { status: 'mature', planted: '2026-05-12' }, delay: 1500 },
+      { type: 'tool_call', server: 'weather', content: 'Fetching 7-day weather forecast for coordinates...', payload: { tool: 'get_forecast', args: { lat: '6.5', long: '3.3' } }, delay: 1000 },
+      { type: 'tool_response', server: 'weather', content: 'Heavy rain expected on Thursday and Friday.', payload: { forecast: 'Rain', probability: '85%' }, delay: 1500 },
+      { type: 'tool_call', server: 'market', content: 'Analyzing current maize price trends...', payload: { tool: 'get_price_trends', args: { crop: 'maize' } }, delay: 1000 },
+      { type: 'tool_response', server: 'market', content: 'Prices are currently peaking and expected to drop slightly next month.', payload: { trend: 'peak', price: '450 NGN' }, delay: 1500 },
+      { type: 'assistant_message', content: 'Based on the data from three different agents: Your maize is mature (Akilimo), prices are currently at a peak (Market), and there is heavy rain expected late this week (Weather). I strongly recommend harvesting by Wednesday to avoid rain damage and capture the current high market price.', delay: 1000 },
+    ]
+  },
+  {
     id: 'nigeria-cassava',
     name: 'Nigeria Cassava Case',
     description: 'Demonstrate regional data fetching and complex computation',
     steps: [
       { type: 'user_message', content: 'I am a farmer in Nigeria growing cassava. What should I do?', delay: 0 },
-      { type: 'tool_call', content: 'Fetching regional reference data for Nigeria...', payload: { tool: 'get_reference_data', args: { category: 'fertilizers', countryCode: 'NG' } }, delay: 1000 },
-      { type: 'tool_response', content: 'Found 12 available fertilizers for NG including Urea and NPK.', payload: { data: [{ key: 'urea', label: 'urea', name: 'Urea 46%' }] }, delay: 1500 },
+      { type: 'tool_call', server: 'akilimo', content: 'Fetching regional reference data for Nigeria...', payload: { tool: 'get_reference_data', args: { category: 'fertilizers', countryCode: 'NG' } }, delay: 1000 },
+      { type: 'tool_response', server: 'akilimo', content: 'Found 12 available fertilizers for NG including Urea and NPK.', payload: { data: [{ key: 'urea', label: 'urea', name: 'Urea 46%' }] }, delay: 1500 },
       { type: 'assistant_message', content: 'I see you are in Nigeria. To give you the best advice, I need to know your field size and available budget.', delay: 1000 },
       { type: 'user_message', content: 'My field is 2 hectares and my budget is 500,000 NGN.', delay: 1000 },
-      { type: 'tool_call', content: 'Computing optimal recommendations...', payload: { tool: 'compute_recommendations', args: { payload: { farmInformation: { countryCode: 'NG', fieldSize: 2, areaUnit: 'hectares' }, maxInvestment: 500000 } } }, delay: 2000 },
-      { type: 'tool_response', content: 'Computation successful: Recommended Urea and NPK 15-15-15.', payload: { result: { recommendations: 'Apply 2 bags of Urea...' } }, delay: 2000 },
+      { type: 'tool_call', server: 'akilimo', content: 'Computing optimal recommendations...', payload: { tool: 'compute_recommendations', args: { payload: { farmInformation: { countryCode: 'NG', fieldSize: 2, areaUnit: 'hectares' }, maxInvestment: 500000 } } }, delay: 2000 },
+      { type: 'tool_response', server: 'akilimo', content: 'Computation successful: Recommended Urea and NPK 15-15-15.', payload: { result: { recommendations: 'Apply 2 bags of Urea...' } }, delay: 2000 },
       { type: 'assistant_message', content: 'Based on your budget and location, I recommend applying 2 bags of Urea and 3 bags of NPK 15-15-15. This will maximize your cassava yield while staying within budget.', delay: 1000 },
-    ]
-  },
-  {
-    id: 'price-check',
-    name: 'Market Price Check',
-    description: 'Check current crop prices across regions',
-    steps: [
-      { type: 'user_message', content: 'What are the current maize prices?', delay: 0 },
-      { type: 'tool_call', content: 'Fetching maize price data...', payload: { tool: 'get_reference_data', args: { category: 'maize-prices' } }, delay: 1000 },
-      { type: 'tool_response', content: 'Retrieved maize prices for 5 regions.', payload: { data: [{ region: 'West', price: 400 }] }, delay: 1000 },
-      { type: 'assistant_message', content: 'Current maize prices vary by region. In the West, it is approximately 400 NGN per unit.', delay: 1000 },
     ]
   }
 ];
@@ -37,11 +41,12 @@ export default function App() {
   const [events, setEvents] = useState<MCPEvent[]>([]);
   const [isTyping, setIsTyping] = useState(false);
 
-  const addEvent = (type: MCPEvent['type'], message: string, payload?: any) => {
+  const addEvent = (type: MCPEvent['type'], server: string, message: string, payload?: any) => {
     setEvents(prev => [...prev, {
       id: Math.random().toString(36).substr(2, 9),
       timestamp: new Date(),
       type,
+      server,
       message,
       payload
     }]);
@@ -60,17 +65,16 @@ export default function App() {
     addMessage('user', text);
     setIsTyping(true);
     
-    // Simulation of real MCP flow
-    addEvent('thought', 'Analyzing user request...', {});
+    addEvent('thought', 'system', 'Analyzing user request...', {});
     await new Promise(r => setTimeout(r, 1000));
     
-    addEvent('tool_call', 'Calling get_reference_data...', { category: 'countries' });
+    addEvent('tool_call', 'akilimo', 'Calling get_reference_data...', { category: 'countries' });
     await new Promise(r => setTimeout(r, 1000));
     
-    addEvent('tool_response', 'Received country list', { countries: ['NG', 'GH', 'KE'] });
+    addEvent('tool_response', 'akilimo', 'Received country list', { countries: ['NG', 'GH', 'KE'] });
     await new Promise(r => setTimeout(r, 1000));
     
-    addEvent('synthesis', 'Formulating response...', {});
+    addEvent('synthesis', 'system', 'Formulating response...', {});
     await new Promise(r => setTimeout(r, 1000));
     
     addMessage('assistant', 'I can help you with that! I have access to agricultural data for several countries including Nigeria, Ghana, and Kenya.');
@@ -92,9 +96,9 @@ export default function App() {
         addMessage('assistant', step.content);
         setIsTyping(false);
       } else if (step.type === 'tool_call') {
-        addEvent('tool_call', step.content, step.payload);
+        addEvent('tool_call', step.server || 'system', step.content, step.payload);
       } else if (step.type === 'tool_response') {
-        addEvent('tool_response', step.content, step.payload);
+        addEvent('tool_response', step.server || 'system', step.content, step.payload);
       }
     }
   };
