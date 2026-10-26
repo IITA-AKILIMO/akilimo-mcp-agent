@@ -9,11 +9,11 @@ services:
     ports:
       - "127.0.0.1:3000:3000"
     environment:
-      - TRANSPORT=sse
-      - PORT=3000
-      - AKILIMO_API_BASE_URL=${AKILIMO_API_BASE_URL:-https://api.akilimo.org}
-      - AKILIMO_API_KEY=${AKILIMO_API_KEY}
-      - AKILIMO_V2_API_KEY=${AKILIMO_V2_API_KEY}
+      TRANSPORT: sse
+      PORT: 3000
+      AKILIMO_API_BASE_URL: ${AKILIMO_API_BASE_URL:-https://api.akilimo.org}
+      AKILIMO_API_KEY: ${AKILIMO_API_KEY}
+      AKILIMO_V2_API_KEY: ${AKILIMO_V2_API_KEY}
     restart: always
     networks:
       - dokploy-network
