@@ -11,7 +11,7 @@ services:
     env_file:
       - .env
     environment:
-      TRANSPORT: sse
+      TRANSPORT: http
       PORT: 3000
       AKILIMO_API_BASE_URL: ${AKILIMO_API_BASE_URL:-https://api.akilimo.org}
       AKILIMO_API_KEY: ${AKILIMO_API_KEY}
@@ -31,8 +31,12 @@ services:
     ports:
       - "127.0.0.1:4173:8080"
     restart: always
+    # nginx proxies /proxy/akilimo-1.0/ to akilimo-mcp over the internal network
+    depends_on:
+      - akilimo-mcp
     networks:
       - dokploy-network
+      - internal
 
   webui:
     image: ghcr.io/open-webui/open-webui:main

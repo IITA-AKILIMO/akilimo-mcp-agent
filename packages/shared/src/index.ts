@@ -161,33 +161,13 @@ export const ComputeRequestSchema = z.object({
 
 export type ComputeRequest = z.infer<typeof ComputeRequestSchema>;
 export type ComputeRequestInput = z.input<typeof ComputeRequestSchema>;
+
+// Activity logged by the web client while talking to MCP servers
 export interface MCPEvent {
   id: string;
   timestamp: Date;
-  type: 'thought' | 'tool_call' | 'tool_response' | 'synthesis';
-  server: string; // Added to identify which MCP server is acting
+  type: 'connection' | 'tool_call' | 'tool_response' | 'error';
+  server: string; // MCP server id, e.g. akilimo-1.0
   message: string;
-  payload?: any;
-}
-
-export interface Message {
-  id: string;
-  role: 'user' | 'assistant';
-  text: string;
-  timestamp: Date;
-}
-
-export interface Scenario {
-  id: string;
-  name: string;
-  description: string;
-  steps: ScenarioStep[];
-}
-
-export interface ScenarioStep {
-  type: 'user_message' | 'tool_call' | 'tool_response' | 'assistant_message';
-  server?: string; // Which server is performing the action
-  content: string;
-  payload?: any;
-  delay: number;
+  payload?: unknown;
 }

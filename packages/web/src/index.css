@@ -50,18 +50,29 @@
   }
 }
 
-.chat-bubble {
-  max-width: 75%;
-  white-space: pre-wrap;
-}
-
-.avatar {
-  width: 2rem;
-  height: 2rem;
-  flex-shrink: 0;
-}
-
 .event-payload {
   max-height: 12rem;
   font-size: 0.75rem;
+}
+
+.map-picker {
+  height: 18rem;
+  cursor: crosshair;
+}
+
+.result-output {
+  max-height: 24rem;
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
