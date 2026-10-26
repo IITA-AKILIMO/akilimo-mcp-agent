@@ -1,27 +1,35 @@
+# ── Stage 1: build ────────────────────────────────────────────────────────────
 FROM node:24-alpine AS builder
 
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
 WORKDIR /app
 
-# Copy package files
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+# Copy manifests first so dependency install is cached when source changes
+COPY package.json pnpm-lock.yaml* ./
 
-
-# Install dependencies
 RUN pnpm install --frozen-lockfile
 
 # Copy source
 COPY . .
 
-# Optional override — if provided it wins over apps/portal/.env.production.
-# If omitted, Vite reads apps/portal/.env.production automatically.
-ARG VITE_API_BASE_URL
-RUN [ -z "${VITE_API_BASE_URL}" ] || printf 'VITE_API_BASE_URL=%s\n' "${VITE_API_BASE_URL}" > apps/portal/.env.production.local
-
-
-# Build
+# Build the server
 RUN pnpm build
+
+# ── Stage 2: serve ────────────────────────────────────────────────────────────
+FROM node:24-alpine AS runner
+
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+WORKDIR /app
+
+# Copy only the necessary artifacts from builder
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/pnpm-lock.yaml* ./pnpm-lock.yaml*
+
+# Install production dependencies only
+RUN pnpm install --prod --frozen-lockfile
 
 # Expose the SSE port
 EXPOSE 3000
