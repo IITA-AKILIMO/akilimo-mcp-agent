@@ -5,17 +5,18 @@ export default defineConfig({
   build: {
     lib: {
       entry: 'src/index.ts',
-      formats: ['cjs', 'es'],
+      formats: ['cjs'],
       fileName: 'index',
     },
     rollupOptions: {
       external: [
         ...builtinModules,
         ...builtinModules.map(m => `node:${m}`),
-        '@modelcontextprotocol/sdk',
+        /^@modelcontextprotocol\/sdk(\/|$)/,
         'axios',
         'express',
         'zod',
+        'cors',
       ],
     },
     target: 'node20',
