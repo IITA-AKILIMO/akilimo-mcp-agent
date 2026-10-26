@@ -17,9 +17,37 @@ services:
       AKILIMO_API_KEY: ${AKILIMO_API_KEY}
       AKILIMO_DEVICE_TOKEN: ${AKILIMO_DEVICE_TOKEN:-}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173}
+      # Required to add, edit or remove MCP servers in the web UI; unset = read-only registry
+      GATEWAY_ADMIN_TOKEN: ${GATEWAY_ADMIN_TOKEN:-}
+      # Accounts, saved chats and activity; override DATABASE_URL to use an external database
+      DATABASE_URL: ${DATABASE_URL:-postgres://akilimo:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is not set}@db:5432/akilimo}
+    volumes:
+      - mcp-gateway:/app/data
+    depends_on:
+      db:
+        condition: service_healthy
     restart: always
     networks:
       - dokploy-network
+      - internal
+
+  db:
+    image: postgres:17-alpine
+    container_name: akilimo-db
+    environment:
+      POSTGRES_USER: akilimo
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is not set}
+      POSTGRES_DB: akilimo
+    volumes:
+      - akilimo-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U akilimo -d akilimo"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: always
+    # Internal network only: not published on the host
+    networks:
       - internal
 
   web:
@@ -30,6 +58,11 @@ services:
     hostname: akilimo-web
     ports:
       - "127.0.0.1:4173:8080"
+    # Chat mode talks to Ollama on the host, the same one Open WebUI uses
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      OLLAMA_UPSTREAM: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
     restart: always
     # nginx proxies /proxy/akilimo-1.0/ to akilimo-mcp over the internal network
     depends_on:
@@ -75,4 +108,10 @@ networks:
 volumes:
   webui:
     name: webui
+    driver: local
+  mcp-gateway:
+    name: mcp-gateway
+    driver: local
+  akilimo-db:
+    name: akilimo-db
     driver: local
