@@ -17,6 +17,7 @@ export default defineConfig({
         'express',
         /^zod(\/|$)/,
         'cors',
+        'pg',
       ],
     },
     target: 'node20',

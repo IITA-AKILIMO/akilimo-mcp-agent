@@ -1,21 +1,27 @@
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import express from "express";
+import express, { type Router } from "express";
 import cors from "cors";
 
 interface HttpOptions {
   port: number;
   allowedOrigins: readonly string[];
+  // Mounted at /gateway: MCP server registry and proxy (see gateway/routes.ts)
+  gateway?: Router;
+  // Mounted at /api: accounts, saved chats and activity (see accounts/routes.ts)
+  api?: Router;
 }
 
 // A Server instance serves one transport at a time, so every connection gets its own
-export function startHttp(createServer: () => Server, { port, allowedOrigins }: HttpOptions): void {
+export function startHttp(createServer: () => Server, { port, allowedOrigins, gateway, api }: HttpOptions): void {
   const app = express();
+  // Behind nginx / Dokploy: trust X-Forwarded-* so req.secure (Secure cookies) and req.ip (rate limits) are right
+  app.set("trust proxy", "loopback, linklocal, uniquelocal");
 
   app.use(cors({
     origin: [...allowedOrigins],
-    methods: ['GET', 'POST', 'DELETE'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
     credentials: true,
     exposedHeaders: ['Mcp-Session-Id'],
   }));
@@ -23,6 +29,9 @@ export function startHttp(createServer: () => Server, { port, allowedOrigins }: 
   app.get("/health", (req, res) => {
     res.json({ status: "ok" });
   });
+
+  if (gateway) app.use("/gateway", gateway);
+  if (api) app.use("/api", api);
 
   // Streamable HTTP (current MCP transport), stateless: one server and transport per request
   app.post("/mcp", express.json({ limit: "1mb" }), async (req, res) => {

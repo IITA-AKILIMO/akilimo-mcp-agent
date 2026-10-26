@@ -36,11 +36,14 @@ FROM node:24-alpine AS runner
 ENV NODE_ENV=production
 ENV TRANSPORT=http
 ENV PORT=3000
+# MCP gateway registry; mount a volume on /app/data to keep it across rebuilds
+ENV GATEWAY_DATA_FILE=/app/data/mcp-servers.json
 
 WORKDIR /app
 
 COPY --from=builder --chown=node:node /out/node_modules ./node_modules
 COPY --from=builder --chown=node:node /app/packages/server/dist ./dist
+RUN mkdir -p /app/data && chown node:node /app/data
 
 USER node
 

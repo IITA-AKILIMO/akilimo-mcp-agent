@@ -19,4 +19,9 @@ export const config = {
   // Containers set PORT=3000; the local default avoids 3000, which Dokploy and other tools often hold
   port: Number(process.env.PORT) || 3001,
   allowedOrigins: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:5173'],
+  // MCP gateway (HTTP mode): registry file, and the token required to change it (unset = read-only)
+  gatewayDataFile: process.env.GATEWAY_DATA_FILE || path.resolve("data/mcp-servers.json"),
+  gatewayAdminToken: process.env.GATEWAY_ADMIN_TOKEN || "",
+  // User accounts, saved chats and activity (HTTP mode); unset = guests only
+  databaseUrl: process.env.DATABASE_URL || "",
 } as const;

@@ -3,4 +3,6 @@ dist
 .env
 *.log
 .DS_Store
+# MCP gateway registry written at runtime
+packages/server/data/
 pnpm-lock.yaml
