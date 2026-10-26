@@ -1,4 +1,4 @@
-import axios, { AxiosInstance } from 'axios';
+import axios, {type AxiosInstance } from 'axios';
 
 export class AkilimoApiClient {
     private client: AxiosInstance;
@@ -23,6 +23,22 @@ export class AkilimoApiClient {
         } catch (error: any) {
             throw this.handleError(error);
         }
+    }
+
+    // List endpoints are paginated (50 rows per page); follow meta.last_page so callers get every row
+    async getAll<T = Record<string, unknown>>(url: string, maxPages = 20): Promise<{ data: T[]; total: number }> {
+        const first = await this.get<any>(url);
+        if (!first || !Array.isArray(first.data)) {
+            const rows = (Array.isArray(first) ? first : [first]) as T[];
+            return { data: rows, total: rows.length };
+        }
+
+        const lastPage = Math.min(Number(first.meta?.last_page) || 1, maxPages);
+        const rest = await Promise.all(
+            Array.from({ length: lastPage - 1 }, (_, i) => this.get<any>(url, { page: i + 2 }))
+        );
+        const data = [first, ...rest].flatMap(page => (page?.data ?? []) as T[]);
+        return { data, total: Number(first.meta?.total) || data.length };
     }
 
     async post<T>(url: string, data?: object): Promise<T> {

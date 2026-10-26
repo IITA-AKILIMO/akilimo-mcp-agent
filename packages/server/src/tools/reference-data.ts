@@ -46,6 +46,6 @@ export const referenceDataTool: ToolDefinition = {
       url = `/v1/${category}/country/${encodeURIComponent(countryCode)}`;
     }
 
-    return jsonResult(await api.get(url));
+    return jsonResult(await api.getAll(url));
   },
 };
