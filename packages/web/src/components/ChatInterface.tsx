@@ -1,7 +1,6 @@
-import React, { useState } from 'react';
-import { Message, Scenario } from '@akilimo/shared';
-import { Send, Play, User, Bot } from 'lucide-react';
-import { motion } from 'framer-motion';
+import React, { useEffect, useRef, useState } from 'react';
+import type { Message, Scenario } from '@akilimo/shared';
+import { Send, Play, User, Bot, MessagesSquare } from 'lucide-react';
 
 interface Props {
   messages: Message[];
@@ -9,90 +8,100 @@ interface Props {
   onSendMessage: (text: string) => void;
   onRunScenario: (scenario: Scenario) => void;
   isTyping: boolean;
+  busy: boolean;
 }
 
-export const ChatInterface: React.FC<Props> = ({ 
-  messages, 
-  scenarios, 
-  onSendMessage, 
-  onRunScenario, 
-  isTyping 
+export const ChatInterface: React.FC<Props> = ({
+  messages,
+  scenarios,
+  onSendMessage,
+  onRunScenario,
+  isTyping,
+  busy
 }) => {
   const [input, setInput] = useState('');
+  const bottomRef = useRef<HTMLDivElement>(null);
 
-  const handleSend = () => {
-    if (!input.trim()) return;
+  // Keep the latest message in view as the conversation grows
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [messages, isTyping]);
+
+  const handleSend = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!input.trim() || busy) return;
     onSendMessage(input);
     setInput('');
   };
 
   return (
-    <div className="flex flex-col h-full bg-slate-950">
-      {/* Header */}
-      <div className="p-6 border-b border-slate-800 bg-slate-900/30">
-        <h1 className="text-2xl font-bold text-white">Akilimo <span className="text-akilimo-lightGreen">Intelligence</span></h1>
-        <p className="text-slate-400 text-sm">AI Agricultural Consultant powered by MCP</p>
-      </div>
-
+    <div className="card h-100 shadow-sm">
       {/* Scenarios */}
-      <div className="p-4 flex gap-2 overflow-x-auto no-scrollbar">
+      <div className="card-header d-flex flex-wrap align-items-center gap-2">
+        <span className="small text-body-secondary me-1">Demo scenarios</span>
         {scenarios.map(s => (
           <button
             key={s.id}
+            type="button"
             onClick={() => onRunScenario(s)}
-            className="flex items-center gap-2 px-3 py-2 bg-slate-800 hover:bg-akilimo-green text-slate-200 rounded-full text-xs whitespace-nowrap transition-all border border-slate-700"
+            disabled={busy}
+            title={s.description}
+            className="btn btn-sm btn-outline-secondary rounded-pill d-inline-flex align-items-center gap-1"
           >
-            <Play className="w-3 h-3 fill-current" />
+            <Play size={12} />
             {s.name}
           </button>
         ))}
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-6">
+      <div className="card-body overflow-auto min-h-0 d-flex flex-column gap-3">
+        {messages.length === 0 && !isTyping && (
+          <div className="m-auto text-center text-body-secondary">
+            <MessagesSquare size={40} className="mb-2 opacity-50" />
+            <p className="mb-0">Pick a demo scenario above or ask a question below.</p>
+          </div>
+        )}
         {messages.map((m) => (
-          <div key={m.id} className={`flex gap-4 ${m.role === 'user' ? 'flex-row-reverse' : ''}`}>
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center ${m.role === 'user' ? 'bg-akilimo-green' : 'bg-slate-700'}`}>
-              {m.role === 'user' ? <User className="w-5 h-5 text-white" /> : <Bot className="w-5 h-5 text-white" />}
+          <div key={m.id} className={`d-flex gap-2 ${m.role === 'user' ? 'flex-row-reverse' : ''}`}>
+            <div className={`avatar rounded-circle d-flex align-items-center justify-content-center ${m.role === 'user' ? 'bg-akilimo' : 'bg-secondary'}`}>
+              {m.role === 'user' ? <User size={18} color="white" /> : <Bot size={18} color="white" />}
             </div>
-            <div className={`max-w-[80%] p-4 rounded-2xl ${m.role === 'user' ? 'bg-akilimo-green text-white rounded-tr-none' : 'bg-slate-800 text-slate-200 rounded-tl-none'}`}>
-              <p className="text-sm leading-relaxed">{m.text}</p>
+            <div className={`chat-bubble px-3 py-2 rounded-3 small ${m.role === 'user' ? 'bg-akilimo text-white' : 'bg-body-tertiary border'}`}>
+              {m.text}
             </div>
           </div>
         ))}
         {isTyping && (
-          <div className="flex gap-4">
-            <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center">
-              <Bot className="w-5 h-5 text-white" />
+          <div className="d-flex gap-2">
+            <div className="avatar rounded-circle bg-secondary d-flex align-items-center justify-content-center">
+              <Bot size={18} color="white" />
             </div>
-            <div className="bg-slate-800 p-4 rounded-2xl rounded-tl-none">
-              <div className="flex gap-1">
-                <div className="w-2 h-2 bg-slate-500 rounded-full animate-bounce" />
-                <div className="w-2 h-2 bg-slate-500 rounded-full animate-bounce [animation-delay:0.2s]" />
-                <div className="w-2 h-2 bg-slate-500 rounded-full animate-bounce [animation-delay:0.4s]" />
-              </div>
+            <div className="px-3 py-2 rounded-3 bg-body-tertiary border d-flex align-items-center gap-1" aria-label="Assistant is typing">
+              <span className="spinner-grow spinner-grow-sm text-secondary" />
+              <span className="spinner-grow spinner-grow-sm text-secondary" />
+              <span className="spinner-grow spinner-grow-sm text-secondary" />
             </div>
           </div>
         )}
+        <div ref={bottomRef} />
       </div>
 
       {/* Input */}
-      <div className="p-6 bg-slate-900/50 border-t border-slate-800">
-        <div className="flex gap-3 max-w-4xl mx-auto">
+      <div className="card-footer">
+        <form className="input-group" onSubmit={handleSend}>
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSend()}
             placeholder="Ask about fertilizer, crop pricing or planting..."
-            className="flex-1 bg-slate-800 border border-slate-700 text-white rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-akilimo-green transition-all"
+            className="form-control"
+            aria-label="Message"
           />
-          <button
-            onClick={handleSend}
-            className="p-3 bg-akilimo-green hover:bg-green-700 text-white rounded-xl transition-all"
-          >
-            <Send className="w-5 h-5" />
+          <button type="submit" className="btn btn-akilimo d-inline-flex align-items-center gap-1" disabled={busy || !input.trim()}>
+            <Send size={16} />
+            <span className="d-none d-sm-inline">Send</span>
           </button>
-        </div>
+        </form>
       </div>
     </div>
   );

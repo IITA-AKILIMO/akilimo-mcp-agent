@@ -5,25 +5,23 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "tsc -b && vite build",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@akilimo/shared": "workspace:*",
+    "bootstrap": "^5.3.8",
+    "framer-motion": "^11.11.17",
+    "lucide-react": "^0.468.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "@akilimo/shared": "workspace:*",
-    "lucide-react": "^0.468.0",
-    "framer-motion": "^11.11.17",
     "zod": "^3.23.0"
   },
   "devDependencies": {
+    "@types/node": "^20.0.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
-    "@types/node": "^20.0.0",
     "@vitejs/plugin-react": "^4.3.1",
-    "autoprefixer": "^10.4.20",
-    "postcss": "^8.4.47",
-    "tailwindcss": "^3.4.13",
     "typescript": "^5.6.2",
     "vite": "^6.0.0"
   }
