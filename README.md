@@ -42,14 +42,28 @@ Before you start, make sure you have these installed on your computer:
      ```
 
 ### Step 2: Use the Web UI
-The web UI is a real MCP client for both Akilimo agents:
-1. With `pnpm dev:server:http` running, open a **new** terminal window and run:
-   ```bash
-   pnpm dev:web
-   ```
-2. Open `http://localhost:5173`.
-3. In **MCP servers**, switch on **Akilimo 1.0**. For **Akilimo 2.0**, enter your partner key first; it stays in browser memory only.
-4. Pick a tool, fill in the form generated from its input schema, and press **Run tool**. Calls and responses appear under **Activity**.
+The web UI is a real MCP client for both Akilimo agents. With `pnpm dev:server:http` running, open a **new** terminal window and run `pnpm dev:web`, then open `http://localhost:5173`. Akilimo 1.0 connects automatically; for **Akilimo 2.0**, enter your partner key in **MCP servers** first (it stays in browser memory only).
+
+It has two modes, switched in the top bar:
+- **Chat** (default): ask in plain language, e.g. "I grow cassava in Tanzania, which fertilizer should I use?". A local model in **Ollama** asks for the missing details, calls the AKILIMO tools and explains the answer. Use the 📍 button to share the field location on a map. Requires Ollama running locally with a tool-capable model (`ollama pull qwen3:8b`); the dev proxy expects it at `http://localhost:11434` (override with `OLLAMA_URL`).
+- **Advanced**: pick a tool, fill in the form generated from its input schema (with prefill buttons and a map for coordinates), and press **Run tool**.
+
+Every connection, tool call and response appears under **Activity**.
+
+#### Accounts, saved chats and activity
+People can use the UI as guests, or **Sign in / Create account** (top bar) to keep their chat history and activity. Signed-in users get a **History** button in the chat to reopen or delete past conversations; signing out clears the screen.
+
+This needs PostgreSQL: set `DATABASE_URL` (e.g. `postgres://akilimo:<password>@localhost:5432/akilimo`) for the MCP server. Tables are created on start. Without `DATABASE_URL` the UI is guest-only. With docker compose the bundled `db` service is used; set `POSTGRES_PASSWORD` in `.env`.
+
+Passwords are stored as salted scrypt hashes and sessions as hashed tokens in an HttpOnly cookie. There is no email verification or password reset yet. Chats can contain farm details and locations, so treat the database as personal data under IITA's data guidelines (access, backups, retention).
+
+#### Adding, changing and removing MCP servers
+The server list is shared by everyone using the UI and stored by the MCP gateway on the Akilimo 1.0 server (`packages/server/data/mcp-servers.json` locally, the `mcp-gateway` volume in Docker). It starts with Akilimo 1.0 and Akilimo 2.0.
+1. Set `GATEWAY_ADMIN_TOKEN` in `.env` to a long random value (e.g. `openssl rand -hex 32`) and restart the server. Without it the list is read-only.
+2. In the UI, open **MCP servers → Manage**, enter the token and choose **Unlock editing**.
+3. Add a server with its **streamable HTTP** endpoint URL and how its key is sent (none, `Authorization: Bearer`, or a custom header such as `X-API-Key`). The gateway calls the URL, so it works even if the server does not allow browser requests, and internal addresses (e.g. `http://akilimo-mcp:3000/mcp`) are allowed.
+
+Keys themselves are entered per user in the server panel and remembered in that browser only; the gateway forwards them per request and never stores them.
 
 ### Step 3: Using it with Claude Desktop
 To make the actual Claude app use these tools:

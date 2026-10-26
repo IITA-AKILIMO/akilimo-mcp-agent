@@ -19,7 +19,11 @@ The agent built in this repository, backed by the Akilimo 1.0 API (the Laravel `
 | docker compose (from other containers) | `http://akilimo-mcp:3000` |
 | Claude Desktop and other stdio clients | `node packages/server/dist/index.cjs` |
 
-- **Tools**: `get_reference_data`, `compute_recommendations`
+- **Tools**:
+  - `get_fertilizer_options` — a country's available fertilizers with bag weight, price bands and a typical price (compact; best for chat models)
+  - `get_cassava_price` — cassava root price bands and a typical price per tonne
+  - `compute_recommendations` — fertilizer recommendations for a farm
+  - `get_reference_data` — any raw reference list (all pages merged)
 
 ### Akilimo 2.0 Agent (Hosted)
 The hosted MCP server of the Akilimo 2.0 platform ([developer portal](https://app2.akilimo.org/developers/mcp-connect)).
@@ -58,8 +62,19 @@ For clients that support remote MCP servers:
 - Akilimo 1.0: `https://akilimo-mcp.akilimo.org/mcp` (streamable HTTP) or `https://akilimo-mcp.akilimo.org/sse` (SSE)
 - Akilimo 2.0: `https://mcp.akilimo.org/mcp` (streamable HTTP, partner key header required)
 
-### This repo's web UI
-`pnpm dev:web` (or the `web` compose service) connects to both agents through same-origin proxies (`/proxy/akilimo-1.0/` and `/proxy/akilimo-2.0/`, see `packages/web/vite.config.ts` and `packages/web/nginx.conf`). Override the Akilimo 1.0 target with `AKILIMO_1_MCP_URL` (default `http://localhost:3001`). The Akilimo 2.0 partner key is typed into the UI and kept in memory only.
+### This repo's web UI and MCP gateway
+`pnpm dev:web` (or the `web` compose service) reaches MCP servers through the **gateway** on the Akilimo 1.0 server, via the same-origin `/gateway/` path (see `packages/web/vite.config.ts` and `packages/web/nginx.conf`; override the dev target with `AKILIMO_1_MCP_URL`, default `http://localhost:3001`). Its chat mode reaches Ollama through `/proxy/ollama/` (dev: `OLLAMA_URL`, default `http://localhost:11434`; Docker: `OLLAMA_BASE_URL`).
+
+Gateway endpoints (HTTP mode only):
+
+| Method and path | Purpose | Auth |
+| :--- | :--- | :--- |
+| `GET /gateway/servers` | Registered servers and whether editing is enabled | none |
+| `GET /gateway/admin` | Check an admin token (204) | admin |
+| `POST /gateway/servers`, `PUT /gateway/servers/:id`, `DELETE /gateway/servers/:id` | Add, change, remove a server | admin |
+| `POST/GET/DELETE /gateway/servers/:id/mcp` | Streamable HTTP proxy to that server | the user's key in `X-Mcp-Key`, forwarded as the entry's bearer token or header |
+
+Admin requests send `Authorization: Bearer <GATEWAY_ADMIN_TOKEN>`. Without `GATEWAY_ADMIN_TOKEN` the registry is read-only. Only admins can add targets because the gateway will call any URL it is given, including internal ones.
 
 ---
 
