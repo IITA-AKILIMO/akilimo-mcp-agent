@@ -5,6 +5,19 @@ import { Message, MCPEvent, Scenario } from './types/mcp';
 
 const DEMO_SCENARIOS: Scenario[] = [
   {
+    id: 'hybrid-akilimo-demo',
+    name: 'Hybrid Akilimo Demo',
+    description: 'Showcase Official 2.0 Agent + Custom Agent collaboration',
+    steps: [
+      { type: 'user_message', content: 'Compare the official recommendations with my local custom settings.', delay: 0 },
+      { type: 'tool_call', server: 'akilimo-official', content: 'Fetching production baseline from Official 2.0 Agent...', payload: { tool: 'get_baseline', args: { country: 'NG' } }, delay: 1000 },
+      { type: 'tool_response', server: 'akilimo-official', content: 'Official baseline: Standard NPK application.', payload: { baseline: 'NPK 15-15-15' }, delay: 1500 },
+      { type: 'tool_call', server: 'akilimo-custom', content: 'Applying local custom cost constraints via Custom Agent...', payload: { tool: 'compute_recommendations', args: { payload: { maxInvestment: 200000 } } }, delay: 1000 },
+      { type: 'tool_response', server: 'akilimo-custom', content: 'Custom optimized recommendation: Reduced Urea to fit budget.', payload: { result: 'Optimized budget version' }, delay: 1500 },
+      { type: 'assistant_message', content: 'The official Akilimo 2.0 baseline suggests standard NPK, but based on your specific budget constraints processed by our custom agent, I recommend a slightly reduced Urea application to stay within your 200,000 NGN limit.', delay: 1000 },
+    ]
+  },
+  {
     id: 'multi-agent-harvest',
     name: 'Maize Harvest Cycle',
     description: 'Demonstrate orchestration between Akilimo, Weather, and Market agents',
