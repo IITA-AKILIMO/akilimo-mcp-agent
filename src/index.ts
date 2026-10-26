@@ -11,9 +11,10 @@ import express from "express";
 
 const API_BASE_URL = process.env.AKILIMO_API_BASE_URL || "http://localhost:8600";
 const API_KEY = process.env.AKILIMO_API_KEY || "";
+const V2_API_KEY = process.env.AKILIMO_V2_API_KEY || "";
 const PORT = process.env.PORT || 3000;
 
-const apiClient = new AkilimoApiClient(API_BASE_URL, API_KEY);
+const apiClient = new AkilimoApiClient(API_BASE_URL, API_KEY, V2_API_KEY);
 
 const server = new Server(
   {

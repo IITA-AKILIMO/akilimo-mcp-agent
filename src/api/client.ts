@@ -3,11 +3,12 @@ import axios, { AxiosInstance } from 'axios';
 export class AkilimoApiClient {
     private client: AxiosInstance;
 
-    constructor(baseUrl: string, apiKey: string) {
+    constructor(baseUrl: string, apiKey: string, v2ApiKey?: string) {
         this.client = axios.create({
             baseURL: baseUrl,
             headers: {
                 'X-Api-Key': apiKey,
+                'X-Akilimo-V2-Key': v2ApiKey || '',
                 'Content-Type': 'application/json',
                 'Accept': 'application/json',
             },
