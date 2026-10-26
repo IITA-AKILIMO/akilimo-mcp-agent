@@ -32,11 +32,12 @@ WORKDIR /app
 
 # Copy build artifacts from builder
 COPY --from=builder /app/packages/server/dist ./dist
-COPY --from=builder /app/packages/server/package.json ./package.json
-COPY --from=builder /app/pnpm-lock.yaml* ./pnpm-lock.yaml*
 
-# Install production dependencies
-RUN pnpm install --prod --frozen-lockfile
+# We create a minimal package.json for the runner that doesn't use workspaces
+# This prevents pnpm from failing due to the 'workspace:*' dependency
+RUN echo '{"name": "akilimo-server-runner", "version": "1.0.0", "dependencies": {"@modelcontextprotocol/sdk": "latest", "axios": "latest", "express": "latest", "cors": "latest", "zod": "latest"}}' > package.json
+
+RUN pnpm install --prod
 
 EXPOSE 3000
 
