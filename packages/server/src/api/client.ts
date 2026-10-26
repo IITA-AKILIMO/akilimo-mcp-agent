@@ -3,12 +3,12 @@ import axios, { AxiosInstance } from 'axios';
 export class AkilimoApiClient {
     private client: AxiosInstance;
 
-    constructor(baseUrl: string, apiKey: string, v2ApiKey?: string) {
+    constructor(baseUrl: string, apiKey?: string) {
         this.client = axios.create({
             baseURL: baseUrl,
             headers: {
-                'X-Api-Key': apiKey,
-                'X-Akilimo-V2-Key': v2ApiKey || '',
+                // Reference data and compute are public; the key is only needed for protected routes
+                ...(apiKey ? { 'X-Api-Key': apiKey } : {}),
                 'Content-Type': 'application/json',
                 'Accept': 'application/json',
             },
@@ -39,8 +39,10 @@ export class AkilimoApiClient {
             const status = error.response?.status;
             const data = error.response?.data;
             const message = data?.message || error.message;
-            
-            return new Error(`[Akilimo API ${status}] ${message}`);
+            // Validation (422) and compute errors carry field-level details the model can act on
+            const details = data?.errors ? `\n${JSON.stringify(data.errors, null, 2)}` : '';
+
+            return new Error(`[Akilimo API ${status}] ${message}${details}`);
         }
         return error instanceof Error ? error : new Error(String(error));
     }

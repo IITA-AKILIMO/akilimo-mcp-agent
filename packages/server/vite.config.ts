@@ -15,7 +15,7 @@ export default defineConfig({
         /^@modelcontextprotocol\/sdk(\/|$)/,
         'axios',
         'express',
-        'zod',
+        /^zod(\/|$)/,
         'cors',
       ],
     },

@@ -1,107 +1,166 @@
-import { z } from 'zod';
+import { z } from 'zod/v4';
+
+// Mirrors POST /v1/recommendations/compute in the Akilimo API (new-akilimo-api:
+// app/Rules/ComputeFieldRules.php, FertilizerRules.php, UserInfoRules.php and app/Data/*Data.php).
+// Section keys are camelCase, field names are snake_case. Defaults follow what the AKILIMO
+// mobile app sends, since the R compute service fails on values it cannot look up (nulls,
+// yield 0, unknown produce types) even when the API's validation accepts them.
+
+const money = z.number().min(0);
+
+export const AREA_UNITS = ['acre', 'ha', 'm2', 'are'] as const;
 
 export const FarmInformationSchema = z.object({
-    countryCode: z.string().length(2),
-    useCase: z.string(),
-    mapLat: z.string().optional(),
-    mapLong: z.string().optional(),
-    fieldSize: z.number(),
-    areaUnit: z.string(),
+    country_code: z.string().length(2).describe('ISO 2-letter country code, e.g. NG, TZ, RW'),
+    use_case: z.string().max(10).default('FR').describe('Akilimo use case code; FR = fertilizer recommendation'),
+    map_lat: z.number().min(-90).max(90),
+    map_long: z.number().min(-180).max(180),
+    field_size: z.number().min(1),
+    area_unit: z.enum(AREA_UNITS),
 });
 
 export const InterCroppingSchema = z.object({
-    interCroppedCrop: z.string().optional(),
-    interCroppingMaizeRec: z.boolean().optional(),
-    interCroppingPotatoRec: z.boolean().optional(),
+    inter_cropped_crop: z.string().max(255).nullable().default('NA'),
+    inter_cropping_maize_rec: z.boolean().default(false),
+    inter_cropping_potato_rec: z.boolean().default(false),
 });
 
 export const RecommendationSettingsSchema = z.object({
-    lang: z.string().default('en'),
-    fertilizerRec: z.boolean().default(true),
-    plantingPracticesRec: z.boolean().default(true),
-    scheduledPlantingRec: z.boolean().default(true),
-    scheduledHarvestRec: z.boolean().default(true),
+    lang: z.string().length(2).default('en'),
+    fertilizer_rec: z.boolean().default(true),
+    planting_practices_rec: z.boolean().default(false),
+    scheduled_planting_rec: z.boolean().default(false),
+    scheduled_harvest_rec: z.boolean().default(false),
 });
 
 export const PlantingSchema = z.object({
-    plantingDate: z.string(), // YYYY-MM-DD
-    plantingDateWindow: z.number().optional(),
-    harvestDate: z.string(), // YYYY-MM-DD
-    harvestDateWindow: z.number().optional(),
+    planting_date: z.string().describe('YYYY-MM-DD'),
+    harvest_date: z.string().describe('YYYY-MM-DD'),
+    planting_date_window: z.number().int().min(0).default(1),
+    harvest_date_window: z.number().int().min(0).default(1),
 });
 
 export const FallowSchema = z.object({
-    fallowType: z.string().optional(),
-    fallowHeight: z.number().optional(),
-    fallowGreen: z.boolean().optional(),
+    fallow_type: z.string().max(50).default('none'),
+    fallow_height: z.number().min(0).default(0),
+    fallow_green: z.boolean().default(false),
 });
 
 export const TractorCostsSchema = z.object({
-    tractorPlough: z.boolean(),
-    tractorHarrow: z.boolean(),
-    tractorRidger: z.boolean(),
-    costLmoAreaBasis: z.number(),
-    costTractorPloughing: z.number(),
-    costTractorHarrowing: z.number(),
-    costTractorRidging: z.number(),
+    tractor_plough: z.boolean().default(false),
+    tractor_harrow: z.boolean().default(false),
+    tractor_ridger: z.boolean().default(false),
+    cost_lmo_area_basis: z.string().max(50).default('areaUnit'),
+    cost_tractor_ploughing: money.default(0),
+    cost_tractor_harrowing: money.default(0),
+    cost_tractor_ridging: money.default(0),
 });
 
 export const ManualCostsSchema = z.object({
-    costManualPloughing: z.number(),
-    costManualHarrowing: z.number(),
-    costManualRidging: z.number(),
+    cost_manual_ploughing: money.default(0),
+    cost_manual_harrowing: money.default(0),
+    cost_manual_ridging: money.default(0),
 });
 
 export const WeedingCostsSchema = z.object({
-    costWeedingOne: z.number(),
-    costWeedingTwo: z.number(),
+    cost_weeding_one: money.default(0),
+    cost_weeding_two: money.default(0),
 });
 
 export const OperationsDoneSchema = z.object({
-    ploughingDone: z.boolean(),
-    harrowingDone: z.boolean(),
-    ridgingDone: z.boolean(),
+    ploughing_done: z.boolean().default(false),
+    harrowing_done: z.boolean().default(false),
+    ridging_done: z.boolean().default(false),
 });
 
 export const FarmMethodsSchema = z.object({
-    methodPloughing: z.string(),
-    methodHarrowing: z.string(),
-    methodRidging: z.string(),
-    methodWeeding: z.string(),
+    method_ploughing: z.string().max(255).nullable().default('NA'),
+    method_harrowing: z.string().max(255).nullable().default('NA'),
+    method_ridging: z.string().max(255).nullable().default('NA'),
+    method_weeding: z.string().max(255).nullable().default('NA'),
 });
 
 export const YieldInfoSchema = z.object({
-    currentFieldYield: z.number(),
-    currentMaizePerformance: z.number(),
-    sellToStarchFactory: z.boolean(),
-    starchFactoryName: z.string().optional(),
+    current_field_yield: z.number().min(0).default(11.25)
+        .describe('Current cassava yield class in t/ha as used by the AKILIMO app, e.g. 3.75, 11.25, 18.75, 26.25, 33.75'),
+    current_maize_performance: z.number().min(0).default(0),
+    sell_to_starch_factory: z.boolean().default(false),
+    starch_factory_name: z.string().max(255).nullable().default('NA'),
 });
 
-export const CropDataSchema = z.object({
-    produceType: z.string(),
-    unitWeight: z.number(),
-    unitPrice: z.number(),
+// The API's DTOs read unit_price_maize1 etc. (no underscore before the digit); its validation
+// rules name them unit_price_maize_1, which the DTOs ignore
+const cropPriceFields = {
+    unit_price_maize1: money.default(0),
+    unit_price_maize2: money.default(0),
+    unit_price_potato1: money.default(0),
+    unit_price_potato2: money.default(0),
+};
+
+const cropDataSchema = (defaultProduceType: string) => z.object({
+    produce_type: z.string().max(50).default(defaultProduceType),
+    unit_weight: z.number().min(0).default(0),
+    unit_price: money.default(0),
+    ...cropPriceFields,
+});
+
+// Fertilizer recommendations optimise against the cassava root price, so it is required
+const CassavaSchema = z.object({
+    produce_type: z.string().max(50).default('roots'),
+    unit_weight: z.number().min(1).default(1000).describe('Weight in kg of the unit the price refers to'),
+    unit_price: money.describe('Price per unit of cassava roots in local currency. Use a band\'s average_price from get_reference_data cassava-prices; the exact_price row holds -1 placeholders'),
+    ...cropPriceFields,
+});
+
+export const ComputeFieldsSchema = z.object({
+    farmInformation: FarmInformationSchema,
+    interCropping: InterCroppingSchema.prefault({}),
+    recommendations: RecommendationSettingsSchema.prefault({}),
+    planting: PlantingSchema,
+    fallow: FallowSchema.prefault({}),
+    tractorCosts: TractorCostsSchema.prefault({}),
+    manualCosts: ManualCostsSchema.prefault({}),
+    weedingCosts: WeedingCostsSchema.prefault({}),
+    operationsDone: OperationsDoneSchema.prefault({}),
+    methods: FarmMethodsSchema.prefault({}),
+    yieldInfo: YieldInfoSchema.prefault({}),
+    cassava: CassavaSchema,
+    maize: cropDataSchema('grain').prefault({}),
+    sweetPotato: cropDataSchema('tubers').prefault({}),
+    maxInvestment: money.default(0),
+});
+
+export const FertilizerSchema = z.object({
+    key: z.string().describe('fertilizer_key from GET /v1/fertilizers, e.g. urea'),
+    name: z.string(),
+    fertilizer_type: z.string().describe('e.g. STRAIGHT or COMPOUND'),
+    weight: z.number().min(0).describe('Bag weight in kg'),
+    price: money.describe('Price per bag in local currency'),
+    selected: z.boolean(),
+});
+
+export const UserInfoSchema = z.object({
+    device_token: z.uuid(),
+    risk_attitude: z.number(),
+    user_name: z.string().max(255),
+    first_name: z.string().max(255),
+    last_name: z.string().max(255),
+    gender: z.enum(['M', 'F']),
+    phone_number: z.string().nullable().optional(),
+    email_address: z.email().nullable().optional(),
+    farm_name: z.string().max(255).nullable().optional(),
+    send_sms: z.boolean().optional(),
+    send_email: z.boolean().optional(),
 });
 
 export const ComputeRequestSchema = z.object({
-    farmInformation: FarmInformationSchema,
-    interCropping: InterCroppingSchema,
-    recommendations: RecommendationSettingsSchema,
-    planting: PlantingSchema,
-    fallow: FallowSchema,
-    tractorCosts: TractorCostsSchema,
-    manualCosts: ManualCostsSchema,
-    weedingCosts: WeedingCostsSchema,
-    operationsDone: OperationsDoneSchema,
-    methods: FarmMethodsSchema,
-    yieldInfo: YieldInfoSchema,
-    cassava: CropDataSchema,
-    maize: CropDataSchema,
-    sweetPotato: CropDataSchema,
-    maxInvestment: z.number(),
+    user_info: UserInfoSchema,
+    compute_request: ComputeFieldsSchema,
+    fertilizer_list: z.array(FertilizerSchema).default([]),
 });
 
 export type ComputeRequest = z.infer<typeof ComputeRequestSchema>;
+export type ComputeRequestInput = z.input<typeof ComputeRequestSchema>;
 export interface MCPEvent {
   id: string;
   timestamp: Date;

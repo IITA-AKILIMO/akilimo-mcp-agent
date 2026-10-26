@@ -15,7 +15,7 @@ services:
       PORT: 3000
       AKILIMO_API_BASE_URL: ${AKILIMO_API_BASE_URL:-https://api.akilimo.org}
       AKILIMO_API_KEY: ${AKILIMO_API_KEY}
-      AKILIMO_V2_API_KEY: ${AKILIMO_V2_API_KEY}
+      AKILIMO_DEVICE_TOKEN: ${AKILIMO_DEVICE_TOKEN:-}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173}
     restart: always
     networks:
@@ -49,7 +49,6 @@ services:
       WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY:?WEBUI_SECRET_KEY is not set}
       AKILIMO_API_BASE_URL: ${AKILIMO_API_BASE_URL:-https://api.akilimo.org}
       AKILIMO_API_KEY: ${AKILIMO_API_KEY}
-      AKILIMO_V2_API_KEY: ${AKILIMO_V2_API_KEY}
       CORS_ALLOW_ORIGIN: ${ALLOWED_ORIGINS:-http://localhost:5173}
     volumes:
       - webui:/app/backend/data
