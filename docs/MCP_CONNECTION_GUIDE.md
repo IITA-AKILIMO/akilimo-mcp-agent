@@ -26,21 +26,20 @@ Add this to your `claude_desktop_config.json` (found in `%APPDATA%\Claude\claude
 {
   "mcpServers": {
     "akilimo-official": {
-      "command": "node",
-      "args": [], 
       "url": "https://app2.akilimo.org/mcp/sse"
     },
     "akilimo-custom": {
       "command": "node",
-      "args": ["D:/Dev/php/akilimo-mcp-agent/dist/index.js"],
+      "args": ["D:/Dev/php/akilimo-mcp-agent/packages/server/dist/index.cjs"],
       "env": {
         "AKILIMO_API_BASE_URL": "https://api.akilimo.org",
-        "AKILIMO_API_KEY": "your-api-key-here"
+        "AKILIMO_API_KEY": "PASTE_YOUR_KEY_HERE"
       }
     }
   }
 }
 ```
+
 
 ### Remote Connection (SSE)
 For clients that support remote SSE endpoints, use:

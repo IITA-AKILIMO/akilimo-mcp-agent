@@ -21,7 +21,7 @@ Before you start, make sure you have these installed on your computer:
 ### Step 1: Setup the Agent (The "Brain")
 1. Open your terminal/command prompt.
 2. Navigate to the project folder: `cd D:/Dev/php/akilimo-mcp-agent`
-3. Install the dependencies:
+3. Install all dependencies across the monorepo:
    ```bash
    pnpm install
    ```
@@ -30,17 +30,18 @@ Before you start, make sure you have these installed on your computer:
    - Open `.env` and paste your `AKILIMO_API_KEY`.
 5. Start the agent in development mode:
    ```bash
-   pnpm dev
+   pnpm dev:server
    ```
    *You should see: "Akilimo MCP Agent running on stdio"*
 
 ### Step 2: Setup the Showcase UI (The "Demo")
 If you want to show this to teammates, use the built-in dashboard:
 1. Open a **new** terminal window.
-2. Go to the web folder: `cd D:/Dev/php/akilimo-mcp-agent/web`
-3. Install dependencies: `pnpm install`
-4. Start the UI: `pnpm dev`
-5. Open your browser to: `http://localhost:5173`
+2. Run the UI:
+   ```bash
+   pnpm dev:web
+   ```
+3. Open your browser to: `http://localhost:5173`
 
 ### Step 3: Using it with Claude Desktop
 To make the actual Claude app use these tools:
