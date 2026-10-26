@@ -4,18 +4,19 @@ This guide explains how to connect the Akilimo MCP Agents to various LLM clients
 
 ## 1. Available Akilimo MCP Servers
 
-Depending on your needs, you can use the custom agent or the official Akilimo 2.0 agent.
+There are two Akilimo MCP agents. Use the names **akilimo-1.0** and **akilimo-2.0** in client configs so they are easy to tell apart.
 
-### Official Akilimo 2.0 Agent (Hosted)
-The official, production-ready MCP server for Akilimo.
-- **SSE Endpoint**: `https://app2.akilimo.org/mcp/sse` (refer to [developer portal](https://app2.akilimo.org/developers/mcp-connect) for latest)
-- **Best for**: Production usage, stable official tools.
-
-### Custom Akilimo MCP Agent (This Repo)
-The specialized agent built in this repository.
+### Akilimo 1.0 Agent (This Repo)
+The agent built in this repository, backed by the Akilimo 1.0 API (the Laravel `new-akilimo-api`, hosted at `https://api.akilimo.org`).
 - **Hosted**: `https://akilimo-mcp.akilimo.org/sse`
-- **Local**: `http://localhost:3000/sse`
-- **Best for**: Custom extensions, specific demo scenarios, and internal development.
+- **Local**: `http://localhost:3000/sse` (`pnpm dev:server` with `TRANSPORT=sse`) or `http://localhost:3080/sse` (docker compose)
+- **Tools**: `get_reference_data`, `compute_recommendations`
+- **Best for**: Custom extensions, demo scenarios and internal development.
+
+### Akilimo 2.0 Agent (Hosted)
+The hosted MCP server of the Akilimo 2.0 platform.
+- **SSE Endpoint**: `https://app2.akilimo.org/mcp/sse` (refer to [developer portal](https://app2.akilimo.org/developers/mcp-connect) for latest)
+- **Best for**: Production usage on the Akilimo 2.0 platform.
 
 ## 2. Connection Instructions
 
@@ -25,16 +26,15 @@ Add this to your `claude_desktop_config.json` (found in `%APPDATA%\Claude\claude
 ```json
 {
   "mcpServers": {
-    "akilimo-official": {
-      "url": "https://app2.akilimo.org/mcp/sse"
-    },
-    "akilimo-custom": {
+    "akilimo-1.0": {
       "command": "node",
       "args": ["D:/Dev/php/akilimo-mcp-agent/packages/server/dist/index.cjs"],
       "env": {
-        "AKILIMO_API_BASE_URL": "https://api.akilimo.org",
-        "AKILIMO_API_KEY": "PASTE_YOUR_KEY_HERE"
+        "AKILIMO_API_BASE_URL": "https://api.akilimo.org"
       }
+    },
+    "akilimo-2.0": {
+      "url": "https://app2.akilimo.org/mcp/sse"
     }
   }
 }
@@ -43,8 +43,8 @@ Add this to your `claude_desktop_config.json` (found in `%APPDATA%\Claude\claude
 
 ### Remote Connection (SSE)
 For clients that support remote SSE endpoints, use:
-- Official: `https://app2.akilimo.org/mcp/sse`
-- Custom: `https://akilimo-mcp.akilimo.org/sse`
+- Akilimo 1.0: `https://akilimo-mcp.akilimo.org/sse`
+- Akilimo 2.0: `https://app2.akilimo.org/mcp/sse`
 
 ---
 
@@ -71,8 +71,9 @@ Open WebUI is the most popular interface for Ollama that supports tool integrati
 1. Install **Open WebUI**.
 2. Connect it to your local Ollama instance.
 3. Go to **Workspace** $\rightarrow$ **Tools**.
-4. Import the Akilimo MCP server by providing the SSE URL:
-   `https://akilimo-mcp.akilimo.org/sse` OR `https://app2.akilimo.org/mcp/sse`
+4. Import the Akilimo MCP servers by providing their SSE URLs, naming them `akilimo-1.0` and `akilimo-2.0`:
+   `https://akilimo-mcp.akilimo.org/sse` (Akilimo 1.0) and `https://app2.akilimo.org/mcp/sse` (Akilimo 2.0).
+   From the bundled docker compose, Open WebUI reaches Akilimo 1.0 at `http://akilimo-mcp:3000/sse`.
 5. Select the Akilimo tools when chatting with your local Ollama model.
 
 ---
@@ -81,11 +82,11 @@ Open WebUI is the most popular interface for Ollama that supports tool integrati
 
 | Server | Endpoint | Method | Status |
 | :--- | :--- | :--- | :--- |
-| **Akilimo 2.0 (Official)** | `app2.akilimo.org` | SSE | ✅ Production |
-| **Akilimo Custom** | `akilimo-mcp.akilimo.org` | SSE/Stdio | ✅ Development |
-| **Local Custom** | `localhost:3000` | SSE/Stdio | ✅ Local |
+| **akilimo-1.0** (this repo) | `akilimo-mcp.akilimo.org` | SSE/Stdio | ✅ Development |
+| **akilimo-1.0** (local) | `localhost:3000` / `localhost:3080` | SSE/Stdio | ✅ Local |
+| **akilimo-2.0** | `app2.akilimo.org` | SSE | ✅ Production |
 
 ## Troubleshooting
-- **Permission Denied**: Ensure the `dist/index.js` file is executable and you have read access to the directory.
+- **Permission Denied**: Ensure `packages/server/dist/index.cjs` exists (`pnpm --filter @akilimo/server build`) and you have read access to the directory.
 - **Timeout**: The Akilimo API can take up to 120s for computations; ensure your client timeout is set high enough.
-- **API Key**: Double check that your `AKILIMO_API_KEY` is valid and has the required scopes.
+- **API Key**: Reference data and recommendations are public on the Akilimo 1.0 API; `AKILIMO_API_KEY` is only needed for protected routes.

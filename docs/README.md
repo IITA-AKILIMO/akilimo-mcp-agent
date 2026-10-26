@@ -12,7 +12,7 @@ Before you start, make sure you have these installed on your computer:
 1. **Node.js (v20 or newer)**: The engine that runs our code. [Download here](https://nodejs.org/).
 2. **pnpm**: A faster version of npm. Install it by running: `npm install -g pnpm`
 3. **Docker Desktop**: Used to run the AI interface (Open WebUI) and the agent in a container. [Download here](https://www.docker.com/products/docker-desktop/).
-4. **An Akilimo API Key**: You will need a valid key to access the agricultural data.
+4. **Access to the Akilimo API** (the Laravel `new-akilimo-api`, hosted at `https://api.akilimo.org` or run locally on port 8600). Reference data and recommendations are public; an API key is only needed for protected routes.
 
 ---
 
@@ -32,7 +32,7 @@ Before you start, make sure you have these installed on your computer:
    ```bash
    pnpm dev:server
    ```
-   *You should see: "Akilimo MCP Agent running on stdio"*
+   *You should see: "Akilimo 1.0 MCP Agent running on stdio"*
 
 ### Step 2: Setup the Showcase UI (The "Demo")
 If you want to show this to teammates, use the built-in dashboard:
