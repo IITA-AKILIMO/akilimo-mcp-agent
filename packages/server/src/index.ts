@@ -6,7 +6,7 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { AkilimoApiClient } from "./api/client.js";
-import { ComputeRequestSchema } from "./types/index.js";
+import { ComputeRequestSchema } from "@akilimo/shared";
 import express from "express";
 
 const API_BASE_URL = process.env.AKILIMO_API_BASE_URL || "http://localhost:8600";

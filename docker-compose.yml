@@ -8,6 +8,8 @@ services:
     hostname: akilimo-mcp
     ports:
       - "127.0.0.1:3000:3000"
+    env_file:
+      - .env
     environment:
       TRANSPORT: sse
       PORT: 3000
@@ -25,6 +27,8 @@ services:
     container_name: webui
     ports:
       - "127.0.0.1:8089:8080"
+    env_file:
+      - .env
     environment:
       OLLAMA_BASE_URL: http://host.docker.internal:11434
       WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY:?WEBUI_SECRET_KEY is not set}
@@ -33,6 +37,8 @@ services:
 #    depends_on:
 #      - akilimo-mcp
     restart: always
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - dokploy-network
       - internal

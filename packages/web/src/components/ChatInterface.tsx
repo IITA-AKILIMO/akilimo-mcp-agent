@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Message, Scenario } from '../types/mcp';
+import { Message, Scenario } from '@akilimo/shared';
 import { Send, Play, User, Bot } from 'lucide-react';
 import { motion } from 'framer-motion';
 

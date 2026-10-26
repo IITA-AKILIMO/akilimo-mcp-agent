@@ -1,5 +1,5 @@
 import React from 'react';
-import { MCPEvent } from '../types/mcp';
+import { MCPEvent } from '@akilimo/shared';
 import { Terminal, Cpu, Database, MessageSquare, Zap } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 

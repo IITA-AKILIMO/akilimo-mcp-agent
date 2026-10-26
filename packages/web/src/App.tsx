@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ChatInterface } from './components/ChatInterface';
 import { ActivityFeed } from './components/ActivityFeed';
-import { Message, MCPEvent, Scenario } from './types/mcp';
+import { Message, MCPEvent, Scenario } from '@akilimo/shared';
 
 const DEMO_SCENARIOS: Scenario[] = [
   {

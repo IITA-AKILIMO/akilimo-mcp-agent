@@ -1,27 +1,13 @@
 {
-  "name": "akilimo-mcp-agent",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "name": "akilimo-mcp-monorepo",
+  "private": true,
   "scripts": {
-    "dev": "vite-node src/index.ts",
-    "build": "vite build",
-    "start": "node dist/index.cjs"
-  },
-  "keywords": [],
-  "type": "commonjs",
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.32.2",
-    "@types/express": "^5.0.6",
-    "axios": "^1.20.0",
-    "express": "^5.3.0",
-    "zod": "^4.6.7"
+    "dev:server": "pnpm --filter @akilimo/server dev",
+    "dev:web": "pnpm --filter @akilimo/web dev",
+    "build": "pnpm --filter \"@akilimo/*\" build",
+    "start": "pnpm --filter @akilimo/server start"
   },
   "devDependencies": {
-    "@types/node": "^26.6.5",
-    "tsx": "^4.23.15",
-    "typescript": "^7.0.2",
-    "vite": "^8.3.5",
-    "vite-node": "^6.0.0"
+    "typescript": "^5.0.0"
   }
 }
