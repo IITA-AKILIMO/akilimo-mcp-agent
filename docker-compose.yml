@@ -1,0 +1,28 @@
+services:
+  akilimo-mcp:
+    build: .
+    container_name: akilimo-mcp
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      - TRANSPORT=sse
+      - PORT=3000
+      - AKILIMO_API_BASE_URL=${AKILIMO_API_BASE_URL:-https://api.akilimo.org}
+      - AKILIMO_API_KEY=${AKILIMO_API_KEY}
+    restart: always
+
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: open-webui
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+    volumes:
+      - open-webui:/app/backend/data
+    depends_on:
+      - akilimo-mcp
+    restart: always
+
+volumes:
+  open-webui:
