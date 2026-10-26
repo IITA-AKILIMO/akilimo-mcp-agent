@@ -7,7 +7,7 @@ services:
     container_name: akilimo-mcp
     hostname: akilimo-mcp
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:3080:3000"
     env_file:
       - .env
     environment:
@@ -22,25 +22,43 @@ services:
       - dokploy-network
       - internal
 
+  web:
+    build:
+      context: .
+      dockerfile: packages/web/Dockerfile
+    container_name: akilimo-web
+    hostname: akilimo-web
+    ports:
+      - "127.0.0.1:4173:8080"
+    restart: always
+    networks:
+      - dokploy-network
+
   webui:
     image: ghcr.io/open-webui/open-webui:main
     hostname: webui
     container_name: webui
-    network_mode: host
+    ports:
+      - "127.0.0.1:8089:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     env_file:
       - .env
     environment:
-      OLLAMA_BASE_URL: http://127.0.0.1:11434
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY:?WEBUI_SECRET_KEY is not set}
       AKILIMO_API_BASE_URL: ${AKILIMO_API_BASE_URL:-https://api.akilimo.org}
       AKILIMO_API_KEY: ${AKILIMO_API_KEY}
       AKILIMO_V2_API_KEY: ${AKILIMO_V2_API_KEY}
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173}
+      CORS_ALLOW_ORIGIN: ${ALLOWED_ORIGINS:-http://localhost:5173}
     volumes:
       - webui:/app/backend/data
 #    depends_on:
 #      - akilimo-mcp
     restart: always
+    networks:
+      - dokploy-network
+      - internal
 
 
 networks:
