@@ -128,6 +128,10 @@ async function main() {
 
     let transport: SSEServerTransport | null = null;
 
+    app.get("/health", (req, res) => {
+      res.json({ status: "ok" });
+    });
+
     app.get("/sse", async (req, res) => {
       transport = new SSEServerTransport("/messages", res);
       await server.connect(transport);

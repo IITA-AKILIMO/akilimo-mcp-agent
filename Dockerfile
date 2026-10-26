@@ -1,47 +1,52 @@
+# syntax=docker/dockerfile:1
+
 # ── Stage 1: build ────────────────────────────────────────────────────────────
 FROM node:24-alpine AS builder
 
-RUN corepack enable && corepack prepare pnpm@latest --activate
+# pnpm version comes from "packageManager" in the root package.json
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
+RUN corepack enable
 
 WORKDIR /app
 
-# Copy workspace configuration
-COPY pnpm-workspace.yaml package.json pnpm-lock.yaml* ./
-
-# Copy all package manifests for caching
+# Copy workspace configuration and package manifests for layer caching
+# (the web manifest is needed for the frozen lockfile check, its source is not)
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY packages/shared/package.json ./packages/shared/
 COPY packages/server/package.json ./packages/server/
 COPY packages/web/package.json ./packages/web/
 
-RUN pnpm install --frozen-lockfile
+# Install only the server and its workspace dependencies
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
+    pnpm install --frozen-lockfile --filter @akilimo/server...
 
-# Copy source code
 COPY packages/shared ./packages/shared
 COPY packages/server ./packages/server
-COPY packages/web ./packages/web
 
-# Build the server package
 RUN pnpm --filter @akilimo/server build
+
+# Produce a standalone production node_modules pinned to the lockfile
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
+    pnpm --filter @akilimo/server deploy --prod --legacy /out
 
 # ── Stage 2: serve ────────────────────────────────────────────────────────────
 FROM node:24-alpine AS runner
 
-RUN corepack enable && corepack prepare pnpm@latest --activate
+ENV NODE_ENV=production
+ENV TRANSPORT=sse
+ENV PORT=3000
 
 WORKDIR /app
 
-# Copy build artifacts from builder
-COPY --from=builder /app/packages/server/dist ./dist
+COPY --from=builder --chown=node:node /out/node_modules ./node_modules
+COPY --from=builder --chown=node:node /app/packages/server/dist ./dist
 
-# We create a minimal package.json for the runner that doesn't use workspaces
-# This prevents pnpm from failing due to the 'workspace:*' dependency
-RUN echo '{"name": "akilimo-server-runner", "version": "1.0.0", "dependencies": {"@modelcontextprotocol/sdk": "latest", "axios": "latest", "express": "latest", "cors": "latest", "zod": "latest"}}' > package.json
-
-RUN pnpm install --prod
+USER node
 
 EXPOSE 3000
 
-ENV TRANSPORT=sse
-ENV PORT=3000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD wget -qO- "http://127.0.0.1:${PORT}/health" > /dev/null || exit 1
 
 CMD ["node", "dist/index.cjs"]
