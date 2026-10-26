@@ -1,6 +1,7 @@
 {
   "name": "akilimo-mcp-monorepo",
   "private": true,
+  "packageManager": "pnpm@12.4.0",
   "scripts": {
     "dev:server": "pnpm --filter @akilimo/server dev",
     "dev:web": "pnpm --filter @akilimo/web dev",
