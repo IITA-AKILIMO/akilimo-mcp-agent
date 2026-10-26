@@ -8,11 +8,13 @@ import {
 import { AkilimoApiClient } from "./api/client.js";
 import { ComputeRequestSchema } from "@akilimo/shared";
 import express from "express";
+import cors from "cors";
 
 const API_BASE_URL = process.env.AKILIMO_API_BASE_URL || "http://localhost:8600";
 const API_KEY = process.env.AKILIMO_API_KEY || "";
 const V2_API_KEY = process.env.AKILIMO_V2_API_KEY || "";
 const PORT = process.env.PORT || 3000;
+const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:5173'];
 
 const apiClient = new AkilimoApiClient(API_BASE_URL, API_KEY, V2_API_KEY);
 
@@ -117,6 +119,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 async function main() {
   if (process.env.TRANSPORT === "sse") {
     const app = express();
+    
+    app.use(cors({
+      origin: ALLOWED_ORIGINS,
+      methods: ['GET', 'POST'],
+      credentials: true
+    }));
+
     let transport: SSEServerTransport | null = null;
 
     app.get("/sse", async (req, res) => {

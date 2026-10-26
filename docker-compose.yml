@@ -16,6 +16,7 @@ services:
       AKILIMO_API_BASE_URL: ${AKILIMO_API_BASE_URL:-https://api.akilimo.org}
       AKILIMO_API_KEY: ${AKILIMO_API_KEY}
       AKILIMO_V2_API_KEY: ${AKILIMO_V2_API_KEY}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173}
     restart: always
     networks:
       - dokploy-network
