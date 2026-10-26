@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { MapPicker } from './MapPicker';
 
@@ -212,6 +212,12 @@ const ObjectFields: React.FC<{ schema: JsonSchema; value: Value; onChange: OnCha
   const required = new Set(schema.required ?? []);
   const obj = (value ?? {}) as Record<string, Value>;
   const coords = findCoordinateKeys(schema.properties ?? {});
+  const countryKey = ['country_code', 'countryCode'].find(k => k in (schema.properties ?? {}));
+
+  // The country lookup resolves after the click has already updated lat/long, so it must
+  // apply to the latest value and change handler, not the ones captured at click time
+  const latest = useRef({ value, onChange });
+  latest.current = { value, onChange };
 
   return (
     <div className="row g-2">
@@ -220,8 +226,9 @@ const ObjectFields: React.FC<{ schema: JsonSchema; value: Value; onChange: OnCha
           <MapPicker
             lat={obj[coords.lat] as number | undefined}
             lon={obj[coords.lon] as number | undefined}
-            country={(obj.country_code ?? obj.countryCode) as string | undefined}
+            country={countryKey ? obj[countryKey] as string | undefined : undefined}
             onChange={(lat, lon) => onChange(withKey(withKey(value, coords.lat, lat), coords.lon, lon))}
+            onCountry={countryKey ? (code) => latest.current.onChange(withKey(latest.current.value, countryKey, code)) : undefined}
           />
         </div>
       )}
