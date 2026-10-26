@@ -7,16 +7,25 @@ This guide explains how to connect the Akilimo MCP Agents to various LLM clients
 There are two Akilimo MCP agents. Use the names **akilimo-1.0** and **akilimo-2.0** in client configs so they are easy to tell apart.
 
 ### Akilimo 1.0 Agent (This Repo)
-The agent built in this repository, backed by the Akilimo 1.0 API (the Laravel `new-akilimo-api`, hosted at `https://api.akilimo.org`).
-- **Hosted**: `https://akilimo-mcp.akilimo.org/sse`
-- **Local**: `http://localhost:3000/sse` (`pnpm dev:server` with `TRANSPORT=sse`) or `http://localhost:3080/sse` (docker compose)
+The agent built in this repository, backed by the Akilimo 1.0 API (the Laravel `new-akilimo-api`, hosted at `https://api.akilimo.org`). No key needed. In HTTP mode it serves two transports:
+- **Streamable HTTP** (current MCP transport): `/mcp`
+- **SSE** (older clients): `/sse`
+
+| Where | Base URL |
+| :--- | :--- |
+| Hosted | `https://akilimo-mcp.akilimo.org` |
+| Local (`pnpm dev:server:http`) | `http://localhost:3001` |
+| docker compose (from the host) | `http://localhost:3080` |
+| docker compose (from other containers) | `http://akilimo-mcp:3000` |
+| Claude Desktop and other stdio clients | `node packages/server/dist/index.cjs` |
+
 - **Tools**: `get_reference_data`, `compute_recommendations`
-- **Best for**: Custom extensions, demo scenarios and internal development.
 
 ### Akilimo 2.0 Agent (Hosted)
-The hosted MCP server of the Akilimo 2.0 platform.
-- **SSE Endpoint**: `https://app2.akilimo.org/mcp/sse` (refer to [developer portal](https://app2.akilimo.org/developers/mcp-connect) for latest)
-- **Best for**: Production usage on the Akilimo 2.0 platform.
+The hosted MCP server of the Akilimo 2.0 platform ([developer portal](https://app2.akilimo.org/developers/mcp-connect)).
+- **Streamable HTTP**: `https://mcp.akilimo.org/mcp`
+- **Partner key required** on every request, as `Authorization: Bearer <key>` or `X-API-Key: <key>`; without it the edge replies `401 missing API key`. Keys are issued to your workspace by Hub operations.
+- It does not answer browser CORS preflights, so browser apps must go through a same-origin proxy (the web UI in this repo does).
 
 ## 2. Connection Instructions
 
@@ -34,17 +43,23 @@ Add this to your `claude_desktop_config.json` (found in `%APPDATA%\Claude\claude
       }
     },
     "akilimo-2.0": {
-      "url": "https://app2.akilimo.org/mcp/sse"
+      "type": "http",
+      "url": "https://mcp.akilimo.org/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_PARTNER_KEY"
+      }
     }
   }
 }
 ```
 
+### Remote Connection
+For clients that support remote MCP servers:
+- Akilimo 1.0: `https://akilimo-mcp.akilimo.org/mcp` (streamable HTTP) or `https://akilimo-mcp.akilimo.org/sse` (SSE)
+- Akilimo 2.0: `https://mcp.akilimo.org/mcp` (streamable HTTP, partner key header required)
 
-### Remote Connection (SSE)
-For clients that support remote SSE endpoints, use:
-- Akilimo 1.0: `https://akilimo-mcp.akilimo.org/sse`
-- Akilimo 2.0: `https://app2.akilimo.org/mcp/sse`
+### This repo's web UI
+`pnpm dev:web` (or the `web` compose service) connects to both agents through same-origin proxies (`/proxy/akilimo-1.0/` and `/proxy/akilimo-2.0/`, see `packages/web/vite.config.ts` and `packages/web/nginx.conf`). Override the Akilimo 1.0 target with `AKILIMO_1_MCP_URL` (default `http://localhost:3001`). The Akilimo 2.0 partner key is typed into the UI and kept in memory only.
 
 ---
 
@@ -71,9 +86,9 @@ Open WebUI is the most popular interface for Ollama that supports tool integrati
 1. Install **Open WebUI**.
 2. Connect it to your local Ollama instance.
 3. Go to **Workspace** $\rightarrow$ **Tools**.
-4. Import the Akilimo MCP servers by providing their SSE URLs, naming them `akilimo-1.0` and `akilimo-2.0`:
-   `https://akilimo-mcp.akilimo.org/sse` (Akilimo 1.0) and `https://app2.akilimo.org/mcp/sse` (Akilimo 2.0).
-   From the bundled docker compose, Open WebUI reaches Akilimo 1.0 at `http://akilimo-mcp:3000/sse`.
+4. Add the Akilimo MCP servers, naming them `akilimo-1.0` and `akilimo-2.0`:
+   - Akilimo 1.0: `https://akilimo-mcp.akilimo.org/mcp`; from the bundled docker compose use `http://akilimo-mcp:3000/mcp`.
+   - Akilimo 2.0: `https://mcp.akilimo.org/mcp` with your partner key as the bearer token.
 5. Select the Akilimo tools when chatting with your local Ollama model.
 
 ---
@@ -82,9 +97,9 @@ Open WebUI is the most popular interface for Ollama that supports tool integrati
 
 | Server | Endpoint | Method | Status |
 | :--- | :--- | :--- | :--- |
-| **akilimo-1.0** (this repo) | `akilimo-mcp.akilimo.org` | SSE/Stdio | ✅ Development |
-| **akilimo-1.0** (local) | `localhost:3000` / `localhost:3080` | SSE/Stdio | ✅ Local |
-| **akilimo-2.0** | `app2.akilimo.org` | SSE | ✅ Production |
+| **akilimo-1.0** (this repo) | `akilimo-mcp.akilimo.org/mcp` | Streamable HTTP / SSE / stdio | ✅ Development |
+| **akilimo-1.0** (local) | `localhost:3001` / `localhost:3080` | Streamable HTTP / SSE / stdio | ✅ Local |
+| **akilimo-2.0** | `mcp.akilimo.org/mcp` | Streamable HTTP, partner key | ✅ Production |
 
 ## Troubleshooting
 - **Permission Denied**: Ensure `packages/server/dist/index.cjs` exists (`pnpm --filter @akilimo/server build`) and you have read access to the directory.
