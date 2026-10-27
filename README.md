@@ -61,11 +61,17 @@ To add a table or column: edit `schema.prisma`, run `npx prisma migrate dev --na
 
 Passwords are stored as salted scrypt hashes and sessions as hashed tokens in an HttpOnly cookie. There is no email verification or password reset yet. Chats can contain farm details and locations, so treat the database as personal data under IITA's data guidelines (access, backups, retention).
 
+#### Admins and roles
+Every account is a **user** or an **admin**; new accounts start as users. Admins see **Manage** in the MCP servers panel, which opens the **Admin** dialog with two tabs: **MCP servers** (add, change, remove) and **Users** (make someone an admin or remove admin rights). The last admin cannot be demoted.
+
+Create the first admin (needs the database):
+- **On start**: set `ADMIN_EMAIL` and `ADMIN_PASSWORD` (and optionally `ADMIN_NAME`) in `.env` or the compose environment. Every start makes sure that account exists as an admin: it is created if missing, an existing account with that email is promoted, and an existing password is never changed.
+- **On demand**: with the same variables set, run `pnpm seed:admin` (in the Docker container: `node dist/index.cjs --seed-admin`).
+
 #### Adding, changing and removing MCP servers
-The server list is shared by everyone using the UI and stored by the MCP gateway on the Akilimo 1.0 server (`packages/server/data/mcp-servers.json` locally, the `mcp-gateway` volume in Docker). It starts with Akilimo 1.0 and Akilimo 2.0.
-1. Set `GATEWAY_ADMIN_TOKEN` in `.env` to a long random value (e.g. `openssl rand -hex 32`) and restart the server. Without it the list is read-only.
-2. In the UI, open **MCP servers → Manage**, enter the token and choose **Unlock editing**.
-3. Add a server with its **streamable HTTP** endpoint URL and how its key is sent (none, `Authorization: Bearer`, or a custom header such as `X-API-Key`). The gateway calls the URL, so it works even if the server does not allow browser requests, and internal addresses (e.g. `http://akilimo-mcp:3000/mcp`) are allowed.
+The server list is shared by everyone using the UI and stored by the MCP gateway on the Akilimo 1.0 server (`packages/server/data/mcp-servers.json` locally, the `mcp-gateway` volume in Docker). It starts with Akilimo 1.0 and Akilimo 2.0. Only admins can change it; without a database there are no accounts, so the list is read-only.
+1. Sign in as an admin and open **MCP servers → Manage**.
+2. Add a server with its **streamable HTTP** endpoint URL and how its key is sent (none, `Authorization: Bearer`, or a custom header such as `X-API-Key`). The gateway calls the URL, so it works even if the server does not allow browser requests, and internal addresses (e.g. `http://akilimo-mcp:3000/mcp`) are allowed.
 
 Keys themselves are entered per user in the server panel and remembered in that browser only; the gateway forwards them per request and never stores them.
 

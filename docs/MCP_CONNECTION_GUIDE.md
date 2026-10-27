@@ -69,12 +69,11 @@ Gateway endpoints (HTTP mode only):
 
 | Method and path | Purpose | Auth |
 | :--- | :--- | :--- |
-| `GET /gateway/servers` | Registered servers and whether editing is enabled | none |
-| `GET /gateway/admin` | Check an admin token (204) | admin |
-| `POST /gateway/servers`, `PUT /gateway/servers/:id`, `DELETE /gateway/servers/:id` | Add, change, remove a server | admin |
+| `GET /gateway/servers` | Registered servers; `editable` is true for a signed-in admin | none |
+| `POST /gateway/servers`, `PUT /gateway/servers/:id`, `DELETE /gateway/servers/:id` | Add, change, remove a server (JSON body) | signed-in **admin** (session cookie) |
 | `POST/GET/DELETE /gateway/servers/:id/mcp` | Streamable HTTP proxy to that server | the user's key in `X-Mcp-Key`, forwarded as the entry's bearer token or header |
 
-Admin requests send `Authorization: Bearer <GATEWAY_ADMIN_TOKEN>`. Without `GATEWAY_ADMIN_TOKEN` the registry is read-only. Only admins can add targets because the gateway will call any URL it is given, including internal ones.
+Registry changes need a user with the `admin` role (see README, "Admins and roles"); without a database there are no accounts and the registry is read-only. Only admins can add targets because the gateway will call any URL it is given, including internal ones. Admins also manage roles through `GET /api/admin/users` and `PATCH /api/admin/users/:id` (`{"role": "user" | "admin"}`).
 
 ---
 

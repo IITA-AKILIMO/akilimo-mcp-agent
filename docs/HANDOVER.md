@@ -15,7 +15,7 @@ A pnpm monorepo (TypeScript) for IITA's AKILIMO cassava advisory tools:
 
 | Area | State |
 | :--- | :--- |
-| Branch | `main`, **20 commits ahead of `origin/main`, nothing pushed**; working tree clean |
+| Branch | `main`; everything up to `7e8824d` is pushed; **4 newer commits are local only** (roles and admin seeding); working tree clean |
 | Builds | `pnpm build` passes; the server passes a strict `tsc` check; `pnpm install --frozen-lockfile` passes |
 | Tests | No automated test suite exists. Everything below was verified by hand (scripts and browser) |
 
@@ -23,7 +23,11 @@ Latest commits, newest first:
 
 | Commit | Content |
 | :--- | :--- |
-| docs commit (this file) | README, `AGENTS.md`, this handover (PostgreSQL only) |
+| docs commit (this file) | README, connection guide, `AGENTS.md`, this handover (roles, admin seeding) — not pushed |
+| `259c7c5` | Compose: `GATEWAY_ADMIN_TOKEN` replaced by optional `ADMIN_EMAIL`/`ADMIN_PASSWORD`/`ADMIN_NAME` — not pushed |
+| `8ef39e8` | Web: Admin dialog (MCP servers and Users tabs), Manage for admins only — not pushed |
+| `2ebc927` | Server: user roles, admin-only registry and user management, admin seeding, `add_user_roles` migration — not pushed |
+| `7e8824d` | Docs: PostgreSQL-only accounts database (pushed) |
 | `ddfc7ab` | Docker: SQLite settings removed from the image, compose and `.env.example` |
 | `c4d9770` | Server: PostgreSQL only, one Prisma schema and migration history (SQLite removed) |
 | `31f1ef8` | Docs: Prisma, `DB_*` settings, weather server |
@@ -54,6 +58,7 @@ Latest commits, newest first:
 | Accounts, saved chats, activity | `server/src/accounts/`, `server/src/db/`, `web/src/account/` | API script (isolation, rate limit, CSRF guard, hashed storage) and browser round trip |
 | Prisma 7 with PostgreSQL, one schema and migration history | `server/prisma/`, `prisma.config.ts`, `scripts/migrate.mjs` | Full API script passed after `db:migrate`; moved migration recognised as applied; repeat migrate = no-op; unmigrated DB refused at start; Docker image not built |
 | Prefill buttons and map picker (country via Nominatim) | `web/src/mcp/presets.ts`, `MapPicker.tsx` | Browser |
+| User roles (`user`/`admin`), admin-only registry and Users tab, admin seeding | `server/src/accounts/{auth,seed,routes}.ts`, `gateway/routes.ts`, `web/src/components/AdminDialog.tsx` | Role script: guest 401, user 403, admin allowed, promote/demote takes effect, last admin protected, CSRF guard, seed on start idempotent, `--seed-admin` promotes, no-DB read-only; browser check of badge, Manage and both tabs |
 | Weather MCP server (`mcp_weather_server` 0.6.1, Open-Meteo) registered as `weather` | `uvx` locally (README); `weather-mcp` compose service for Docker | Locally through the gateway: 8 tools, live Ibadan weather; chat uses it unprompted. Docker image not built |
 | Gateway survives clients disconnecting mid-stream | `server/src/gateway/routes.ts` (`pipeline`) | Regression script: old build crashed on the first disconnect, fixed build survived three |
 | Chat refuses its own agronomic judgement (weather is context only) | system prompt in `web/src/llm/agent.ts` | Ibadan planting question answered correctly after adding an explicit example; other phrasings not tested |
@@ -63,7 +68,7 @@ Latest commits, newest first:
 1. **Naming**: this repo's agent is **Akilimo 1.0**; the hosted one is **Akilimo 2.0**. Use `akilimo-1.0` / `akilimo-2.0` everywhere.
 2. **No mocks** in the web UI: only real MCP servers; the user enters all information.
 3. **Chat is the default mode**, Advanced is the alternative. The LLM is local **Ollama** (data stays on the user's machine).
-4. **MCP servers are managed through a shared gateway** on the backend, with an admin token. It is not per browser.
+4. **MCP servers are managed through a shared gateway** on the backend, by users with the **admin role** (this replaced the earlier `GATEWAY_ADMIN_TOKEN`). It is not per browser. An admin can be seeded with `ADMIN_EMAIL`/`ADMIN_PASSWORD`.
 5. **Upstream keys are remembered in the browser** (localStorage), never stored on the server.
 6. **Accounts**: email + password, **guests can still use everything** (nothing is saved for them). Database: **PostgreSQL only**, one schema and one migration history managed by **Prisma**, configured with individual Laravel-style `DB_*` values (no `DATABASE_URL`). SQLite support was added and then removed on request, because Prisma needs a separate schema and migrations per database type.
 7. Bootstrap (not Tailwind), with a light/dark toggle.
@@ -92,11 +97,11 @@ pnpm dev:server:http   # server on :3001 (reads repo-root .env)
 pnpm dev:web           # UI on :5173, proxies /gateway, /api, /proxy/ollama
 ```
 
-Relevant `.env` settings (see `.env.example`): `AKILIMO_API_BASE_URL`, `GATEWAY_ADMIN_TOKEN` (enables server editing), `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` (PostgreSQL; enables accounts). Docker additionally needs the `DB_*` values (compose requires them; `DB_HOST=db` for the bundled PostgreSQL) and `WEBUI_SECRET_KEY`. The user does not use `DATABASE_URL`; it is not supported. The user's own `.env` had a malformed first line (a literal `\n` joining two variables); they were told, but it was not edited because it holds secrets.
+Relevant `.env` settings (see `.env.example`): `AKILIMO_API_BASE_URL`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` (PostgreSQL; enables accounts), `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_NAME` (optional admin seed). Docker additionally needs the `DB_*` values (compose requires them; `DB_HOST=db` for the bundled PostgreSQL) and `WEBUI_SECRET_KEY`. The user does not use `DATABASE_URL`; it is not supported. The user's own `.env` had a malformed first line (a literal `\n` joining two variables); they were told, but it was not edited because it holds secrets.
 
 ## 7. Open items and suggested next steps
 
-1. **Push** `main` to `origin` once the user agrees (12 commits, see section 2).
+1. **Push** the 4 local commits (roles and admin seeding, see section 2) once the user agrees.
 2. **Docker images have not been built** in this session (`docker compose up -d --build`), so the nginx template, the gateway volume and the `db` service are unverified at runtime. `docker compose config` passes.
 3. **Accounts**: no email verification, password reset, account deletion or data export. The rate limiter is in memory only (it resets on restart and is per instance).
 4. **Images not built**: the server image (Prisma, migrations at start) and the weather image have not been built (the user builds them).
@@ -111,6 +116,6 @@ Relevant `.env` settings (see `.env.example`): `AKILIMO_API_BASE_URL`, `GATEWAY_
 ## 8. Leftovers on the dev machine from this session
 
 - Throwaway PostgreSQL container **`akilimo-test-pg`** (WSL Docker, `127.0.0.1:55432`, `--rm`), holding only a test account. Remove it with `wsl -e docker stop akilimo-test-pg`.
-- A local dev server on port 3001, started with a throwaway admin token and the test database.
+- A local dev server on port 3001 on the test database, which holds two test accounts (`admin@example.test`, `user@example.test`, both admin).
 - Registry file `packages/server/data/mcp-servers.json` (gitignored; contains the two default servers plus `weather`).
 - The weather MCP server running via `uvx` on `127.0.0.1:8090` (background process from this session).
