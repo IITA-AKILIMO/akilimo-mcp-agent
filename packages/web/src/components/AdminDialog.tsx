@@ -29,7 +29,8 @@ const runTest = async (server: Pick<McpServerConfig, 'url' | 'auth'>, key: strin
 
 const TestResult: React.FC<{ state: TestState }> = ({ state }) => {
   if (!state) return null;
-  if (state.running) return <div className="small text-body-secondary d-flex align-items-center gap-1 mt-2"><Loader2 size={14} className="spin" /> Connecting…</div>;
+  // `in` narrows without strictNullChecks, which this project's tsconfig leaves off
+  if (!('result' in state)) return <div className="small text-body-secondary d-flex align-items-center gap-1 mt-2"><Loader2 size={14} className="spin" /> Connecting…</div>;
   const { result } = state;
   if (!result.ok) {
     return (

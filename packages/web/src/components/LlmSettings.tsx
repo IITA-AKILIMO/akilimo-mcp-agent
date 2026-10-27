@@ -15,7 +15,8 @@ const formatBytes = (n: number) => (n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : `$
 const TestResult: React.FC<{ llm: Props['llm'] }> = ({ llm }) => {
   const { test } = llm;
   if (!test) return null;
-  if (test.running) {
+  // `in` narrows without strictNullChecks, which this project's tsconfig leaves off
+  if (!('result' in test)) {
     return <div className="d-flex align-items-center gap-1 text-body-secondary"><Loader2 size={14} className="spin" /> Testing{llm.model ? ` ${llm.model}` : ''}…</div>;
   }
   const r = test.result;
