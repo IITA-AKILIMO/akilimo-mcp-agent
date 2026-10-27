@@ -21,6 +21,7 @@ services:
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       ADMIN_NAME: ${ADMIN_NAME:-Administrator}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-}
       # Accounts, saved chats and activity. Migrations run at container start (Prisma).
       # DB_HOST=db uses the bundled db service; point it at another host for an external database
       DB_HOST: ${DB_HOST:?DB_HOST must be set}

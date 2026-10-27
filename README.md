@@ -51,7 +51,7 @@ It has two modes, switched in the top bar:
 Every connection, tool call and response appears under **Activity**.
 
 #### Accounts, saved chats and activity
-People can use the UI as guests, or **Sign in / Create account** (top bar) to keep their chat history and activity. Signed-in users get a **History** button in the chat to reopen or delete past conversations; signing out clears the screen.
+People can use the UI as guests, or **Sign in / Create account** (top bar) to keep their chat history and activity. An account has a name, an email and a unique username (3–30 lowercase letters, digits, dots, underscores or hyphens); sign-in accepts the email or the username. Signed-in users get a **History** button in the chat to reopen or delete past conversations; signing out clears the screen.
 
 This needs **PostgreSQL**, set with Laravel-style variables in `.env`: `DB_HOST`, `DB_PORT` (default 5432), `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD`. Without `DB_HOST` the UI is guest-only.
 
@@ -65,7 +65,7 @@ Passwords are stored as salted scrypt hashes and sessions as hashed tokens in an
 Every account is a **user** or an **admin**; new accounts start as users. Admins see **Manage** in the MCP servers panel, which opens the **Admin** dialog with two tabs: **MCP servers** (add, change, remove) and **Users** (make someone an admin or remove admin rights). The last admin cannot be demoted.
 
 Create the first admin (needs the database):
-- **On start**: set `ADMIN_EMAIL` and `ADMIN_PASSWORD` (and optionally `ADMIN_NAME`) in `.env` or the compose environment. Every start makes sure that account exists as an admin: it is created if missing, an existing account with that email is promoted, and an existing password is never changed.
+- **On start**: set `ADMIN_EMAIL` and `ADMIN_PASSWORD` (and optionally `ADMIN_NAME` and `ADMIN_USERNAME`) in `.env` or the compose environment. Every start makes sure that account exists as an admin: it is created if missing, an existing account with that email is promoted, and an existing password or username is never changed. Without `ADMIN_USERNAME` the username comes from the email (`admin@example.org` becomes `admin`, with a short suffix if that is taken).
 - **On demand**: with the same variables set, run `pnpm seed:admin` (in the Docker container: `node dist/index.cjs --seed-admin`).
 
 #### Adding, changing and removing MCP servers

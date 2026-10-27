@@ -23,7 +23,8 @@ Latest commits, newest first:
 
 | Commit | Content |
 | :--- | :--- |
-| docs commit (this file) | README, connection guide, `AGENTS.md`, this handover (roles, admin seeding) — not pushed |
+| username commit | Usernames: `add_username` migration (backfilled from emails), sign-up field, sign-in by email or username, `ADMIN_USERNAME` seed, docs — not pushed |
+| `968f67d` | README, connection guide, `AGENTS.md`, this handover (roles, admin seeding) — not pushed |
 | `259c7c5` | Compose: `GATEWAY_ADMIN_TOKEN` replaced by optional `ADMIN_EMAIL`/`ADMIN_PASSWORD`/`ADMIN_NAME` — not pushed |
 | `8ef39e8` | Web: Admin dialog (MCP servers and Users tabs), Manage for admins only — not pushed |
 | `2ebc927` | Server: user roles, admin-only registry and user management, admin seeding, `add_user_roles` migration — not pushed |
@@ -70,7 +71,7 @@ Latest commits, newest first:
 3. **Chat is the default mode**, Advanced is the alternative. The LLM is local **Ollama** (data stays on the user's machine).
 4. **MCP servers are managed through a shared gateway** on the backend, by users with the **admin role** (this replaced the earlier `GATEWAY_ADMIN_TOKEN`). It is not per browser. An admin can be seeded with `ADMIN_EMAIL`/`ADMIN_PASSWORD`.
 5. **Upstream keys are remembered in the browser** (localStorage), never stored on the server.
-6. **Accounts**: email + password, **guests can still use everything** (nothing is saved for them). Database: **PostgreSQL only**, one schema and one migration history managed by **Prisma**, configured with individual Laravel-style `DB_*` values (no `DATABASE_URL`). SQLite support was added and then removed on request, because Prisma needs a separate schema and migrations per database type.
+6. **Accounts**: email + password, plus a unique username (sign-in accepts either), **guests can still use everything** (nothing is saved for them). Database: **PostgreSQL only**, one schema and one migration history managed by **Prisma**, configured with individual Laravel-style `DB_*` values (no `DATABASE_URL`). SQLite support was added and then removed on request, because Prisma needs a separate schema and migrations per database type.
 7. Bootstrap (not Tailwind), with a light/dark toggle.
 8. No `network_mode: host` in compose.
 
@@ -97,7 +98,7 @@ pnpm dev:server:http   # server on :3001 (reads repo-root .env)
 pnpm dev:web           # UI on :5173, proxies /gateway, /api, /proxy/ollama
 ```
 
-Relevant `.env` settings (see `.env.example`): `AKILIMO_API_BASE_URL`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` (PostgreSQL; enables accounts), `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_NAME` (optional admin seed). Docker additionally needs the `DB_*` values (compose requires them; `DB_HOST=db` for the bundled PostgreSQL) and `WEBUI_SECRET_KEY`. The user does not use `DATABASE_URL`; it is not supported. The user's own `.env` had a malformed first line (a literal `\n` joining two variables); they were told, but it was not edited because it holds secrets.
+Relevant `.env` settings (see `.env.example`): `AKILIMO_API_BASE_URL`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` (PostgreSQL; enables accounts), `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_NAME`, `ADMIN_USERNAME` (optional admin seed). Docker additionally needs the `DB_*` values (compose requires them; `DB_HOST=db` for the bundled PostgreSQL) and `WEBUI_SECRET_KEY`. The user does not use `DATABASE_URL`; it is not supported. The user's own `.env` had a malformed first line (a literal `\n` joining two variables); they were told, but it was not edited because it holds secrets.
 
 ## 7. Open items and suggested next steps
 
