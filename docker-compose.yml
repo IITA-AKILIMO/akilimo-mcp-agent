@@ -51,10 +51,12 @@ services:
     container_name: weather-mcp
     hostname: weather-mcp
     restart: always
+    ports:
+      - "127.0.0.1:8173:8080"
     networks:
       - internal
 
-  web:
+  akilimo-web:
     image: ghcr.io/iita-akilimo/akilimo-mcp-agent-web:${AKILIMO_MCP_TAG:-latest}
     build:
       context: .
