@@ -5,6 +5,7 @@ import { z } from "zod/v4";
 import { loadUser, requireAdmin, requireJson } from "../accounts/auth.js";
 import type { Db } from "../db/index.js";
 import { Registry, RegistryError, ServerEntrySchema } from "./registry.js";
+import { testConnection } from "./test.js";
 
 // Request headers worth forwarding to an upstream MCP server, and response headers worth returning
 const FORWARD_REQUEST = ["content-type", "accept", "mcp-session-id", "mcp-protocol-version", "last-event-id"];
@@ -65,6 +66,17 @@ export function gatewayRouter(registry: Registry, db: Db | null) {
     try {
       await registry.remove(String(req.params.id));
       res.status(204).end();
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  // Try a URL and key setting before saving it (admins only, for the same SSRF reason as edits).
+  // The key, if any, comes in X-Mcp-Key as for the proxy and is not stored.
+  router.post("/test", express.json(), ...admin, async (req, res) => {
+    try {
+      const entry = ServerEntrySchema.pick({ url: true, auth: true }).parse(req.body);
+      res.json(await testConnection(entry, req.header(KEY_HEADER) || undefined));
     } catch (error) {
       sendError(res, error);
     }
