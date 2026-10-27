@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite-node src/index.ts",
-    "dev:http": "pnpm db:generate && pnpm db:migrate && vite-node src/index.ts -- --http",
+    "dev:http": "pnpm db:generate && pnpm db:migrate && node --watch-path=src --watch-path=../shared/src node_modules/vite-node/vite-node.mjs src/index.ts -- --http",
     "build": "pnpm db:generate && vite build",
     "start": "node dist/index.cjs",
     "db:generate": "prisma generate",
