@@ -3,6 +3,8 @@ name: akilimo-mcp
 
 services:
   akilimo-mcp:
+    # Published to GHCR by .github/workflows/docker-publish.yml; `docker compose build` tags local builds the same
+    image: ghcr.io/iita-akilimo/akilimo-mcp-agent:${AKILIMO_MCP_TAG:-latest}
     build: .
     container_name: akilimo-mcp
     hostname: akilimo-mcp
@@ -72,6 +74,7 @@ services:
       - internal
 
   web:
+    image: ghcr.io/iita-akilimo/akilimo-mcp-agent-web:${AKILIMO_MCP_TAG:-latest}
     build:
       context: .
       dockerfile: packages/web/Dockerfile
@@ -93,7 +96,7 @@ services:
       - internal
 
   webui:
-    image: ghcr.io/open-webui/open-webui:main
+    image: ghcr.io/masgeek/open-webui:main
     hostname: webui
     container_name: webui
     ports:

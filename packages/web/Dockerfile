@@ -1,8 +1,12 @@
 # syntax=docker/dockerfile:1
 # Build from the repo root: docker build -f packages/web/Dockerfile .
 
+# Base images; override to pull them from a registry mirror (e.g. copies on ghcr.io) instead of Docker Hub
+ARG NODE_IMAGE=node:24-alpine
+ARG NGINX_IMAGE=nginxinc/nginx-unprivileged:1.27-alpine
+
 # ── Stage 1: build ────────────────────────────────────────────────────────────
-FROM node:24-alpine AS builder
+FROM ${NODE_IMAGE} AS builder
 
 # pnpm version comes from "packageManager" in the root package.json
 ENV PNPM_HOME=/pnpm
@@ -29,7 +33,7 @@ RUN pnpm --filter @akilimo/web build
 
 # ── Stage 2: serve ────────────────────────────────────────────────────────────
 # Unprivileged nginx runs as a non-root user and listens on 8080
-FROM nginxinc/nginx-unprivileged:1.27-alpine AS runner
+FROM ${NGINX_IMAGE} AS runner
 
 # Rendered to /etc/nginx/conf.d/default.conf at start; only OLLAMA_* variables are substituted
 COPY packages/web/nginx.conf /etc/nginx/templates/default.conf.template

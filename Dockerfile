@@ -1,7 +1,10 @@
 # syntax=docker/dockerfile:1
 
+# Base image; override to pull it from a registry mirror (e.g. a copy on ghcr.io) instead of Docker Hub
+ARG NODE_IMAGE=node:24-alpine
+
 # ── Stage 1: build ────────────────────────────────────────────────────────────
-FROM node:24-alpine AS builder
+FROM ${NODE_IMAGE} AS builder
 
 # pnpm version comes from "packageManager" in the root package.json
 ENV PNPM_HOME=/pnpm
@@ -31,7 +34,7 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm --filter @akilimo/server deploy --prod --legacy /out
 
 # ── Stage 2: serve ────────────────────────────────────────────────────────────
-FROM node:24-alpine AS runner
+FROM ${NODE_IMAGE} AS runner
 
 ENV NODE_ENV=production
 ENV TRANSPORT=http
