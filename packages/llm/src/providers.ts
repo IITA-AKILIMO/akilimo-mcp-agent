@@ -3,7 +3,7 @@ import * as anthropic from "./anthropic.js";
 import * as ollama from "./ollama.js";
 import * as openai from "./openai.js";
 
-export type ProviderId = "ollama" | "openai" | "anthropic" | "gemini" | "deepseek" | "groq" | "mistral" | "openrouter" | "custom";
+export type ProviderId = "ollama" | "ollama-cloud" | "openai" | "anthropic" | "gemini" | "deepseek" | "groq" | "mistral" | "openrouter" | "custom";
 
 export interface ProviderInfo {
   id: ProviderId;
@@ -20,6 +20,7 @@ export interface ProviderInfo {
 
 export const PROVIDERS: ProviderInfo[] = [
   { id: "ollama", label: "Ollama (local)", api: "ollama", key: "none", preferred: [/^qwen3/, /^qwen2\.5(?!-coder)/, /^llama3\.1/, /^mistral/, /^llama3\.2/] },
+  { id: "ollama-cloud", label: "Ollama Cloud", api: "ollama", base: "https://ollama.com", key: "required", keyUrl: "https://ollama.com/settings/keys", preferred: [/^gpt-oss/, /^qwen3/, /^deepseek/, /^gemma/] },
   { id: "openai", label: "OpenAI", api: "openai", base: "https://api.openai.com/v1", key: "required", keyUrl: "https://platform.openai.com/api-keys", preferred: [/^gpt-4\.1-mini$/, /^gpt-4o-mini$/] },
   { id: "anthropic", label: "Anthropic (Claude)", api: "anthropic", base: "https://api.anthropic.com/v1", key: "required", keyUrl: "https://console.anthropic.com/settings/keys", preferred: [/^claude-sonnet/, /^claude-haiku/] },
   { id: "gemini", label: "Google Gemini", api: "openai", base: "https://generativelanguage.googleapis.com/v1beta/openai", key: "required", keyUrl: "https://aistudio.google.com/apikey", preferred: [/^gemini-[\d.]+-flash$/] },
@@ -56,7 +57,7 @@ export function pickDefaultModel(provider: ProviderInfo, models: string[]): stri
 }
 
 export async function listModels(provider: ResolvedProvider): Promise<string[]> {
-  if (provider.info.api === "ollama") return ollama.listToolModels(provider.base);
+  if (provider.info.api === "ollama") return ollama.listToolModels(provider.base, provider.key, provider.info.id === "ollama-cloud");
   const models = provider.info.api === "anthropic"
     ? await anthropic.listModels(endpointFor(provider))
     : await openai.listModels(endpointFor(provider));
@@ -64,7 +65,7 @@ export async function listModels(provider: ResolvedProvider): Promise<string[]> 
 }
 
 export function chat(provider: ResolvedProvider, model: string, messages: ChatMessage[], tools: ToolSpec[], signal?: AbortSignal): Promise<ChatMessage> {
-  if (provider.info.api === "ollama") return ollama.chat(provider.base, model, messages, tools, signal);
+  if (provider.info.api === "ollama") return ollama.chat(provider.base, provider.key, model, messages, tools, signal);
   if (provider.info.api === "anthropic") return anthropic.chat(endpointFor(provider), model, messages, tools, signal);
   return openai.chat(endpointFor(provider), model, messages, tools, signal);
 }

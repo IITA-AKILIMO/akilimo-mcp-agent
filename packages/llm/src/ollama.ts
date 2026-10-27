@@ -14,17 +14,27 @@ const json = async <T>(res: Response): Promise<T> => {
 // Models whose long reasoning pass we switch off: it makes each answer take minutes on a laptop GPU
 const thinkingModels = new Set<string>();
 
-// Installed models that support tool calling
-export async function listToolModels(base: string): Promise<string[]> {
-  const { models } = await json<{ models: { name: string }[] }>(await fetch(`${base}/api/tags`));
+// Ollama Cloud takes the API key as a bearer token; a local Ollama needs no headers
+const authHeaders = (key: string): Record<string, string> => (key ? { Authorization: `Bearer ${key}` } : {});
+
+// Models that support tool calling. `lenient` is for Ollama Cloud, whose /api/show is not
+// documented: a model it cannot describe is listed instead of dropped.
+export async function listToolModels(base: string, key = "", lenient = false): Promise<string[]> {
+  const headers = authHeaders(key);
+  const { models } = await json<{ models: { name: string }[] }>(await fetch(`${base}/api/tags`, { headers }));
   const checked = await Promise.all(models.map(async ({ name }) => {
-    const info = await json<{ capabilities?: string[] }>(await fetch(`${base}/api/show`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: name }),
-    }));
-    if (info.capabilities?.includes("thinking")) thinkingModels.add(name);
-    return info.capabilities?.includes("tools") ? name : null;
+    try {
+      const info = await json<{ capabilities?: string[] }>(await fetch(`${base}/api/show`, {
+        method: "POST",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ model: name }),
+      }));
+      if (info.capabilities?.includes("thinking")) thinkingModels.add(name);
+      return info.capabilities?.includes("tools") ? name : null;
+    } catch (error) {
+      if (lenient) return name;
+      throw error;
+    }
   }));
   return checked.filter((n): n is string => n !== null);
 }
@@ -32,10 +42,10 @@ export async function listToolModels(base: string): Promise<string[]> {
 // Reasoning models may inline their thinking; users only need the answer
 const stripThinking = (text: string) => text.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
 
-export async function chat(base: string, model: string, messages: ChatMessage[], tools: ToolSpec[], signal?: AbortSignal): Promise<ChatMessage> {
+export async function chat(base: string, key: string, model: string, messages: ChatMessage[], tools: ToolSpec[], signal?: AbortSignal): Promise<ChatMessage> {
   const res = await fetch(`${base}/api/chat`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { ...authHeaders(key), "Content-Type": "application/json" },
     body: JSON.stringify({
       model,
       messages,

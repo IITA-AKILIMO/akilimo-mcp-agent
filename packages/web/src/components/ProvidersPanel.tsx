@@ -11,6 +11,7 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 // What each provider is, and a brand-ish colour for its badge
 const META: Record<ProviderId, { tagline: string; color: string }> = {
   ollama: { tagline: 'Open models on your own hardware; no key needed', color: '#475569' },
+  'ollama-cloud': { tagline: 'Large open models hosted by Ollama; needs an API key', color: '#0f172a' },
   openai: { tagline: 'GPT models', color: '#10a37f' },
   anthropic: { tagline: 'Claude models', color: '#d97757' },
   gemini: { tagline: 'Google Gemini models', color: '#4285f4' },
