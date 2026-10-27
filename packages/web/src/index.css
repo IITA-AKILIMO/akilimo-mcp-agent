@@ -74,6 +74,25 @@
   flex-shrink: 0;
 }
 
+/* Switches and checkboxes use the Akilimo green instead of Bootstrap's blue */
+.form-check-input:checked {
+  background-color: var(--akilimo-green);
+  border-color: var(--akilimo-green);
+}
+
+[data-bs-theme='dark'] .form-check-input:checked {
+  background-color: var(--akilimo-accent);
+  border-color: var(--akilimo-accent);
+}
+
+/* Provider badge in the admin dialog: a coloured rounded square with the provider's initials */
+.provider-badge {
+  width: 2.5rem;
+  height: 2.5rem;
+  font-size: 0.85rem;
+  letter-spacing: 0.02em;
+}
+
 .event-payload {
   max-height: 12rem;
   font-size: 0.75rem;
