@@ -17,8 +17,8 @@ export default defineConfig({
         'express',
         /^zod(\/|$)/,
         'cors',
-        // Prisma runtime and the PostgreSQL driver stay in node_modules
-        /^@prisma\//,
+        // Drizzle and the PostgreSQL driver stay in node_modules
+        /^drizzle-orm(\/|$)/,
         'pg',
       ],
     },

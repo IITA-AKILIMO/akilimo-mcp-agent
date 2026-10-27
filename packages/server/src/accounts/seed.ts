@@ -1,6 +1,8 @@
 import { randomBytes } from "node:crypto";
+import { eq } from "drizzle-orm";
 import { z } from "zod/v4";
 import type { Db } from "../db/index.js";
+import { users } from "../db/schema.js";
 import { hashPassword, usernameFromEmail, UsernameSchema } from "./auth.js";
 
 export interface AdminSeed {
@@ -28,17 +30,17 @@ export async function seedAdmin(db: Db, seed: AdminSeed): Promise<string> {
     throw new Error(`Cannot seed admin: ${messages.join("; ")}`);
   }
   const { email, password, name, username } = parsed.data;
-  const existing = await db.user.findUnique({ where: { email }, select: { id: true, role: true, username: true } });
+  const [existing] = await db.select({ id: users.id, role: users.role, username: users.username })
+    .from(users).where(eq(users.email, email)).limit(1);
 
   if (!existing) {
-    const created = await db.user.create({
-      data: { email, username: await freeUsername(db, username, email), name, passwordHash: await hashPassword(password), role: "admin" },
-      select: { username: true },
-    });
-    return `Created admin account ${email} (username ${created.username})`;
+    const [created] = await db.insert(users).values({
+      email, username: await freeUsername(db, username, email), name, passwordHash: await hashPassword(password), role: "admin",
+    }).returning({ username: users.username });
+    return `Created admin account ${email} (username ${created!.username})`;
   }
   if (existing.role !== "admin") {
-    await db.user.update({ where: { id: existing.id }, data: { role: "admin" } });
+    await db.update(users).set({ role: "admin" }).where(eq(users.id, existing.id));
     return `Promoted existing account ${email} (username ${existing.username}) to admin (password unchanged)`;
   }
   return `Admin account ${email} (username ${existing.username}) already exists (password unchanged)`;
@@ -46,7 +48,7 @@ export async function seedAdmin(db: Db, seed: AdminSeed): Promise<string> {
 
 // ADMIN_USERNAME must be free; a username derived from the email gets a short suffix when taken
 async function freeUsername(db: Db, wanted: string | undefined, email: string): Promise<string> {
-  const isTaken = async (candidate: string) => (await db.user.count({ where: { username: candidate } })) > 0;
+  const isTaken = async (candidate: string) => (await db.$count(users, eq(users.username, candidate))) > 0;
   if (wanted) {
     if (await isTaken(wanted)) throw new Error(`Cannot seed admin: ADMIN_USERNAME "${wanted}" belongs to another account`);
     return wanted;

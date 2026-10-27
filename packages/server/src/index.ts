@@ -2,7 +2,7 @@ import { apiRouter } from "./accounts/routes.js";
 import { seedAdmin } from "./accounts/seed.js";
 import { AkilimoApiClient } from "./api/client.js";
 import { config } from "./config.js";
-import { connectDb } from "./db/index.js";
+import { closeDb, connectDb } from "./db/index.js";
 import { Registry } from "./gateway/registry.js";
 import { gatewayRouter } from "./gateway/routes.js";
 import { llmRouter } from "./llm/routes.js";
@@ -18,13 +18,27 @@ async function seedAdminCommand() {
   try {
     console.error(await seedAdmin(db, config.adminSeed));
   } finally {
-    await db.$disconnect();
+    await closeDb(db);
   }
+}
+
+// `--migrate`: apply pending database migrations (connecting does that), then exit
+async function migrateCommand() {
+  if (!config.database) {
+    console.error("No database configured (DB_HOST); nothing to migrate");
+    return;
+  }
+  await closeDb(await connectDb(config.database));
+  console.error("Database is up to date");
 }
 
 async function main() {
   if (process.argv.includes("--seed-admin")) {
     await seedAdminCommand();
+    return;
+  }
+  if (process.argv.includes("--migrate")) {
+    await migrateCommand();
     return;
   }
 

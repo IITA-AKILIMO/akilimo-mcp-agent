@@ -1,6 +1,8 @@
+import { and, asc, desc, eq, ne, or } from "drizzle-orm";
 import express, { type Request, type Response } from "express";
 import { z } from "zod/v4";
 import type { Db } from "../db/index.js";
+import { activity, conversations, messages, users } from "../db/schema.js";
 import {
   endSession, hashPassword, loadUser, rateLimit, requireAdmin, requireJson, requireUser, startSession, USER_SELECT,
   UsernameSchema, verifyPassword,
@@ -44,10 +46,14 @@ const ActivitySchema = z.object({
 // Compared against when the email is unknown, so sign-in takes the same time either way
 const DUMMY_HASH = "scrypt$16384$8$1$AAAAAAAAAAAAAAAAAAAAAA==$" + Buffer.alloc(64).toString("base64");
 
-// Prisma error code for a unique constraint violation
-const isUniqueViolation = (error: unknown) => (error as { code?: string } | null)?.code === "P2002";
+// PostgreSQL error 23505 (unique_violation); Drizzle wraps the driver's error as `cause`
+const isUniqueViolation = (error: unknown) =>
+  [error, (error as { cause?: unknown } | null)?.cause].some((e) => (e as { code?: string } | null)?.code === "23505");
 
-// The web client expects snake_case fields, as the API returned before Prisma
+// Ids are UUIDs in the database; anything else cannot match a row (and would be a query error)
+const isUuid = (value: string) => z.uuid().safeParse(value).success;
+
+// The web client expects snake_case fields
 const conversationJson = (c: { id: string; title: string; model: string | null; createdAt: Date; updatedAt: Date }) =>
   ({ id: c.id, title: c.title, model: c.model, created_at: c.createdAt, updated_at: c.updatedAt });
 
@@ -86,7 +92,8 @@ export function apiRouter(db: Db | null) {
   router.post("/auth/signup", authLimit, handle(async (req, res) => {
     const { name, email, username, password } = SignupSchema.parse(req.body);
     // Checked first so the message says which one is taken; the unique constraints still decide races
-    const taken = await db.user.findFirst({ where: { OR: [{ email }, { username }] }, select: { email: true } });
+    const [taken] = await db.select({ email: users.email }).from(users)
+      .where(or(eq(users.email, email), eq(users.username, username))).limit(1);
     if (taken) {
       res.status(409).json({
         error: taken.email === email
@@ -98,22 +105,20 @@ export function apiRouter(db: Db | null) {
     const passwordHash = await hashPassword(password);
     let user;
     try {
-      user = await db.user.create({ data: { email, username, name, passwordHash }, select: USER_SELECT });
+      [user] = await db.insert(users).values({ email, username, name, passwordHash }).returning(USER_SELECT);
     } catch (error) {
       if (!isUniqueViolation(error)) throw error;
       res.status(409).json({ error: "This email or username was just taken. Try again." });
       return;
     }
-    await startSession(db, req, res, user.id);
+    await startSession(db, req, res, user!.id);
     res.status(201).json({ user });
   }));
 
   router.post("/auth/login", authLimit, handle(async (req, res) => {
     const { login, password } = LoginSchema.parse({ ...req.body, login: req.body?.login ?? req.body?.email });
-    const user = await db.user.findUnique({
-      where: login.includes("@") ? { email: login } : { username: login },
-      select: { ...USER_SELECT, passwordHash: true },
-    });
+    const [user] = await db.select({ ...USER_SELECT, passwordHash: users.passwordHash }).from(users)
+      .where(login.includes("@") ? eq(users.email, login) : eq(users.username, login)).limit(1);
     const valid = await verifyPassword(password, user?.passwordHash ?? DUMMY_HASH);
     if (!user || !valid) {
       res.status(401).json({ error: "Email, username or password is incorrect" });
@@ -134,79 +139,80 @@ export function apiRouter(db: Db | null) {
 
   // ── Conversations ─────────────────────────────────────────────────────────
   router.get("/conversations", handle(async (req, res) => {
-    const conversations = await db.conversation.findMany({
-      where: { userId: req.user!.id },
-      orderBy: { updatedAt: "desc" },
-      take: 200,
-    });
-    res.json({ conversations: conversations.map(conversationJson) });
+    const rows = await db.select().from(conversations)
+      .where(eq(conversations.userId, req.user!.id)).orderBy(desc(conversations.updatedAt)).limit(200);
+    res.json({ conversations: rows.map(conversationJson) });
   }));
 
   router.post("/conversations", handle(async (req, res) => {
     const { title, model } = ConversationSchema.parse(req.body);
-    const conversation = await db.conversation.create({ data: { userId: req.user!.id, title, model: model ?? null } });
-    res.status(201).json(conversationJson(conversation));
+    const [conversation] = await db.insert(conversations).values({ userId: req.user!.id, title, model: model ?? null }).returning();
+    res.status(201).json(conversationJson(conversation!));
   }));
 
   router.get("/conversations/:id", handle(async (req, res) => {
-    const conversation = await db.conversation.findFirst({
-      where: { id: String(req.params.id), userId: req.user!.id },
-      include: { messages: { orderBy: { id: "asc" } } },
-    });
+    const id = String(req.params.id);
+    const [conversation] = isUuid(id)
+      ? await db.select().from(conversations).where(and(eq(conversations.id, id), eq(conversations.userId, req.user!.id))).limit(1)
+      : [];
     if (!conversation) {
       res.status(404).json({ error: "Conversation not found" });
       return;
     }
+    const history = await db.select().from(messages).where(eq(messages.conversationId, id)).orderBy(asc(messages.id));
     res.json({
       conversation: conversationJson(conversation),
-      messages: conversation.messages.map((m) => ({
+      messages: history.map((m) => ({
         role: m.role, content: m.content, tool_calls: m.toolCalls, tool_name: m.toolName, created_at: m.createdAt,
       })),
     });
   }));
 
   router.post("/conversations/:id/messages", handle(async (req, res) => {
-    const messages = z.array(MessageSchema).min(1).max(50).parse(req.body.messages);
+    const incoming = z.array(MessageSchema).min(1).max(50).parse(req.body.messages);
     const id = String(req.params.id);
-    const owned = await db.conversation.count({ where: { id, userId: req.user!.id } });
+    const owned = isUuid(id) && await db.$count(conversations, and(eq(conversations.id, id), eq(conversations.userId, req.user!.id)));
     if (!owned) {
       res.status(404).json({ error: "Conversation not found" });
       return;
     }
-    // Sequential inserts in one transaction keep the messages' order (ids) as sent
-    await db.$transaction([
-      ...messages.map((m) => db.message.create({
-        data: {
-          conversationId: id,
-          role: m.role,
-          content: m.content,
-          ...(m.tool_calls ? { toolCalls: m.tool_calls as object[] } : {}),
-          toolName: m.tool_name ?? null,
-        },
-      })),
-      db.conversation.update({ where: { id }, data: { updatedAt: new Date() } }),
-    ]);
+    // One multi-row insert in a transaction: ids follow the order sent, and the chat is touched too
+    await db.transaction(async (tx) => {
+      await tx.insert(messages).values(incoming.map((m) => ({
+        conversationId: id,
+        role: m.role,
+        content: m.content,
+        toolCalls: m.tool_calls ?? null,
+        toolName: m.tool_name ?? null,
+      })));
+      await tx.update(conversations).set({ updatedAt: new Date() }).where(eq(conversations.id, id));
+    });
     res.status(204).end();
   }));
 
   router.patch("/conversations/:id", handle(async (req, res) => {
     const { title } = ConversationSchema.pick({ title: true }).parse(req.body);
-    const { count } = await db.conversation.updateMany({
-      where: { id: String(req.params.id), userId: req.user!.id },
-      data: { title, updatedAt: new Date() },
-    });
-    res.status(count ? 204 : 404).end();
+    const id = String(req.params.id);
+    const updated = isUuid(id)
+      ? await db.update(conversations).set({ title, updatedAt: new Date() })
+        .where(and(eq(conversations.id, id), eq(conversations.userId, req.user!.id))).returning({ id: conversations.id })
+      : [];
+    res.status(updated.length ? 204 : 404).end();
   }));
 
   router.delete("/conversations/:id", handle(async (req, res) => {
-    const { count } = await db.conversation.deleteMany({ where: { id: String(req.params.id), userId: req.user!.id } });
-    res.status(count ? 204 : 404).end();
+    const id = String(req.params.id);
+    const deleted = isUuid(id)
+      ? await db.delete(conversations).where(and(eq(conversations.id, id), eq(conversations.userId, req.user!.id))).returning({ id: conversations.id })
+      : [];
+    res.status(deleted.length ? 204 : 404).end();
   }));
 
   // ── Activity ──────────────────────────────────────────────────────────────
   router.get("/activity", handle(async (req, res) => {
     const limit = Math.min(Number(req.query.limit) || 200, 1000);
-    const recent = await db.activity.findMany({ where: { userId: req.user!.id }, orderBy: { id: "desc" }, take: limit });
+    const recent = await db.select().from(activity)
+      .where(eq(activity.userId, req.user!.id)).orderBy(desc(activity.id)).limit(limit);
     res.json({
       activity: recent.reverse().map((a) => ({
         id: String(a.id), type: a.type, server: a.server, message: a.message, payload: a.payload, created_at: a.createdAt,
@@ -216,51 +222,46 @@ export function apiRouter(db: Db | null) {
 
   router.post("/activity", handle(async (req, res) => {
     const events = z.array(ActivitySchema).min(1).max(100).parse(req.body.events);
-    // createMany keeps insertion order
-    await db.activity.createMany({
-      data: events.map((e) => ({
-        userId: req.user!.id,
-        type: e.type,
-        server: e.server,
-        message: e.message,
-        ...(e.payload === undefined || e.payload === null ? {} : { payload: e.payload as object }),
-        createdAt: e.timestamp ? new Date(e.timestamp) : new Date(),
-      })),
-    });
+    // One multi-row insert keeps insertion order
+    await db.insert(activity).values(events.map((e) => ({
+      userId: req.user!.id,
+      type: e.type,
+      server: e.server,
+      message: e.message,
+      payload: e.payload ?? null,
+      createdAt: e.timestamp ? new Date(e.timestamp) : new Date(),
+    })));
     res.status(204).end();
   }));
 
   router.delete("/activity", handle(async (req, res) => {
-    await db.activity.deleteMany({ where: { userId: req.user!.id } });
+    await db.delete(activity).where(eq(activity.userId, req.user!.id));
     res.status(204).end();
   }));
 
   // ── Admin: users and roles ────────────────────────────────────────────────
   router.get("/admin/users", requireAdmin, handle(async (req, res) => {
-    const users = await db.user.findMany({
-      orderBy: { createdAt: "asc" },
-      select: { ...USER_SELECT, createdAt: true },
-    });
-    res.json({ users: users.map(({ createdAt, ...u }) => ({ ...u, created_at: createdAt })) });
+    const rows = await db.select({ ...USER_SELECT, createdAt: users.createdAt }).from(users).orderBy(asc(users.createdAt));
+    res.json({ users: rows.map(({ createdAt, ...u }) => ({ ...u, created_at: createdAt })) });
   }));
 
   router.patch("/admin/users/:id", requireAdmin, handle(async (req, res) => {
     const { role } = RoleSchema.parse(req.body);
     const id = String(req.params.id);
-    const target = await db.user.findUnique({ where: { id }, select: { role: true } });
+    const [target] = isUuid(id) ? await db.select({ role: users.role }).from(users).where(eq(users.id, id)).limit(1) : [];
     if (!target) {
       res.status(404).json({ error: "User not found" });
       return;
     }
     // Never leave the system without an admin (including an admin demoting themselves)
     if (target.role === "admin" && role !== "admin") {
-      const otherAdmins = await db.user.count({ where: { role: "admin", id: { not: id } } });
+      const otherAdmins = await db.$count(users, and(eq(users.role, "admin"), ne(users.id, id)));
       if (!otherAdmins) {
         res.status(409).json({ error: "This is the last admin; make someone else an admin first" });
         return;
       }
     }
-    await db.user.update({ where: { id }, data: { role } });
+    await db.update(users).set({ role }).where(eq(users.id, id));
     res.status(204).end();
   }));
 

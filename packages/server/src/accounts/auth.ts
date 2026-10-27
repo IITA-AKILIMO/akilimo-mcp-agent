@@ -1,9 +1,11 @@
 import { createHash, randomBytes, scrypt, timingSafeEqual, type ScryptOptions } from "node:crypto";
 import type { NextFunction, Request, Response } from "express";
+import { and, eq, gt } from "drizzle-orm";
 import { z } from "zod/v4";
 import type { Db } from "../db/index.js";
+import { sessions, users, type Role } from "../db/schema.js";
 
-export type Role = "user" | "admin";
+export type { Role };
 
 export interface User {
   id: string;
@@ -14,7 +16,7 @@ export interface User {
 }
 
 // The fields every API response and req.user carry
-export const USER_SELECT = { id: true, email: true, username: true, name: true, role: true } as const;
+export const USER_SELECT = { id: users.id, email: users.email, username: users.username, name: users.name, role: users.role };
 
 // Usernames never contain "@", so sign-in can tell them apart from emails
 export const UsernameSchema = z.string({ error: "Choose a username" }).trim().toLowerCase()
@@ -82,15 +84,17 @@ const cookieOptions = (req: Request) => ({
 
 export async function startSession(db: Db, req: Request, res: Response, userId: string): Promise<void> {
   const token = randomBytes(32).toString("base64url");
-  await db.session.create({
-    data: { tokenHash: sha256(token), userId, expiresAt: new Date(Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000) },
+  await db.insert(sessions).values({
+    tokenHash: sha256(token),
+    userId,
+    expiresAt: new Date(Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000),
   });
   res.cookie(SESSION_COOKIE, token, cookieOptions(req));
 }
 
 export async function endSession(db: Db, req: Request, res: Response): Promise<void> {
   const token = readCookie(req, SESSION_COOKIE);
-  if (token) await db.session.deleteMany({ where: { tokenHash: sha256(token) } });
+  if (token) await db.delete(sessions).where(eq(sessions.tokenHash, sha256(token)));
   res.clearCookie(SESSION_COOKIE, { ...cookieOptions(req), maxAge: undefined });
 }
 
@@ -99,11 +103,11 @@ export const loadUser = (db: Db) => async (req: Request, res: Response, next: Ne
   const token = readCookie(req, SESSION_COOKIE);
   if (token) {
     try {
-      const session = await db.session.findFirst({
-        where: { tokenHash: sha256(token), expiresAt: { gt: new Date() } },
-        select: { user: { select: USER_SELECT } },
-      });
-      req.user = session?.user;
+      const [user] = await db.select(USER_SELECT).from(sessions)
+        .innerJoin(users, eq(users.id, sessions.userId))
+        .where(and(eq(sessions.tokenHash, sha256(token)), gt(sessions.expiresAt, new Date())))
+        .limit(1);
+      req.user = user;
     } catch (error) {
       next(error);
       return;

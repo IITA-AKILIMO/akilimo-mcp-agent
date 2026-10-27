@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { databaseSettings } from "../prisma/settings.js";
+import { databaseSettings } from "./db/settings.js";
 
 // Local development: load the repo-root .env (pnpm runs scripts from packages/server).
 // Variables already set in the environment win; containers get theirs from compose.
@@ -32,7 +32,6 @@ export const config = {
       username: process.env.ADMIN_USERNAME || undefined,
     }
     : null,
-  // User accounts, saved chats and activity (HTTP mode): PostgreSQL from DB_*, shared with the
-  // Prisma CLI; DB_HOST unset = guests only
+  // User accounts, saved chats and activity (HTTP mode): PostgreSQL from DB_*; DB_HOST unset = guests only
   database: databaseSettings(),
 } as const;
