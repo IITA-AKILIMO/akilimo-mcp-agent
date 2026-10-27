@@ -2,17 +2,20 @@ import express, { type Request, type Response } from "express";
 import { z } from "zod/v4";
 import type { Db } from "../db/index.js";
 import {
-  endSession, hashPassword, loadUser, rateLimit, requireAdmin, requireJson, requireUser, startSession, verifyPassword,
+  endSession, hashPassword, loadUser, rateLimit, requireAdmin, requireJson, requireUser, startSession, USER_SELECT,
+  UsernameSchema, verifyPassword,
 } from "./auth.js";
 
 const SignupSchema = z.object({
   name: z.string().trim().min(1, "Enter your name").max(100),
   email: z.email("Enter a valid email address").trim().toLowerCase().max(254),
+  username: UsernameSchema,
   password: z.string().min(8, "Use at least 8 characters").max(200),
 });
 
+// `login` is an email or a username; `email` is still accepted from older clients
 const LoginSchema = z.object({
-  email: z.string().trim().toLowerCase(),
+  login: z.string().trim().toLowerCase().min(1, "Enter your email or username"),
   password: z.string(),
 });
 
@@ -81,14 +84,24 @@ export function apiRouter(db: Db | null) {
   });
 
   router.post("/auth/signup", authLimit, handle(async (req, res) => {
-    const { name, email, password } = SignupSchema.parse(req.body);
+    const { name, email, username, password } = SignupSchema.parse(req.body);
+    // Checked first so the message says which one is taken; the unique constraints still decide races
+    const taken = await db.user.findFirst({ where: { OR: [{ email }, { username }] }, select: { email: true } });
+    if (taken) {
+      res.status(409).json({
+        error: taken.email === email
+          ? "An account with this email already exists. Sign in instead."
+          : "This username is taken. Choose another one.",
+      });
+      return;
+    }
     const passwordHash = await hashPassword(password);
     let user;
     try {
-      user = await db.user.create({ data: { email, name, passwordHash }, select: { id: true, email: true, name: true, role: true } });
+      user = await db.user.create({ data: { email, username, name, passwordHash }, select: USER_SELECT });
     } catch (error) {
       if (!isUniqueViolation(error)) throw error;
-      res.status(409).json({ error: "An account with this email already exists. Sign in instead." });
+      res.status(409).json({ error: "This email or username was just taken. Try again." });
       return;
     }
     await startSession(db, req, res, user.id);
@@ -96,15 +109,19 @@ export function apiRouter(db: Db | null) {
   }));
 
   router.post("/auth/login", authLimit, handle(async (req, res) => {
-    const { email, password } = LoginSchema.parse(req.body);
-    const user = await db.user.findUnique({ where: { email }, select: { id: true, name: true, role: true, passwordHash: true } });
+    const { login, password } = LoginSchema.parse({ ...req.body, login: req.body?.login ?? req.body?.email });
+    const user = await db.user.findUnique({
+      where: login.includes("@") ? { email: login } : { username: login },
+      select: { ...USER_SELECT, passwordHash: true },
+    });
     const valid = await verifyPassword(password, user?.passwordHash ?? DUMMY_HASH);
     if (!user || !valid) {
-      res.status(401).json({ error: "Email or password is incorrect" });
+      res.status(401).json({ error: "Email, username or password is incorrect" });
       return;
     }
     await startSession(db, req, res, user.id);
-    res.json({ user: { id: user.id, email, name: user.name, role: user.role } });
+    const { passwordHash: _, ...publicUser } = user;
+    res.json({ user: publicUser });
   }));
 
   router.post("/auth/logout", handle(async (req, res) => {
@@ -222,9 +239,9 @@ export function apiRouter(db: Db | null) {
   router.get("/admin/users", requireAdmin, handle(async (req, res) => {
     const users = await db.user.findMany({
       orderBy: { createdAt: "asc" },
-      select: { id: true, email: true, name: true, role: true, createdAt: true },
+      select: { ...USER_SELECT, createdAt: true },
     });
-    res.json({ users: users.map((u) => ({ id: u.id, email: u.email, name: u.name, role: u.role, created_at: u.createdAt })) });
+    res.json({ users: users.map(({ createdAt, ...u }) => ({ ...u, created_at: createdAt })) });
   }));
 
   router.patch("/admin/users/:id", requireAdmin, handle(async (req, res) => {

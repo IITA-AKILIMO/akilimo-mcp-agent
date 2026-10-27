@@ -22,9 +22,15 @@ export const config = {
   allowedOrigins: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:5173'],
   // MCP gateway (HTTP mode) registry file; only signed-in admins can change it
   gatewayDataFile: process.env.GATEWAY_DATA_FILE || path.resolve("data/mcp-servers.json"),
-  // Admin account ensured on start and by `--seed-admin` (both need ADMIN_EMAIL and ADMIN_PASSWORD)
+  // Admin account ensured on start and by `--seed-admin` (both need ADMIN_EMAIL and ADMIN_PASSWORD;
+  // without ADMIN_USERNAME the username comes from the email)
   adminSeed: process.env.ADMIN_EMAIL && process.env.ADMIN_PASSWORD
-    ? { email: process.env.ADMIN_EMAIL, password: process.env.ADMIN_PASSWORD, name: process.env.ADMIN_NAME || "Administrator" }
+    ? {
+      email: process.env.ADMIN_EMAIL,
+      password: process.env.ADMIN_PASSWORD,
+      name: process.env.ADMIN_NAME || "Administrator",
+      username: process.env.ADMIN_USERNAME || undefined,
+    }
     : null,
   // User accounts, saved chats and activity (HTTP mode): PostgreSQL from DB_*, shared with the
   // Prisma CLI; DB_HOST unset = guests only

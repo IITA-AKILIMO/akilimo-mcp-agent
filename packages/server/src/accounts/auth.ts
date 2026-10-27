@@ -1,5 +1,6 @@
 import { createHash, randomBytes, scrypt, timingSafeEqual, type ScryptOptions } from "node:crypto";
 import type { NextFunction, Request, Response } from "express";
+import { z } from "zod/v4";
 import type { Db } from "../db/index.js";
 
 export type Role = "user" | "admin";
@@ -7,9 +8,25 @@ export type Role = "user" | "admin";
 export interface User {
   id: string;
   email: string;
+  username: string;
   name: string;
   role: Role;
 }
+
+// The fields every API response and req.user carry
+export const USER_SELECT = { id: true, email: true, username: true, name: true, role: true } as const;
+
+// Usernames never contain "@", so sign-in can tell them apart from emails
+export const UsernameSchema = z.string({ error: "Choose a username" }).trim().toLowerCase()
+  .min(3, "Use at least 3 characters for the username")
+  .max(30, "Use at most 30 characters for the username")
+  .regex(/^[a-z0-9._-]+$/, "Usernames may only contain letters, digits, dots, underscores and hyphens");
+
+// Same rules as the add_username migration's backfill: the email's local part, cleaned and padded
+export const usernameFromEmail = (email: string) => {
+  const cleaned = (email.split("@")[0] ?? "").toLowerCase().replace(/[^a-z0-9._-]/g, "").slice(0, 30);
+  return cleaned.length >= 3 ? cleaned : `${cleaned}user`;
+};
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -84,7 +101,7 @@ export const loadUser = (db: Db) => async (req: Request, res: Response, next: Ne
     try {
       const session = await db.session.findFirst({
         where: { tokenHash: sha256(token), expiresAt: { gt: new Date() } },
-        select: { user: { select: { id: true, email: true, name: true, role: true } } },
+        select: { user: { select: USER_SELECT } },
       });
       req.user = session?.user;
     } catch (error) {

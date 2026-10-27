@@ -21,6 +21,8 @@ enum Role {
 model User {
   id            String         @id @default(uuid()) @db.Uuid
   email         String         @unique
+  // Lowercase, 3-30 of a-z 0-9 . _ - (validated in the API); sign-in accepts it instead of the email
+  username      String         @unique
   name          String
   passwordHash  String         @map("password_hash")
   role          Role           @default(user)
