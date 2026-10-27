@@ -53,7 +53,14 @@ Every connection, tool call and response appears under **Activity**.
 #### Accounts, saved chats and activity
 People can use the UI as guests, or **Sign in / Create account** (top bar) to keep their chat history and activity. Signed-in users get a **History** button in the chat to reopen or delete past conversations; signing out clears the screen.
 
-This needs PostgreSQL: set `DATABASE_URL` (e.g. `postgres://akilimo:<password>@localhost:5432/akilimo`) for the MCP server. Tables are created on start. Without `DATABASE_URL` the UI is guest-only. With docker compose the bundled `db` service is used; set `POSTGRES_PASSWORD` in `.env`.
+This needs a database, **PostgreSQL or SQLite**, set with Laravel-style variables in `.env`:
+
+| | Variables |
+| :--- | :--- |
+| PostgreSQL | `DB_CONNECTION=pgsql`, `DB_HOST`, `DB_PORT` (default 5432), `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` |
+| SQLite | `DB_CONNECTION=sqlite`, `DB_DATABASE` = database file (e.g. `data/akilimo.db`) |
+
+Without `DB_CONNECTION` (or `DB_HOST`) the UI is guest-only. The schema is managed with **Prisma**: `pnpm dev:server:http` and the Docker image apply pending migrations automatically; run them by hand with `pnpm db:migrate`. With docker compose, `DB_HOST=db` uses the bundled PostgreSQL service, which is created from the same `DB_*` values.
 
 Passwords are stored as salted scrypt hashes and sessions as hashed tokens in an HttpOnly cookie. There is no email verification or password reset yet. Chats can contain farm details and locations, so treat the database as personal data under IITA's data guidelines (access, backups, retention).
 
@@ -64,6 +71,17 @@ The server list is shared by everyone using the UI and stored by the MCP gateway
 3. Add a server with its **streamable HTTP** endpoint URL and how its key is sent (none, `Authorization: Bearer`, or a custom header such as `X-API-Key`). The gateway calls the URL, so it works even if the server does not allow browser requests, and internal addresses (e.g. `http://akilimo-mcp:3000/mcp`) are allowed.
 
 Keys themselves are entered per user in the server panel and remembered in that browser only; the gateway forwards them per request and never stores them.
+
+#### Example: Weather MCP server
+[mcp_weather_server](https://github.com/isdaniel/mcp_weather_server) adds current weather, forecasts, air quality and time-zone tools from the free Open-Meteo API (no key).
+
+- **Docker**: the `weather-mcp` compose service (`docker/weather-mcp/Dockerfile`) runs it on the internal network. Add it under **Manage** with id `weather`, URL `http://weather-mcp:8080/mcp`, no key.
+- **Locally** (needs Python and [uv](https://docs.astral.sh/uv/)), then add it under **Manage** with URL `http://127.0.0.1:8090/mcp`:
+
+  ```bash
+  uvx --from "mcp_weather_server==0.6.1" --with "mcp[cli]==1.30.0" python -m mcp_weather_server --mode streamable-http --stateless --host 127.0.0.1 --port 8090
+  ```
+ Version 0.6.1 does not declare an upper bound on the `mcp` SDK and fails to start with `mcp` 2.x (`cannot import name 'McpError'`), so keep the `mcp[cli]==1.30.0` pin. On Windows with a pyenv `uvx` shim, avoid `<` in version specifiers (cmd treats it as a redirect).
 
 ### Step 3: Using it with Claude Desktop
 To make the actual Claude app use these tools:

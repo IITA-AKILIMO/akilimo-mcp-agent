@@ -15,7 +15,7 @@ A pnpm monorepo (TypeScript) for IITA's AKILIMO cassava advisory tools:
 
 | Area | State |
 | :--- | :--- |
-| Branch | `main`, **12 commits ahead of `origin/main`, nothing pushed**; working tree clean |
+| Branch | `main`, **17 commits ahead of `origin/main`, nothing pushed**; working tree clean |
 | Builds | `pnpm build` passes; the server passes a strict `tsc` check; `pnpm install --frozen-lockfile` passes |
 | Tests | No automated test suite exists. Everything below was verified by hand (scripts and browser) |
 
@@ -23,7 +23,12 @@ Latest commits, newest first:
 
 | Commit | Content |
 | :--- | :--- |
-| docs commit (this file) | README, connection guide, `AGENTS.md`, this handover |
+| docs commit (this file) | README, `AGENTS.md`, this handover (Prisma, `DB_*`, weather server) |
+| `09eecc5` | Docker: migrations at start, `DB_*` in compose, `weather-mcp` service, `.env.example` |
+| `b077b11` | Server: Prisma 7 with PostgreSQL or SQLite, `DB_*` settings, `db:generate` / `db:migrate` |
+| `fdd4cdc` | Chat: no agronomic advice that is not from AKILIMO tools |
+| `f0b5e4b` | Gateway: survive clients disconnecting mid-stream (was a server crash) |
+| `7fc29f8` | Docs: chat, gateway, accounts; first version of this handover |
 | `1f0fa01` | Compose: PostgreSQL `db` service, gateway volume, Ollama for the web UI, `.env.example` |
 | `f1ebeaa` | Web: chat mode, MCP server manager, accounts UI, `/gateway` `/api` `/proxy/ollama` proxies |
 | `94aa9e3` | Server: MCP gateway (`/gateway`) and accounts API (`/api`, PostgreSQL) |
@@ -44,7 +49,11 @@ Latest commits, newest first:
 | MCP gateway: registry, admin API, proxy | `server/src/gateway/` | Add, edit, remove, validation, 401/404/409, key forwarding, Akilimo 2.0 401 passthrough |
 | Server manager UI | `ServerManager.tsx`, `ServerPanel.tsx` | Browser: unlock, add, connect, edit, remove |
 | Accounts, saved chats, activity | `server/src/accounts/`, `server/src/db/`, `web/src/account/` | API script (isolation, rate limit, CSRF guard, hashed storage) and browser round trip |
+| Prisma 7 with PostgreSQL **or** SQLite (`DB_CONNECTION`), migrations per database type | `server/prisma/`, `prisma.config.ts`, `scripts/migrate.mjs` | Full API script passed on both after `db:migrate`; repeat migrate = no-op; unmigrated DB refused at start; Docker image not built |
 | Prefill buttons and map picker (country via Nominatim) | `web/src/mcp/presets.ts`, `MapPicker.tsx` | Browser |
+| Weather MCP server (`mcp_weather_server` 0.6.1, Open-Meteo) registered as `weather` | `uvx` locally (README); `weather-mcp` compose service for Docker | Locally through the gateway: 8 tools, live Ibadan weather; chat uses it unprompted. Docker image not built |
+| Gateway survives clients disconnecting mid-stream | `server/src/gateway/routes.ts` (`pipeline`) | Regression script: old build crashed on the first disconnect, fixed build survived three |
+| Chat refuses its own agronomic judgement (weather is context only) | system prompt in `web/src/llm/agent.ts` | Ibadan planting question answered correctly after adding an explicit example; other phrasings not tested |
 
 ## 4. Decisions made by the user (do not reverse without asking)
 
@@ -53,7 +62,7 @@ Latest commits, newest first:
 3. **Chat is the default mode**, Advanced is the alternative. The LLM is local **Ollama** (data stays on the user's machine).
 4. **MCP servers are managed through a shared gateway** on the backend, with an admin token. It is not per browser.
 5. **Upstream keys are remembered in the browser** (localStorage), never stored on the server.
-6. **Accounts**: email + password, **PostgreSQL**, and **guests can still use everything** (nothing is saved for them).
+6. **Accounts**: email + password, **guests can still use everything** (nothing is saved for them). Database: **PostgreSQL or SQLite**, schema and migrations managed by **Prisma**, configured with individual Laravel-style `DB_*` values (no `DATABASE_URL`).
 7. Bootstrap (not Tailwind), with a light/dark toggle.
 8. No `network_mode: host` in compose.
 
@@ -61,6 +70,8 @@ Latest commits, newest first:
 
 - **API quirks** (`new-akilimo-api`): its validation rules name crop prices `unit_price_maize_1`, but the DTOs read `unit_price_maize1`, so follow the DTOs. The R compute service fails with "subscript out of bounds" on nulls, yield 0 or unknown produce types, so schema defaults copy the mobile app (`use_case` `FR`, `"NA"` instead of null, yield class 11.25). Price lists contain placeholder rows (`-1`, `0`, negative), which must be skipped.
 - **Real `use_case` codes** seen in data: `FR`, `CIS`, `CIM`. `CASSAVA` exists only in API tests.
+- **Small local models also give their own advice** (e.g. "not a good week to plant" from a weather reading). A general rule in the prompt was not enough; an explicit good/bad example at the top of the system prompt fixed the tested case. Keep the rule first and test other phrasings.
+- **Weather server dependency**: `mcp_weather_server` 0.6.1 crashes with the `mcp` 2.x SDK (`McpError` was renamed); pin `mcp[cli]==1.30.0`. The `weather-mcp` compose service (`docker/weather-mcp/Dockerfile`) installs both pinned versions. **Its image has not been built or run**: the user builds it; an earlier unpinned build exited at start for the reason above. Registries are only seeded on first start, so in Docker add it via Manage (`http://weather-mcp:8080/mcp`).
 - **Small local models guess when data is truncated.** Keep tool results compact; the system prompt forbids facts not found in tool results.
 - **`think: false`** is sent to Ollama models with the thinking capability (otherwise answers take minutes). The native `/api/chat` is used so `num_ctx` can be 8192.
 - **CORS**: Akilimo 2.0 and Ollama reject browser origins. The web app reaches everything through same-origin paths (`/gateway`, `/api`, `/proxy/ollama`), via Vite in dev and nginx in Docker. Ollama proxies drop `Origin`.
@@ -78,13 +89,14 @@ pnpm dev:server:http   # server on :3001 (reads repo-root .env)
 pnpm dev:web           # UI on :5173, proxies /gateway, /api, /proxy/ollama
 ```
 
-Relevant `.env` settings (see `.env.example`): `AKILIMO_API_BASE_URL`, `GATEWAY_ADMIN_TOKEN` (enables server editing), `DATABASE_URL` (enables accounts). Docker additionally needs `POSTGRES_PASSWORD` and `WEBUI_SECRET_KEY`. The user's own `.env` had a malformed first line (a literal `\n` joining two variables); they were told, but it was not edited because it holds secrets.
+Relevant `.env` settings (see `.env.example`): `AKILIMO_API_BASE_URL`, `GATEWAY_ADMIN_TOKEN` (enables server editing), `DB_CONNECTION` (`pgsql` or `sqlite`) with `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` (enables accounts; for SQLite `DB_DATABASE` is the file). Docker additionally needs the `DB_*` values (compose requires them; `DB_HOST=db` for the bundled PostgreSQL) and `WEBUI_SECRET_KEY`. The user does not use `DATABASE_URL`; it is not supported. The user's own `.env` had a malformed first line (a literal `\n` joining two variables); they were told, but it was not edited because it holds secrets.
 
 ## 7. Open items and suggested next steps
 
 1. **Push** `main` to `origin` once the user agrees (12 commits, see section 2).
 2. **Docker images have not been built** in this session (`docker compose up -d --build`), so the nginx template, the gateway volume and the `db` service are unverified at runtime. `docker compose config` passes.
 3. **Accounts**: no email verification, password reset, account deletion or data export. The rate limiter is in memory only (it resets on restart and is per instance).
+4. **Docker with SQLite**: compose requires the PostgreSQL `DB_*` values (the user's `:?` pattern) and always starts the bundled `db`; running the container on SQLite needs a compose override. Locally, SQLite works with just `DB_CONNECTION=sqlite`. The server and weather images with the Prisma changes have not been built (the user builds them).
 4. **Data protection**: chats can contain farm locations and personal details; agree on retention, backups and access with IITA IT Operations & Information Security.
 5. **No automated tests.** Good first candidates: shared schema vs the API test payload, gateway routes, and accounts routes (the manual scripts in section 3 show what to cover).
 6. **A full compute conversation through chat** (ending in `compute_recommendations`) has not been run, because it writes to the production API. Test against a local `new-akilimo-api` if possible.
@@ -97,4 +109,5 @@ Relevant `.env` settings (see `.env.example`): `AKILIMO_API_BASE_URL`, `GATEWAY_
 
 - Throwaway PostgreSQL container **`akilimo-test-pg`** (WSL Docker, `127.0.0.1:55432`, `--rm`), holding only a test account. Remove it with `wsl -e docker stop akilimo-test-pg`.
 - A local dev server on port 3001, started with a throwaway admin token and the test database.
-- Registry file `packages/server/data/mcp-servers.json` (gitignored; contains the two default servers).
+- Registry file `packages/server/data/mcp-servers.json` (gitignored; contains the two default servers plus `weather`).
+- The weather MCP server running via `uvx` on `127.0.0.1:8090` (background process from this session).
