@@ -57,9 +57,9 @@ People can use the UI as guests, or **Sign in / Create account** (top bar) to ke
 
 This needs **PostgreSQL**, set with Laravel-style variables in `.env`: `DB_HOST`, `DB_PORT` (default 5432), `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD`. Without `DB_HOST` the UI is guest-only.
 
-The schema is managed with **Prisma** (`packages/server/prisma/schema.prisma`): `pnpm dev:server:http` and the Docker image apply pending migrations automatically; run them by hand with `pnpm db:migrate`. With docker compose, `DB_HOST=db` uses the bundled PostgreSQL service, which is created from the same `DB_*` values.
+The schema is managed with **Drizzle ORM** (`packages/server/src/db/schema.ts`; plain npm packages, no engine binaries are downloaded). The server applies pending migrations from `packages/server/drizzle/` itself whenever it connects, so `pnpm dev:server:http` and the Docker image need no separate migration step; run them by hand with `pnpm db:migrate`. With docker compose, `DB_HOST=db` uses the bundled PostgreSQL service, which is created from the same `DB_*` values.
 
-To add a table or column: edit `schema.prisma`, run `npx prisma migrate dev --name <change>` in `packages/server` against a development database, and commit the schema together with the new folder under `prisma/migrations/`.
+To add a table or column: edit `schema.ts`, run `pnpm db:generate` (drizzle-kit compares the schema with the last migration's snapshot; no database needed), review the new SQL file, and commit it together with the `drizzle/meta/` changes. Never edit a migration that has been applied elsewhere. Databases created by the earlier Prisma setup are adopted automatically (the baseline migration skips what exists); their old `_prisma_migrations` table is no longer used and can be dropped.
 
 Passwords are stored as salted scrypt hashes and sessions as hashed tokens in an HttpOnly cookie. There is no email verification or password reset yet. Chats can contain farm details and locations, so treat the database as personal data under IITA's data guidelines (access, backups, retention).
 
