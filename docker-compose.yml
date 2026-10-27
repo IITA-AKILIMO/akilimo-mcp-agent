@@ -19,8 +19,14 @@ services:
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173}
       # Required to add, edit or remove MCP servers in the web UI; unset = read-only registry
       GATEWAY_ADMIN_TOKEN: ${GATEWAY_ADMIN_TOKEN:-}
-      # Accounts, saved chats and activity; override DATABASE_URL to use an external database
-      DATABASE_URL: ${DATABASE_URL:-postgres://akilimo:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is not set}@db:5432/akilimo}
+      # Accounts, saved chats and activity. Migrations run at container start (Prisma).
+      # DB_HOST=db uses the bundled db service; point it at another host for an external database
+      DB_CONNECTION: ${DB_CONNECTION:-pgsql}
+      DB_HOST: ${DB_HOST:?DB_HOST must be set}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_DATABASE: ${DB_DATABASE:?DB_DATABASE must be set}
+      DB_USERNAME: ${DB_USERNAME:?DB_USERNAME must be set}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
     volumes:
       - mcp-gateway:/app/data
     depends_on:
@@ -31,17 +37,30 @@ services:
       - dokploy-network
       - internal
 
+  # Weather MCP server (Open-Meteo, no key). Internal network only; register it in the web UI
+  # (Manage) as id "weather", URL http://weather-mcp:8080/mcp, no key.
+  weather-mcp:
+    build:
+      context: docker/weather-mcp
+    container_name: weather-mcp
+    hostname: weather-mcp
+    restart: always
+    networks:
+      - internal
+
   db:
     image: postgres:17-alpine
     container_name: akilimo-db
+    # Created from the same DB_* values the server uses (they only take effect on first start,
+    # when the data volume is empty)
     environment:
-      POSTGRES_USER: akilimo
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is not set}
-      POSTGRES_DB: akilimo
+      POSTGRES_USER: ${DB_USERNAME:?DB_USERNAME must be set}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
+      POSTGRES_DB: ${DB_DATABASE:?DB_DATABASE must be set}
     volumes:
       - akilimo-db:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U akilimo -d akilimo"]
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 5s
       timeout: 5s
       retries: 10

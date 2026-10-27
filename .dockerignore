@@ -1,5 +1,8 @@
 **/node_modules
 **/dist
+# Local runtime data (gateway registry, SQLite database) and generated Prisma clients
+packages/server/data
+packages/server/src/generated
 .git
 .env
 .gitignore

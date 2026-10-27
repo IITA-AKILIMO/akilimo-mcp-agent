@@ -10,6 +10,9 @@ RUN corepack enable
 
 WORKDIR /app
 
+# Fallback toolchain for building better-sqlite3 (SQLite driver) when no prebuilt binary matches
+RUN apk add --no-cache python3 make g++
+
 # Copy workspace configuration and package manifests for layer caching
 # (the web manifest is needed for the frozen lockfile check, its source is not)
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
@@ -36,13 +39,21 @@ FROM node:24-alpine AS runner
 ENV NODE_ENV=production
 ENV TRANSPORT=http
 ENV PORT=3000
-# MCP gateway registry; mount a volume on /app/data to keep it across rebuilds
+# MCP gateway registry (and the SQLite database, if DB_CONNECTION=sqlite); mount a volume on
+# /app/data to keep them across rebuilds
 ENV GATEWAY_DATA_FILE=/app/data/mcp-servers.json
+
+# Prisma's migration engine needs OpenSSL on Alpine
+RUN apk add --no-cache openssl
 
 WORKDIR /app
 
 COPY --from=builder --chown=node:node /out/node_modules ./node_modules
 COPY --from=builder --chown=node:node /app/packages/server/dist ./dist
+# Schemas, migrations and config for `prisma migrate deploy` at start-up
+COPY --from=builder --chown=node:node /app/packages/server/prisma ./prisma
+COPY --from=builder --chown=node:node /app/packages/server/prisma.config.ts ./prisma.config.ts
+COPY --from=builder --chown=node:node /app/packages/server/scripts ./scripts
 RUN mkdir -p /app/data && chown node:node /app/data
 
 USER node
@@ -52,4 +63,5 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD wget -qO- "http://127.0.0.1:${PORT}/health" > /dev/null || exit 1
 
-CMD ["node", "dist/index.cjs"]
+# Apply pending migrations for the configured database (skipped when none), then start
+CMD ["sh", "-c", "node scripts/migrate.mjs && exec node dist/index.cjs"]
