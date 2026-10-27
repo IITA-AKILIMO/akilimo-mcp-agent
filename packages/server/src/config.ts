@@ -12,7 +12,7 @@ for (const file of [path.resolve(".env"), path.resolve("../../.env")]) {
 }
 
 export const config = {
-  apiBaseUrl: process.env.AKILIMO_API_BASE_URL || "http://localhost:8600",
+  apiBaseUrl: process.env.AKILIMO_API_BASE_URL || "https://api.akilimo.org",
   apiKey: process.env.AKILIMO_API_KEY || "",
   deviceToken: process.env.AKILIMO_DEVICE_TOKEN || "",
   // "http" serves streamable HTTP (/mcp) and SSE (/sse); TRANSPORT=sse is kept for existing setups
