@@ -17,8 +17,10 @@ services:
       AKILIMO_API_KEY: ${AKILIMO_API_KEY}
       AKILIMO_DEVICE_TOKEN: ${AKILIMO_DEVICE_TOKEN:-}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173}
-      # Required to add, edit or remove MCP servers in the web UI; unset = read-only registry
-      GATEWAY_ADMIN_TOKEN: ${GATEWAY_ADMIN_TOKEN:-}
+      # Optional admin account ensured at start (admins manage MCP servers and user roles)
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      ADMIN_NAME: ${ADMIN_NAME:-Administrator}
       # Accounts, saved chats and activity. Migrations run at container start (Prisma).
       # DB_HOST=db uses the bundled db service; point it at another host for an external database
       DB_HOST: ${DB_HOST:?DB_HOST must be set}
