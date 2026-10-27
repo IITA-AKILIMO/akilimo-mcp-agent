@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite-node src/index.ts",
-    "dev:http": "node --watch-path=src --watch-path=../shared/src node_modules/vite-node/vite-node.mjs src/index.ts -- --http",
+    "dev:http": "node --watch-path=src --watch-path=../shared/src --watch-path=../llm/src node_modules/vite-node/vite-node.mjs src/index.ts -- --http",
     "build": "vite build",
     "start": "node dist/index.cjs",
     "db:generate": "drizzle-kit generate",

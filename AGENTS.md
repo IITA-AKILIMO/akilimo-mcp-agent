@@ -13,7 +13,7 @@ Run from the repo root (pnpm workspace, Node 20+):
 ```bash
 pnpm install
 pnpm dev:server      # MCP server over stdio (vite-node packages/server/src/index.ts)
-pnpm dev:server:http # MCP server over HTTP on :3001 (streamable HTTP /mcp, SSE /sse); restarts on changes in server/shared src
+pnpm dev:server:http # MCP server over HTTP on :3001 (streamable HTTP /mcp, SSE /sse); restarts on changes in server/shared/llm src
 pnpm dev:web         # web UI at http://localhost:5173; proxies to the server above
 pnpm build           # builds all @akilimo/* packages
 pnpm start           # node packages/server/dist/index.cjs
