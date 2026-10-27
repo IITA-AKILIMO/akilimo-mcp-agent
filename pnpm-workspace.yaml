@@ -2,3 +2,8 @@ packages:
   - 'packages/*'
 allowBuilds:
   esbuild: true
+  # Prisma CLI downloads its schema engine (used by `prisma migrate`) for the current platform
+  prisma: true
+  '@prisma/engines': true
+  # Native SQLite driver used by @prisma/adapter-better-sqlite3 (prebuilt binary or local build)
+  better-sqlite3: true

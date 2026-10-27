@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
+import { databaseSettings } from "../prisma/settings.js";
 
 // Local development: load the repo-root .env (pnpm runs scripts from packages/server).
 // Variables already set in the environment win; containers get theirs from compose.
@@ -22,6 +23,7 @@ export const config = {
   // MCP gateway (HTTP mode): registry file, and the token required to change it (unset = read-only)
   gatewayDataFile: process.env.GATEWAY_DATA_FILE || path.resolve("data/mcp-servers.json"),
   gatewayAdminToken: process.env.GATEWAY_ADMIN_TOKEN || "",
-  // User accounts, saved chats and activity (HTTP mode); unset = guests only
-  databaseUrl: process.env.DATABASE_URL || "",
+  // User accounts, saved chats and activity (HTTP mode): DB_CONNECTION=pgsql|sqlite and DB_*,
+  // shared with the Prisma CLI; none set = guests only
+  database: databaseSettings(),
 } as const;

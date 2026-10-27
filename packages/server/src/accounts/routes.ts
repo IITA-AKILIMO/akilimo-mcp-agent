@@ -39,6 +39,13 @@ const ActivitySchema = z.object({
 // Compared against when the email is unknown, so sign-in takes the same time either way
 const DUMMY_HASH = "scrypt$16384$8$1$AAAAAAAAAAAAAAAAAAAAAA==$" + Buffer.alloc(64).toString("base64");
 
+// Prisma error code for a unique constraint violation (same in both generated clients)
+const isUniqueViolation = (error: unknown) => (error as { code?: string } | null)?.code === "P2002";
+
+// The web client expects snake_case fields, as the API returned before Prisma
+const conversationJson = (c: { id: string; title: string; model: string | null; createdAt: Date; updatedAt: Date }) =>
+  ({ id: c.id, title: c.title, model: c.model, created_at: c.createdAt, updated_at: c.updatedAt });
+
 const sendError = (res: Response, error: unknown) => {
   if (error instanceof z.ZodError) {
     res.status(400).json({ error: error.issues.map((i) => i.message).join("; ") });
@@ -56,7 +63,7 @@ export function apiRouter(db: Db | null) {
   router.use(express.json({ limit: "1mb" }));
 
   if (!db) {
-    // Accounts need DATABASE_URL; the UI then offers guest use only
+    // Accounts need a database (DB_CONNECTION / DB_*); the UI then offers guest use only
     router.get("/auth/status", (req, res) => res.json({ enabled: false, user: null }));
     router.use((req, res) => res.status(503).json({ error: "Accounts are not enabled on this server" }));
     return router;
@@ -74,26 +81,22 @@ export function apiRouter(db: Db | null) {
   router.post("/auth/signup", authLimit, handle(async (req, res) => {
     const { name, email, password } = SignupSchema.parse(req.body);
     const passwordHash = await hashPassword(password);
-    const { rows } = await db.query<{ id: string }>(
-      "INSERT INTO users (email, name, password_hash) VALUES ($1, $2, $3) ON CONFLICT (email) DO NOTHING RETURNING id",
-      [email, name, passwordHash],
-    );
-    if (!rows[0]) {
+    let user;
+    try {
+      user = await db.user.create({ data: { email, name, passwordHash }, select: { id: true, email: true, name: true } });
+    } catch (error) {
+      if (!isUniqueViolation(error)) throw error;
       res.status(409).json({ error: "An account with this email already exists. Sign in instead." });
       return;
     }
-    await startSession(db, req, res, rows[0].id);
-    res.status(201).json({ user: { id: rows[0].id, email, name } });
+    await startSession(db, req, res, user.id);
+    res.status(201).json({ user });
   }));
 
   router.post("/auth/login", authLimit, handle(async (req, res) => {
     const { email, password } = LoginSchema.parse(req.body);
-    const { rows } = await db.query<{ id: string; name: string; password_hash: string }>(
-      "SELECT id, name, password_hash FROM users WHERE email = $1",
-      [email],
-    );
-    const user = rows[0];
-    const valid = await verifyPassword(password, user?.password_hash ?? DUMMY_HASH);
+    const user = await db.user.findUnique({ where: { email }, select: { id: true, name: true, passwordHash: true } });
+    const valid = await verifyPassword(password, user?.passwordHash ?? DUMMY_HASH);
     if (!user || !valid) {
       res.status(401).json({ error: "Email or password is incorrect" });
       return;
@@ -112,106 +115,104 @@ export function apiRouter(db: Db | null) {
 
   // ── Conversations ─────────────────────────────────────────────────────────
   router.get("/conversations", handle(async (req, res) => {
-    const { rows } = await db.query(
-      "SELECT id, title, model, created_at, updated_at FROM conversations WHERE user_id = $1 ORDER BY updated_at DESC LIMIT 200",
-      [req.user!.id],
-    );
-    res.json({ conversations: rows });
+    const conversations = await db.conversation.findMany({
+      where: { userId: req.user!.id },
+      orderBy: { updatedAt: "desc" },
+      take: 200,
+    });
+    res.json({ conversations: conversations.map(conversationJson) });
   }));
 
   router.post("/conversations", handle(async (req, res) => {
     const { title, model } = ConversationSchema.parse(req.body);
-    const { rows } = await db.query(
-      "INSERT INTO conversations (user_id, title, model) VALUES ($1, $2, $3) RETURNING id, title, model, created_at, updated_at",
-      [req.user!.id, title, model ?? null],
-    );
-    res.status(201).json(rows[0]);
+    const conversation = await db.conversation.create({ data: { userId: req.user!.id, title, model: model ?? null } });
+    res.status(201).json(conversationJson(conversation));
   }));
 
   router.get("/conversations/:id", handle(async (req, res) => {
-    const { rows: [conversation] } = await db.query(
-      "SELECT id, title, model, created_at, updated_at FROM conversations WHERE id = $1 AND user_id = $2",
-      [String(req.params.id), req.user!.id],
-    );
+    const conversation = await db.conversation.findFirst({
+      where: { id: String(req.params.id), userId: req.user!.id },
+      include: { messages: { orderBy: { id: "asc" } } },
+    });
     if (!conversation) {
       res.status(404).json({ error: "Conversation not found" });
       return;
     }
-    const { rows: messages } = await db.query(
-      "SELECT role, content, tool_calls, tool_name, created_at FROM messages WHERE conversation_id = $1 ORDER BY id",
-      [conversation.id],
-    );
-    res.json({ conversation, messages });
+    res.json({
+      conversation: conversationJson(conversation),
+      messages: conversation.messages.map((m) => ({
+        role: m.role, content: m.content, tool_calls: m.toolCalls, tool_name: m.toolName, created_at: m.createdAt,
+      })),
+    });
   }));
 
   router.post("/conversations/:id/messages", handle(async (req, res) => {
     const messages = z.array(MessageSchema).min(1).max(50).parse(req.body.messages);
     const id = String(req.params.id);
-    const owned = await db.query("SELECT 1 FROM conversations WHERE id = $1 AND user_id = $2", [id, req.user!.id]);
-    if (!owned.rowCount) {
+    const owned = await db.conversation.count({ where: { id, userId: req.user!.id } });
+    if (!owned) {
       res.status(404).json({ error: "Conversation not found" });
       return;
     }
-    const client = await db.connect();
-    try {
-      await client.query("BEGIN");
-      for (const m of messages) {
-        await client.query(
-          "INSERT INTO messages (conversation_id, role, content, tool_calls, tool_name) VALUES ($1, $2, $3, $4, $5)",
-          [id, m.role, m.content, m.tool_calls ? JSON.stringify(m.tool_calls) : null, m.tool_name ?? null],
-        );
-      }
-      await client.query("UPDATE conversations SET updated_at = now() WHERE id = $1", [id]);
-      await client.query("COMMIT");
-    } catch (error) {
-      await client.query("ROLLBACK");
-      throw error;
-    } finally {
-      client.release();
-    }
+    // Sequential inserts in one transaction keep the messages' order (ids) as sent
+    await db.$transaction([
+      ...messages.map((m) => db.message.create({
+        data: {
+          conversationId: id,
+          role: m.role,
+          content: m.content,
+          ...(m.tool_calls ? { toolCalls: m.tool_calls as object[] } : {}),
+          toolName: m.tool_name ?? null,
+        },
+      })),
+      db.conversation.update({ where: { id }, data: { updatedAt: new Date() } }),
+    ]);
     res.status(204).end();
   }));
 
   router.patch("/conversations/:id", handle(async (req, res) => {
     const { title } = ConversationSchema.pick({ title: true }).parse(req.body);
-    const result = await db.query(
-      "UPDATE conversations SET title = $1, updated_at = now() WHERE id = $2 AND user_id = $3",
-      [title, String(req.params.id), req.user!.id],
-    );
-    res.status(result.rowCount ? 204 : 404).end();
+    const { count } = await db.conversation.updateMany({
+      where: { id: String(req.params.id), userId: req.user!.id },
+      data: { title, updatedAt: new Date() },
+    });
+    res.status(count ? 204 : 404).end();
   }));
 
   router.delete("/conversations/:id", handle(async (req, res) => {
-    const result = await db.query("DELETE FROM conversations WHERE id = $1 AND user_id = $2", [String(req.params.id), req.user!.id]);
-    res.status(result.rowCount ? 204 : 404).end();
+    const { count } = await db.conversation.deleteMany({ where: { id: String(req.params.id), userId: req.user!.id } });
+    res.status(count ? 204 : 404).end();
   }));
 
   // ── Activity ──────────────────────────────────────────────────────────────
   router.get("/activity", handle(async (req, res) => {
     const limit = Math.min(Number(req.query.limit) || 200, 1000);
-    const { rows } = await db.query(
-      `SELECT id, type, server, message, payload, created_at FROM
-         (SELECT * FROM activity WHERE user_id = $1 ORDER BY id DESC LIMIT $2) recent
-       ORDER BY id`,
-      [req.user!.id, limit],
-    );
-    res.json({ activity: rows });
+    const recent = await db.activity.findMany({ where: { userId: req.user!.id }, orderBy: { id: "desc" }, take: limit });
+    res.json({
+      activity: recent.reverse().map((a) => ({
+        id: String(a.id), type: a.type, server: a.server, message: a.message, payload: a.payload, created_at: a.createdAt,
+      })),
+    });
   }));
 
   router.post("/activity", handle(async (req, res) => {
     const events = z.array(ActivitySchema).min(1).max(100).parse(req.body.events);
-    const values: unknown[] = [];
-    const placeholders = events.map((e, i) => {
-      values.push(req.user!.id, e.type, e.server, e.message, e.payload === undefined ? null : JSON.stringify(e.payload), e.timestamp ?? new Date().toISOString());
-      const b = i * 6;
-      return `($${b + 1}, $${b + 2}, $${b + 3}, $${b + 4}, $${b + 5}, $${b + 6})`;
+    // createMany keeps insertion order and works on both PostgreSQL and SQLite
+    await db.activity.createMany({
+      data: events.map((e) => ({
+        userId: req.user!.id,
+        type: e.type,
+        server: e.server,
+        message: e.message,
+        ...(e.payload === undefined || e.payload === null ? {} : { payload: e.payload as object }),
+        createdAt: e.timestamp ? new Date(e.timestamp) : new Date(),
+      })),
     });
-    await db.query(`INSERT INTO activity (user_id, type, server, message, payload, created_at) VALUES ${placeholders.join(", ")}`, values);
     res.status(204).end();
   }));
 
   router.delete("/activity", handle(async (req, res) => {
-    await db.query("DELETE FROM activity WHERE user_id = $1", [req.user!.id]);
+    await db.activity.deleteMany({ where: { userId: req.user!.id } });
     res.status(204).end();
   }));
 

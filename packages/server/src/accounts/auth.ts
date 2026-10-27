@@ -62,16 +62,15 @@ const cookieOptions = (req: Request) => ({
 
 export async function startSession(db: Db, req: Request, res: Response, userId: string): Promise<void> {
   const token = randomBytes(32).toString("base64url");
-  await db.query(
-    "INSERT INTO sessions (token_hash, user_id, expires_at) VALUES ($1, $2, now() + make_interval(days => $3))",
-    [sha256(token), userId, SESSION_DAYS],
-  );
+  await db.session.create({
+    data: { tokenHash: sha256(token), userId, expiresAt: new Date(Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000) },
+  });
   res.cookie(SESSION_COOKIE, token, cookieOptions(req));
 }
 
 export async function endSession(db: Db, req: Request, res: Response): Promise<void> {
   const token = readCookie(req, SESSION_COOKIE);
-  if (token) await db.query("DELETE FROM sessions WHERE token_hash = $1", [sha256(token)]);
+  if (token) await db.session.deleteMany({ where: { tokenHash: sha256(token) } });
   res.clearCookie(SESSION_COOKIE, { ...cookieOptions(req), maxAge: undefined });
 }
 
@@ -80,12 +79,11 @@ export const loadUser = (db: Db) => async (req: Request, res: Response, next: Ne
   const token = readCookie(req, SESSION_COOKIE);
   if (token) {
     try {
-      const { rows } = await db.query<User>(
-        `SELECT u.id, u.email, u.name FROM sessions s JOIN users u ON u.id = s.user_id
-         WHERE s.token_hash = $1 AND s.expires_at > now()`,
-        [sha256(token)],
-      );
-      req.user = rows[0];
+      const session = await db.session.findFirst({
+        where: { tokenHash: sha256(token), expiresAt: { gt: new Date() } },
+        select: { user: { select: { id: true, email: true, name: true } } },
+      });
+      req.user = session?.user;
     } catch (error) {
       next(error);
       return;
