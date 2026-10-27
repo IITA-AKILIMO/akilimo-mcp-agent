@@ -11,12 +11,12 @@ interface HttpOptions {
   gateway?: Router;
   // Mounted at /api: accounts, saved chats and activity (see accounts/routes.ts)
   api?: Router;
-  // Mounted at /llm: relay to hosted LLM providers for the web UI's chat (see llm/routes.ts)
-  llm?: Router;
+  // Mounted at /chat: provider settings and the server-side chat loop (see chat/routes.ts)
+  chat?: Router;
 }
 
 // A Server instance serves one transport at a time, so every connection gets its own
-export function startHttp(createServer: () => Server, { port, allowedOrigins, gateway, api, llm }: HttpOptions): void {
+export function startHttp(createServer: () => Server, { port, allowedOrigins, gateway, api, chat }: HttpOptions): void {
   const app = express();
   // Behind nginx / Dokploy: trust X-Forwarded-* so req.secure (Secure cookies) and req.ip (rate limits) are right
   app.set("trust proxy", "loopback, linklocal, uniquelocal");
@@ -34,7 +34,7 @@ export function startHttp(createServer: () => Server, { port, allowedOrigins, ga
 
   if (gateway) app.use("/gateway", gateway);
   if (api) app.use("/api", api);
-  if (llm) app.use("/llm", llm);
+  if (chat) app.use("/chat", chat);
 
   // Streamable HTTP (current MCP transport), stateless: one server and transport per request
   app.post("/mcp", express.json({ limit: "1mb" }), async (req, res) => {

@@ -5,7 +5,9 @@ import { config } from "./config.js";
 import { closeDb, connectDb } from "./db/index.js";
 import { Registry } from "./gateway/registry.js";
 import { gatewayRouter } from "./gateway/routes.js";
-import { llmRouter } from "./llm/routes.js";
+import { chatRouter } from "./chat/routes.js";
+import { ChatSettings } from "./chat/store.js";
+import { SecretBox } from "./secrets/crypto.js";
 import { createServer } from "./server.js";
 import { startHttp } from "./transports/http.js";
 import { startStdio } from "./transports/stdio.js";
@@ -52,13 +54,16 @@ async function main() {
     console.error(db ? "Accounts enabled (PostgreSQL)" : "Accounts disabled: set DB_HOST, DB_DATABASE, DB_USERNAME and DB_PASSWORD to enable sign-up and saved chats");
     console.error(`MCP gateway registry: ${config.gatewayDataFile} (${db ? "editable by admin users" : "read-only without accounts"})`);
     if (db && config.adminSeed) console.error(await seedAdmin(db, config.adminSeed));
+    console.error(config.secretsKey
+      ? "Secrets encryption enabled (SECRETS_KEY)"
+      : "SECRETS_KEY not set: provider and MCP server keys cannot be saved; only Ollama works for the chat");
 
     startHttp(() => createServer(api), {
       port: config.port,
       allowedOrigins: config.allowedOrigins,
       gateway: gatewayRouter(registry, db),
       api: apiRouter(db),
-      llm: llmRouter(),
+      chat: chatRouter(new ChatSettings(db, config.secretsKey ? new SecretBox(config.secretsKey) : null, config.ollamaBaseUrl), registry, db),
     });
   } else {
     await startStdio(createServer(api));

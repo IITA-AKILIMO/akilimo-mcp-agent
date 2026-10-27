@@ -5,7 +5,7 @@
 // Table, index and constraint names match what Prisma created before this project moved to Drizzle,
 // so databases created by either tool are the same.
 import { randomUUID } from "node:crypto";
-import { foreignKey, index, integer, jsonb, pgEnum, pgTable, serial, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { boolean, foreignKey, index, integer, jsonb, pgEnum, pgTable, serial, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
 const timestamptz = (name: string) => timestamp(name, { withTimezone: true, precision: 6, mode: "date" });
 
@@ -76,5 +76,25 @@ export const activity = pgTable("activity", {
   foreignKey({ name: "activity_user_id_fkey", columns: [t.userId], foreignColumns: [users.id] }).onDelete("cascade").onUpdate("cascade"),
   index("activity_user_id_id_idx").on(t.userId, t.id.desc().nullsFirst()),
 ]);
+
+// Settings of the chat's LLM providers, managed by admins. The API key is encrypted (see
+// secrets/crypto.ts); key_hint only holds the last characters for display.
+export const llmProviders = pgTable("llm_providers", {
+  id: text("id").primaryKey(),
+  baseUrl: text("base_url"),
+  apiKeyEnc: text("api_key_enc"),
+  keyHint: text("key_hint"),
+  enabled: boolean("enabled").notNull().default(true),
+  updatedAt: timestamptz("updated_at").notNull().defaultNow(),
+});
+
+// Keys for upstream MCP servers that need one (e.g. Akilimo 2.0), used when the server runs the
+// chat's tool calls; encrypted like the provider keys
+export const mcpServerKeys = pgTable("mcp_server_keys", {
+  serverId: text("server_id").primaryKey(),
+  keyEnc: text("key_enc").notNull(),
+  keyHint: text("key_hint").notNull(),
+  updatedAt: timestamptz("updated_at").notNull().defaultNow(),
+});
 
 export type Role = (typeof roleEnum.enumValues)[number];

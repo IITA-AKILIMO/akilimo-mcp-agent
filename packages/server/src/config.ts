@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { databaseSettings } from "./db/settings.js";
+import { parseSecretsKey } from "./secrets/crypto.js";
 
 // Local development: load the repo-root .env (pnpm runs scripts from packages/server).
 // Variables already set in the environment win; containers get theirs from compose.
@@ -32,6 +33,11 @@ export const config = {
       username: process.env.ADMIN_USERNAME || undefined,
     }
     : null,
+  // Master key for the secrets kept in the database (LLM provider keys, MCP server keys); without
+  // it the server still runs, but those secrets cannot be saved or used
+  secretsKey: parseSecretsKey(process.env.SECRETS_KEY),
+  // Ollama the chat's server-side model calls use unless an admin saved another URL
+  ollamaBaseUrl: (process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434").replace(/\/+$/, ""),
   // User accounts, saved chats and activity (HTTP mode): PostgreSQL from DB_*; DB_HOST unset = guests only
   database: databaseSettings(),
 } as const;
