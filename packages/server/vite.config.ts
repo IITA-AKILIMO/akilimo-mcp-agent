@@ -17,10 +17,9 @@ export default defineConfig({
         'express',
         /^zod(\/|$)/,
         'cors',
-        // Prisma runtime and database drivers stay in node_modules (better-sqlite3 is native)
+        // Prisma runtime and the PostgreSQL driver stay in node_modules
         /^@prisma\//,
         'pg',
-        'better-sqlite3',
       ],
     },
     target: 'node20',

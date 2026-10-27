@@ -1,23 +1,23 @@
-// SQLite schema. Keep the models in sync with ../pgsql/schema.prisma (only column types differ)
-// and create a migration for both when changing them; see AGENTS.md.
+// Accounts database (PostgreSQL). After changing models, create a migration with
+// `npx prisma migrate dev --name <change>` in packages/server; see AGENTS.md.
 
 generator client {
   provider            = "prisma-client"
-  output              = "../../src/generated/sqlite"
+  output              = "../src/generated/prisma"
   moduleFormat        = "esm"
   importFileExtension = "js"
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
 }
 
 model User {
-  id            String         @id @default(uuid())
+  id            String         @id @default(uuid()) @db.Uuid
   email         String         @unique
   name          String
   passwordHash  String         @map("password_hash")
-  createdAt     DateTime       @default(now()) @map("created_at")
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
   sessions      Session[]
   conversations Conversation[]
   activity      Activity[]
@@ -28,23 +28,23 @@ model User {
 // Only a SHA-256 of the session token is stored, so a database leak does not expose sessions
 model Session {
   tokenHash String   @id @map("token_hash")
-  userId    String   @map("user_id")
+  userId    String   @map("user_id") @db.Uuid
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now()) @map("created_at")
-  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
 
   @@index([userId])
   @@map("sessions")
 }
 
 model Conversation {
-  id        String    @id @default(uuid())
-  userId    String    @map("user_id")
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   title     String
   model     String?
-  createdAt DateTime  @default(now()) @map("created_at")
-  updatedAt DateTime  @default(now()) @map("updated_at")
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
   messages  Message[]
 
   @@index([userId, updatedAt(sort: Desc)])
@@ -54,13 +54,13 @@ model Conversation {
 // The full model history, including tool calls and tool results, so a reopened chat keeps its context
 model Message {
   id             Int          @id @default(autoincrement())
-  conversationId String       @map("conversation_id")
+  conversationId String       @map("conversation_id") @db.Uuid
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   role           String
   content        String       @default("")
   toolCalls      Json?        @map("tool_calls")
   toolName       String?      @map("tool_name")
-  createdAt      DateTime     @default(now()) @map("created_at")
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
 
   @@index([conversationId, id])
   @@map("messages")
@@ -68,13 +68,13 @@ model Message {
 
 model Activity {
   id        Int      @id @default(autoincrement())
-  userId    String   @map("user_id")
+  userId    String   @map("user_id") @db.Uuid
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   type      String
   server    String
   message   String
   payload   Json?
-  createdAt DateTime @default(now()) @map("created_at")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   @@index([userId, id(sort: Desc)])
   @@map("activity")

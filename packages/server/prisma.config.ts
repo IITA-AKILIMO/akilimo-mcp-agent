@@ -11,13 +11,11 @@ for (const file of [path.resolve(".env"), path.resolve("../../.env")]) {
   }
 }
 
-// One schema and migrations folder per database type, chosen by DB_CONNECTION. Without a
-// database (e.g. `prisma generate` in CI) the PostgreSQL schema is used with an empty URL.
+// The URL is built from DB_*; without a database (e.g. `prisma generate` in CI) it stays empty
 const settings = databaseSettings();
-const connection = settings?.connection ?? "pgsql";
 
 export default defineConfig({
-  schema: `prisma/${connection}/schema.prisma`,
-  migrations: { path: `prisma/${connection}/migrations` },
+  schema: "prisma/schema.prisma",
+  migrations: { path: "prisma/migrations" },
   datasource: { url: settings ? databaseUrl(settings) : "" },
 });

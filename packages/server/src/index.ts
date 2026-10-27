@@ -17,7 +17,7 @@ async function main() {
     console.error(`MCP gateway registry: ${config.gatewayDataFile} (${config.gatewayAdminToken ? "editable with admin token" : "read-only, set GATEWAY_ADMIN_TOKEN to edit"})`);
 
     const db = config.database ? await connectDb(config.database) : null;
-    console.error(db ? `Accounts enabled (${config.database!.connection})` : "Accounts disabled: set DB_CONNECTION (pgsql or sqlite) and DB_* to enable sign-up and saved chats");
+    console.error(db ? "Accounts enabled (PostgreSQL)" : "Accounts disabled: set DB_HOST, DB_DATABASE, DB_USERNAME and DB_PASSWORD to enable sign-up and saved chats");
 
     startHttp(() => createServer(api), {
       port: config.port,

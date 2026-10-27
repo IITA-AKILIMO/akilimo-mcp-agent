@@ -39,7 +39,7 @@ const ActivitySchema = z.object({
 // Compared against when the email is unknown, so sign-in takes the same time either way
 const DUMMY_HASH = "scrypt$16384$8$1$AAAAAAAAAAAAAAAAAAAAAA==$" + Buffer.alloc(64).toString("base64");
 
-// Prisma error code for a unique constraint violation (same in both generated clients)
+// Prisma error code for a unique constraint violation
 const isUniqueViolation = (error: unknown) => (error as { code?: string } | null)?.code === "P2002";
 
 // The web client expects snake_case fields, as the API returned before Prisma
@@ -63,7 +63,7 @@ export function apiRouter(db: Db | null) {
   router.use(express.json({ limit: "1mb" }));
 
   if (!db) {
-    // Accounts need a database (DB_CONNECTION / DB_*); the UI then offers guest use only
+    // Accounts need a database (DB_*); the UI then offers guest use only
     router.get("/auth/status", (req, res) => res.json({ enabled: false, user: null }));
     router.use((req, res) => res.status(503).json({ error: "Accounts are not enabled on this server" }));
     return router;
@@ -197,7 +197,7 @@ export function apiRouter(db: Db | null) {
 
   router.post("/activity", handle(async (req, res) => {
     const events = z.array(ActivitySchema).min(1).max(100).parse(req.body.events);
-    // createMany keeps insertion order and works on both PostgreSQL and SQLite
+    // createMany keeps insertion order
     await db.activity.createMany({
       data: events.map((e) => ({
         userId: req.user!.id,

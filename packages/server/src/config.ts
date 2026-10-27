@@ -23,7 +23,7 @@ export const config = {
   // MCP gateway (HTTP mode): registry file, and the token required to change it (unset = read-only)
   gatewayDataFile: process.env.GATEWAY_DATA_FILE || path.resolve("data/mcp-servers.json"),
   gatewayAdminToken: process.env.GATEWAY_ADMIN_TOKEN || "",
-  // User accounts, saved chats and activity (HTTP mode): DB_CONNECTION=pgsql|sqlite and DB_*,
-  // shared with the Prisma CLI; none set = guests only
+  // User accounts, saved chats and activity (HTTP mode): PostgreSQL from DB_*, shared with the
+  // Prisma CLI; DB_HOST unset = guests only
   database: databaseSettings(),
 } as const;
