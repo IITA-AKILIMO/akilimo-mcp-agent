@@ -23,6 +23,8 @@ interface Props {
   user: Account | null;
 }
 
+interface QueuedMessage { id: string; text: string }
+
 type Item =
   | { id: string; kind: 'user' | 'assistant'; text: string }
   | { id: string; kind: 'step'; step: AgentStep };
@@ -113,10 +115,30 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
 
   const add = (item: Item) => setItems(prev => [...prev, item]);
 
+  // Messages typed while an answer is still being produced wait here and are sent in order
+  const queue = useRef<QueuedMessage[]>([]);
+  const [queued, setQueued] = useState<QueuedMessage[]>([]);
+  const busyRef = useRef(false);
+  const latestRun = useRef<(message: string) => Promise<void>>(async () => {});
+
+  const setQueue = (next: QueuedMessage[]) => {
+    queue.current = next;
+    setQueued(next);
+  };
+
   const send = async (text: string) => {
     const message = text.trim();
-    if (!message || busy || !model) return;
+    if (!message || !model) return;
     setInput('');
+    if (busyRef.current) {
+      setQueue([...queue.current, { id: newId(), text: message }]);
+      return;
+    }
+    await run(message);
+  };
+
+  const run = async (message: string) => {
+    busyRef.current = true;
     setError(null);
     add({ id: newId(), kind: 'user', text: message });
     const userMessage: ChatMessage = { role: 'user', content: message };
@@ -143,12 +165,21 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
     } catch (e) {
       if (!controller.signal.aborted) setError(e instanceof Error ? e.message : String(e));
     } finally {
+      busyRef.current = false;
       setBusy(false);
       abort.current = null;
+      const [next, ...rest] = queue.current;
+      if (next) {
+        setQueue(rest);
+        void latestRun.current(next.text);
+      }
     }
   };
+  latestRun.current = run;
 
   const reset = () => {
+    setQueue([]);
+    abort.current?.abort();
     abort.current?.abort();
     history.current = [];
     conversationId.current = null;
@@ -177,6 +208,7 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
   const openConversation = async (id: string) => {
     try {
       const { conversation, messages } = await getConversation(id);
+      setQueue([]);
       abort.current?.abort();
       const restored = messages.map(toChatMessage);
       history.current = restored;
@@ -272,7 +304,7 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
             <div className="d-flex flex-column gap-2 mt-3">
               {SUGGESTIONS.map(s => (
                 <button key={s} type="button" className="btn btn-sm btn-outline-success text-start"
-                  onClick={() => send(s)} disabled={busy || !model || noTools}>{s}</button>
+                  onClick={() => send(s)} disabled={!model || noTools}>{s}</button>
               ))}
             </div>
           </div>
@@ -312,6 +344,19 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
             <Loader2 size={16} className="spin" /> Thinking…
           </div>
         )}
+        {queued.map(q => (
+          <div key={q.id} className="d-flex gap-2 flex-row-reverse align-items-center">
+            <div className="avatar rounded-circle d-flex align-items-center justify-content-center bg-akilimo opacity-50">
+              <User size={18} color="white" />
+            </div>
+            <div className="chat-bubble px-3 py-2 rounded-3 bg-akilimo text-white opacity-50">{q.text}</div>
+            <span className="badge text-bg-secondary">Queued</span>
+            <button type="button" className="btn btn-sm btn-link text-body-secondary p-0" aria-label="Remove queued message"
+              title="Remove from the queue" onClick={() => setQueue(queue.current.filter(m => m.id !== q.id))}>
+              <X size={14} />
+            </button>
+          </div>
+        ))}
         {error && <div className="alert alert-danger small mb-0">{error}</div>}
         {saveError && <div className="small text-warning-emphasis">{saveError}</div>}
         {accountsEnabled && !user && items.length > 0 && (
@@ -333,27 +378,28 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
               onChange={(lat, lon) => setPicked(p => ({ ...p, lat, lon }))}
               onCountry={(country) => setPicked(p => ({ ...p, country }))} />
             <button type="button" className="btn btn-sm btn-akilimo mt-2" onClick={sendLocation}
-              disabled={picked.lat === undefined || busy}>
+              disabled={picked.lat === undefined}>
               Send this location
             </button>
           </div>
         )}
         <form className="input-group" onSubmit={e => { e.preventDefault(); send(input); }}>
           <button type="button" className="btn btn-outline-secondary" onClick={() => setShowMap(v => !v)}
-            title="Share the field location on a map" aria-label="Share field location" disabled={busy}>
+            title="Share the field location on a map" aria-label="Share field location">
             <MapPin size={16} />
           </button>
           <input className="form-control" placeholder={model ? 'Type your question…' : 'Waiting for a model…'}
             value={input} onChange={e => setInput(e.target.value)} aria-label="Message" disabled={!model} />
-          {busy ? (
-            <button type="button" className="btn btn-outline-danger d-inline-flex align-items-center gap-1" onClick={() => abort.current?.abort()}>
+          {busy && (
+            <button type="button" className="btn btn-outline-danger d-inline-flex align-items-center gap-1" onClick={() => abort.current?.abort()}
+              title="Stop the current answer; queued messages are still sent">
               <Square size={14} /> Stop
             </button>
-          ) : (
-            <button type="submit" className="btn btn-akilimo d-inline-flex align-items-center gap-1" disabled={!input.trim() || !model || noTools}>
-              <Send size={16} /> <span className="d-none d-sm-inline">Send</span>
-            </button>
           )}
+          <button type="submit" className="btn btn-akilimo d-inline-flex align-items-center gap-1" disabled={!input.trim() || !model || noTools}
+            title={busy ? 'Queue this message; it is sent when the current answer is done' : undefined}>
+            <Send size={16} /> <span className="d-none d-sm-inline">{busy ? 'Queue' : 'Send'}</span>
+          </button>
         </form>
       </div>
     </div>
