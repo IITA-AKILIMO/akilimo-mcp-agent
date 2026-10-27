@@ -1,7 +1,7 @@
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { McpServerConfig } from '../mcp/servers';
 import type { ServerState } from '../mcp/useMcpServers';
-import { chat, type ChatMessage, type ToolSpec } from './ollama';
+import type { ChatMessage, ToolSpec } from './types';
 
 export interface AgentTool {
   spec: ToolSpec;
@@ -82,7 +82,8 @@ export interface AgentStep {
 }
 
 interface RunOptions {
-  model: string;
+  // One model call on the selected provider (see providers.ts)
+  chat: (messages: ChatMessage[], tools: ToolSpec[], signal?: AbortSignal) => Promise<ChatMessage>;
   history: ChatMessage[]; // user/assistant/tool messages so far, without the system prompt
   tools: AgentTool[];
   callTool: (server: string, name: string, args: Record<string, unknown>) => Promise<CallToolResult>;
@@ -92,12 +93,12 @@ interface RunOptions {
 }
 
 // One user turn: let the model call tools until it answers in text (bounded to avoid loops)
-export async function runAgent({ model, history, tools, callTool, onMessage, onStep, signal }: RunOptions): Promise<void> {
+export async function runAgent({ chat, history, tools, callTool, onMessage, onStep, signal }: RunOptions): Promise<void> {
   const conversation: ChatMessage[] = [{ role: 'system', content: systemPrompt() }, ...history];
   const specs = tools.map(t => t.spec);
 
   for (let round = 0; round < 8; round++) {
-    const reply = await chat(model, conversation, specs, signal);
+    const reply = await chat(conversation, specs, signal);
     conversation.push(reply);
     onMessage(reply);
     if (!reply.tool_calls?.length) return;

@@ -1,15 +1,18 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { Bot, History, Loader2, MapPin, RotateCcw, Send, Square, Trash2, User, Wrench, X } from 'lucide-react';
+import { Bot, History, Loader2, MapPin, RotateCcw, Send, Settings2, Square, Trash2, User, Wrench, X } from 'lucide-react';
 import {
   appendMessages, createConversation, deleteConversation, getConversation, listConversations,
   type ConversationSummary, type User as Account,
 } from '../account/api';
 import { buildTools, runAgent, type AgentStep } from '../llm/agent';
-import { listToolModels, pickDefaultModel, type ChatMessage } from '../llm/ollama';
+import { PROVIDERS, type ProviderId } from '../llm/providers';
+import type { ChatMessage } from '../llm/types';
+import { useLlm } from '../llm/useLlm';
 import type { McpServerConfig } from '../mcp/servers';
 import type { ServerState } from '../mcp/useMcpServers';
+import { LlmSettings } from './LlmSettings';
 import { MapPicker } from './MapPicker';
 
 interface Props {
@@ -41,9 +44,13 @@ const toChatMessage = (m: ChatMessage): ChatMessage => ({
 });
 
 export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accountsEnabled, user }) => {
-  const [models, setModels] = useState<string[]>([]);
-  const [model, setModel] = useState('');
-  const [modelError, setModelError] = useState<string | null>(null);
+  const llm = useLlm();
+  const { model } = llm;
+  const [showSettings, setShowSettings] = useState(false);
+  // Open the provider settings when a key or URL is missing; they stay open while it is typed in
+  useEffect(() => {
+    if (llm.setup) setShowSettings(true);
+  }, [llm.setup]);
 
   const [items, setItems] = useState<Item[]>([]);
   const history = useRef<ChatMessage[]>([]);
@@ -71,7 +78,7 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
     saveChain.current = saveChain.current
       .then(async () => {
         if (!conversationId.current) {
-          conversationId.current = (await createConversation(titleHint.slice(0, 80) || 'Conversation', model)).id;
+          conversationId.current = (await createConversation(titleHint.slice(0, 80) || 'Conversation', llm.label)).id;
         }
         await appendMessages(conversationId.current, messages.map(toChatMessage));
         setSaveError(null);
@@ -101,16 +108,6 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
   });
 
   useEffect(() => {
-    listToolModels()
-      .then(list => {
-        setModels(list);
-        setModel(pickDefaultModel(list) ?? '');
-        if (list.length === 0) setModelError('No Ollama model with tool support found. Run: ollama pull qwen3:8b');
-      })
-      .catch(() => setModelError('Cannot reach Ollama. Make sure it is running (default http://localhost:11434).'));
-  }, []);
-
-  useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [items, busy]);
 
@@ -131,7 +128,7 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
     setBusy(true);
     try {
       await runAgent({
-        model,
+        chat: llm.chat,
         history: history.current,
         tools,
         callTool,
@@ -216,11 +213,19 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
       <div className="card-header d-flex flex-wrap align-items-center gap-2 position-relative">
         <Bot size={16} className="text-akilimo" />
         <span className="small fw-semibold">AKILIMO assistant</span>
-        <select className="form-select form-select-sm w-auto ms-auto" aria-label="Model" value={model}
-          onChange={e => setModel(e.target.value)} disabled={models.length === 0 || busy}>
-          {models.length === 0 && <option value="">No model</option>}
-          {models.map(m => <option key={m} value={m}>{m}</option>)}
+        <select className="form-select form-select-sm w-auto ms-auto" aria-label="LLM provider" value={llm.provider}
+          onChange={e => llm.setProvider(e.target.value as ProviderId)} disabled={busy}>
+          {PROVIDERS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
         </select>
+        <select className="form-select form-select-sm w-auto" aria-label="Model" value={model} style={{ maxWidth: '14rem' }}
+          onChange={e => llm.setModel(e.target.value)} disabled={llm.models.length === 0 || busy}>
+          {llm.models.length === 0 && <option value="">{llm.loading ? 'Loading models…' : 'No model'}</option>}
+          {llm.models.map(m => <option key={m} value={m}>{m}</option>)}
+        </select>
+        <button type="button" className={`btn btn-sm ${showSettings ? 'btn-secondary' : 'btn-outline-secondary'}`}
+          onClick={() => setShowSettings(v => !v)} aria-expanded={showSettings} title="Provider settings" aria-label="Provider settings">
+          <Settings2 size={14} />
+        </button>
         {user && (
           <button type="button" className={`btn btn-sm d-inline-flex align-items-center gap-1 ${showHistory ? 'btn-secondary' : 'btn-outline-secondary'}`}
             onClick={toggleHistory} aria-expanded={showHistory} disabled={busy} title="Your saved conversations">
@@ -251,10 +256,11 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
           </div>
         )}
       </div>
+      {showSettings && <LlmSettings llm={llm} />}
 
       <div className="card-body overflow-auto min-h-0 d-flex flex-column gap-3">
-        {modelError && <div className="alert alert-warning small mb-0">{modelError}</div>}
-        {noTools && !modelError && (
+        {llm.error && <div className="alert alert-warning small mb-0">{llm.error}</div>}
+        {noTools && !llm.error && (
           <div className="alert alert-info small mb-0">Connecting to the AKILIMO servers… switch one on in the MCP servers panel if this persists.</div>
         )}
 

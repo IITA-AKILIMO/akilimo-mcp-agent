@@ -3,7 +3,7 @@
 // Storage can be unavailable (private mode), so every access is guarded.
 const KEYS = 'mcp-server-keys';
 
-const read = <T,>(name: string, fallback: T): T => {
+export const read = <T,>(name: string, fallback: T): T => {
   try {
     const raw = localStorage.getItem(name);
     return raw ? (JSON.parse(raw) as T) : fallback;
@@ -12,7 +12,7 @@ const read = <T,>(name: string, fallback: T): T => {
   }
 };
 
-const write = (name: string, value: unknown) => {
+export const write = (name: string, value: unknown) => {
   try {
     if (value === undefined || value === '') localStorage.removeItem(name);
     else localStorage.setItem(name, JSON.stringify(value));

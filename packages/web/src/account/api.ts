@@ -1,7 +1,7 @@
 // Client for the accounts API on the Akilimo 1.0 server (packages/server/src/accounts), reached
 // through the same-origin /api path; the session is an HttpOnly cookie the browser sends itself
 import type { MCPEvent } from '@akilimo/shared';
-import type { ChatMessage } from '../llm/ollama';
+import type { ChatMessage } from '../llm/types';
 
 export type Role = 'user' | 'admin';
 

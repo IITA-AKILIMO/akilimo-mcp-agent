@@ -14,6 +14,8 @@ const mcpProxy = (env: Record<string, string>): Record<string, ProxyOptions> => 
     '/gateway': { target: env.AKILIMO_1_MCP_URL || 'http://localhost:3001', changeOrigin: true },
     // Accounts, saved chats and activity on the same server
     '/api': { target: env.AKILIMO_1_MCP_URL || 'http://localhost:3001', changeOrigin: true },
+    // Relay to hosted LLM providers (OpenAI, Anthropic, Gemini, ...) on the same server
+    '/llm': { target: env.AKILIMO_1_MCP_URL || 'http://localhost:3001', changeOrigin: true },
     // Ollama answers 403 to browser origins outside OLLAMA_ORIGINS, so the proxy drops the header
     '/proxy/ollama': {
       ...proxy('/proxy/ollama', env.OLLAMA_URL || 'http://localhost:11434'),
