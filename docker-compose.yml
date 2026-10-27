@@ -10,8 +10,6 @@ services:
     hostname: akilimo-mcp
     ports:
       - "127.0.0.1:3080:3000"
-    env_file:
-      - .env
     environment:
       TRANSPORT: http
       PORT: 3000
@@ -33,9 +31,6 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
     volumes:
       - mcp-gateway:/app/data
-    depends_on:
-      db:
-        condition: service_healthy
     restart: always
     networks:
       - dokploy-network
@@ -49,27 +44,6 @@ services:
     container_name: weather-mcp
     hostname: weather-mcp
     restart: always
-    networks:
-      - internal
-
-  db:
-    image: postgres:17-alpine
-    container_name: akilimo-db
-    # Created from the same DB_* values the server uses (they only take effect on first start,
-    # when the data volume is empty)
-    environment:
-      POSTGRES_USER: ${DB_USERNAME:?DB_USERNAME must be set}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
-      POSTGRES_DB: ${DB_DATABASE:?DB_DATABASE must be set}
-    volumes:
-      - akilimo-db:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-    restart: always
-    # Internal network only: not published on the host
     networks:
       - internal
 
@@ -103,8 +77,6 @@ services:
       - "127.0.0.1:8089:8080"
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    env_file:
-      - .env
     environment:
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY:?WEBUI_SECRET_KEY is not set}
