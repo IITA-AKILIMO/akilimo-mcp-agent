@@ -55,7 +55,7 @@ Every connection, tool call and response appears under **Activity**.
 #### Accounts, saved chats and activity
 People can use the UI as guests, or **Sign in / Create account** (top bar) to keep their chat history and activity. An account has a name, an email and a unique username (3–30 lowercase letters, digits, dots, underscores or hyphens); sign-in accepts the email or the username. Signed-in users get a **History** button in the chat to reopen or delete past conversations; signing out clears the screen.
 
-This needs **PostgreSQL**, set with Laravel-style variables in `.env`: `DB_HOST`, `DB_PORT` (default 5432), `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD`. Without `DB_HOST` the UI is guest-only.
+This needs **PostgreSQL**, set with Laravel-style variables in `.env`: `DB_HOST`, `DB_PORT` (default 5432), `DB_DATABASE` (default `akilimo_mcp`), `DB_SCHEMA` (default `public`, where drizzle keeps its migration bookkeeping table), `DB_USERNAME`, `DB_PASSWORD`. Without `DB_HOST` the UI is guest-only; with a host set, a username and password are required.
 
 The schema is managed with **Drizzle ORM** (`packages/server/src/db/schema.ts`; plain npm packages, no engine binaries are downloaded). The server applies pending migrations from `packages/server/drizzle/` itself whenever it connects, so `pnpm dev:server:http` and the Docker image need no separate migration step; run them by hand with `pnpm db:migrate`. With docker compose, `DB_HOST=db` uses the bundled PostgreSQL service, which is created from the same `DB_*` values.
 

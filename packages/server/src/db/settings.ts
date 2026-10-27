@@ -1,6 +1,7 @@
 // Database settings from Laravel-style variables (src/config.ts):
-//   DB_HOST, DB_PORT (5432), DB_DATABASE, DB_USERNAME, DB_PASSWORD
-// DB_CONNECTION is optional and must be pgsql if set. Without DB_HOST the app runs guest-only.
+//   DB_HOST, DB_PORT (5432), DB_DATABASE, DB_SCHEMA (public), DB_USERNAME, DB_PASSWORD
+// DB_CLIENT (or DB_CONNECTION) is optional and must be pgsql if set. Without DB_HOST the app runs
+// guest-only, so databaseSettings() returns null.
 
 export interface DatabaseSettings {
     host: string;
@@ -12,16 +13,18 @@ export interface DatabaseSettings {
     connectionString: string;
 }
 
-export function databaseSettings(env: NodeJS.ProcessEnv = process.env): DatabaseSettings {
+export function databaseSettings(env: NodeJS.ProcessEnv = process.env): DatabaseSettings | null {
+    // No host: accounts are off (guest-only HTTP mode, stdio mode, drizzle-kit generate)
+    const host = env.DB_HOST ?? ''
+    if (!host) return null
 
-
-    const client = process.env.DB_CLIENT ?? 'pgsql'
-    const user = process.env.DB_USERNAME ?? ''
-    const password = process.env.DB_PASSWORD ?? ''
-    const host = process.env.DB_HOST ?? ''
-    const schema = process.env.DB_SCHEMA ?? 'public'
-    const port = process.env.DB_PORT ?? defaultPort(client)
-    const db = process.env.DB_DATABASE ?? 'akilimo_mcp'
+    // Empty values count as unset, so a blank line in .env falls back to the default
+    const client = env.DB_CLIENT || env.DB_CONNECTION || 'pgsql'
+    const user = env.DB_USERNAME ?? ''
+    const password = env.DB_PASSWORD ?? ''
+    const schema = env.DB_SCHEMA || 'public'
+    const port = env.DB_PORT || defaultPort(client)
+    const db = env.DB_DATABASE || 'akilimo_mcp'
 
 
     let connectionString = ''
@@ -32,10 +35,10 @@ export function databaseSettings(env: NodeJS.ProcessEnv = process.env): Database
             // case 'mssql':
             if (!user) throw new Error(`Missing DB_USERNAME for ${client}`)
             if (!password) throw new Error(`Missing DB_PASSWORD for ${client}`)
-            if (!host) throw new Error(`Missing DB_HOST for ${client}`)
             if (!db) throw new Error(`Missing DB_DATABASE for ${client}`)
             if (!port) throw new Error(`Missing DB_PORT for ${client}`)
-            connectionString = `${client}://${user}:${encodeURIComponent(password)}@${host}:${port}/${db}`
+            // postgresql:// is the scheme PostgreSQL tools (drizzle-kit, psql) expect
+            connectionString = `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${db}`
             break;
         default:
             throw new Error(`Unsupported DB_CLIENT: ${client}`)
@@ -55,6 +58,7 @@ export function databaseSettings(env: NodeJS.ProcessEnv = process.env): Database
 
 function defaultPort(client: string): string {
     switch (client) {
+        case 'pgsql':
         case 'postgres':
         case 'postgresql':
             return '5432'

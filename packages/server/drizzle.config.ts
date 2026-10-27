@@ -8,6 +8,8 @@ export default defineConfig({
     dialect: "postgresql",
     schema: "./src/db/schema.ts",
     out: "./drizzle",
-    dbCredentials: {url: config.database.connectionString},
-    migrations: {schema: process.env.DB_SCHEMA ?? 'public'},
+    // Only commands that talk to the database (migrate, push, studio) need credentials;
+    // `generate` works without any, as config.database is null when DB_HOST is unset
+    ...(config.database ? {dbCredentials: {url: config.database.connectionString}} : {}),
+    migrations: {schema: config.database?.schema ?? 'public'},
 });
