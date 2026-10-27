@@ -15,6 +15,13 @@
       "when": 1793101563683,
       "tag": "0001_provider_secrets",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793102563177,
+      "tag": "0002_mcp_servers",
+      "breakpoints": true
     }
   ]
 }

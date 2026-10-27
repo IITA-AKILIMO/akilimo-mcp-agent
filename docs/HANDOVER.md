@@ -119,5 +119,5 @@ Relevant `.env` settings (see `.env.example`): `AKILIMO_API_BASE_URL`, `DB_HOST`
 
 - Throwaway PostgreSQL container **`akilimo-test-pg`** (WSL Docker, `127.0.0.1:55432`, `--rm`), holding only a test account. Remove it with `wsl -e docker stop akilimo-test-pg`.
 - A local dev server on port 3001 on the test database, which holds two test accounts (`admin@example.test`, `user@example.test`, both admin).
-- Registry file `packages/server/data/mcp-servers.json` (gitignored; contains the two default servers plus `weather`).
+- MCP server list: table `mcp_servers` when a database is configured (filled on the first start from the old registry file `packages/server/data/mcp-servers.json` if present, which had the two defaults plus `weather`, otherwise with the defaults); read-only from that file or the defaults without a database.
 - The weather MCP server running via `uvx` on `127.0.0.1:8090` (background process from this session).

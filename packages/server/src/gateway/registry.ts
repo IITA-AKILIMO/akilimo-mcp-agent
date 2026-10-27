@@ -1,6 +1,8 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import path from "node:path";
+import { readFile } from "node:fs/promises";
+import { asc, eq, sql } from "drizzle-orm";
 import { z } from "zod/v4";
+import type { Db } from "../db/index.js";
+import { mcpServerKeys, mcpServers } from "../db/schema.js";
 
 // How the browser-supplied key is passed to the upstream server
 export const AuthSchema = z.discriminatedUnion("type", [
@@ -40,60 +42,150 @@ const defaults = (port: number): ServerEntry[] => [
   },
 ];
 
-// MCP server registry persisted as a JSON file; writes go through a temp file and rename
-export class Registry {
+export class RegistryError extends Error {
+  constructor(readonly status: number, message: string) {
+    super(message);
+  }
+}
+
+// The shared MCP server list. With a database it is the `mcp_servers` table (editable by admins);
+// without one it is read-only (see FileRegistry).
+export interface Registry {
+  load(): Promise<void>;
+  list(): Promise<ServerEntry[]>;
+  get(id: string): Promise<ServerEntry | undefined>;
+  add(entry: ServerEntry): Promise<void>;
+  update(id: string, entry: ServerEntry): Promise<void>;
+  remove(id: string): Promise<void>;
+}
+
+// A registry JSON file written by earlier versions (GATEWAY_DATA_FILE); null when there is none
+async function readEntriesFile(file: string): Promise<ServerEntry[] | null> {
+  try {
+    return z.array(ServerEntrySchema).parse(JSON.parse(await readFile(file, "utf8")));
+  } catch (error: any) {
+    if (error?.code === "ENOENT") return null;
+    throw new Error(`Cannot read MCP registry ${file}: ${error.message}`);
+  }
+}
+
+// No database, no accounts, so nobody can edit: serves the registry file if one exists, otherwise
+// the default servers
+export class FileRegistry implements Registry {
   private entries: ServerEntry[] = [];
 
   constructor(private readonly file: string, private readonly port: number) {}
 
   async load(): Promise<void> {
-    try {
-      const raw = JSON.parse(await readFile(this.file, "utf8"));
-      this.entries = z.array(ServerEntrySchema).parse(raw);
-    } catch (error: any) {
-      if (error?.code !== "ENOENT") throw new Error(`Cannot read MCP registry ${this.file}: ${error.message}`);
-      this.entries = defaults(this.port);
-      await this.save();
-    }
+    this.entries = (await readEntriesFile(this.file)) ?? defaults(this.port);
   }
 
-  list(): ServerEntry[] {
+  async list() {
     return this.entries;
   }
 
-  get(id: string): ServerEntry | undefined {
+  async get(id: string) {
     return this.entries.find((e) => e.id === id);
   }
 
-  async add(entry: ServerEntry): Promise<void> {
-    if (this.get(entry.id)) throw new RegistryError(409, `A server with id '${entry.id}' already exists`);
-    this.entries = [...this.entries, entry];
-    await this.save();
+  private readOnly(): never {
+    throw new RegistryError(403, "The MCP server list can only be edited with the accounts database (DB_HOST)");
   }
 
-  async update(id: string, entry: ServerEntry): Promise<void> {
-    if (!this.get(id)) throw new RegistryError(404, `No server with id '${id}'`);
-    if (entry.id !== id && this.get(entry.id)) throw new RegistryError(409, `A server with id '${entry.id}' already exists`);
-    this.entries = this.entries.map((e) => (e.id === id ? entry : e));
-    await this.save();
+  async add(): Promise<void> {
+    this.readOnly();
   }
 
-  async remove(id: string): Promise<void> {
-    if (!this.get(id)) throw new RegistryError(404, `No server with id '${id}'`);
-    this.entries = this.entries.filter((e) => e.id !== id);
-    await this.save();
+  async update(): Promise<void> {
+    this.readOnly();
   }
 
-  private async save(): Promise<void> {
-    await mkdir(path.dirname(this.file), { recursive: true });
-    const tmp = `${this.file}.tmp`;
-    await writeFile(tmp, JSON.stringify(this.entries, null, 2));
-    await rename(tmp, this.file);
+  async remove(): Promise<void> {
+    this.readOnly();
   }
 }
 
-export class RegistryError extends Error {
-  constructor(readonly status: number, message: string) {
-    super(message);
+type Row = typeof mcpServers.$inferSelect;
+
+const toEntry = (row: Row): ServerEntry => ({
+  id: row.id,
+  label: row.label,
+  description: row.description,
+  url: row.url,
+  auth: row.authType === "header" ? { type: "header", header: row.authHeader ?? "X-API-Key" } : { type: row.authType as "none" | "bearer" },
+  enabled: row.enabled,
+});
+
+const toRow = (entry: ServerEntry) => ({
+  id: entry.id,
+  label: entry.label,
+  description: entry.description,
+  url: entry.url,
+  authType: entry.auth.type,
+  authHeader: entry.auth.type === "header" ? entry.auth.header : null,
+  enabled: entry.enabled,
+});
+
+const isUniqueViolation = (error: unknown): boolean => {
+  const e = error as { code?: string; cause?: { code?: string } };
+  return e?.code === "23505" || e?.cause?.code === "23505";
+};
+
+// The `mcp_servers` table. On the first start with an empty table it is filled from the registry
+// file of earlier versions if there is one, otherwise with the default servers; from then on the
+// table is the only source.
+export class DbRegistry implements Registry {
+  constructor(private readonly db: Db, private readonly file: string, private readonly port: number) {}
+
+  async load(): Promise<void> {
+    if ((await this.db.$count(mcpServers)) > 0) return;
+    const fromFile = await readEntriesFile(this.file);
+    const initial = fromFile ?? defaults(this.port);
+    await this.db.insert(mcpServers).values(initial.map((e, i) => ({ ...toRow(e), sortOrder: i }))).onConflictDoNothing();
+    console.error(`MCP servers: registered ${initial.length} in the database (${fromFile ? `from ${this.file}` : "defaults"})`);
+  }
+
+  async list() {
+    return (await this.db.select().from(mcpServers).orderBy(asc(mcpServers.sortOrder), asc(mcpServers.id))).map(toEntry);
+  }
+
+  async get(id: string) {
+    const [row] = await this.db.select().from(mcpServers).where(eq(mcpServers.id, id)).limit(1);
+    return row ? toEntry(row) : undefined;
+  }
+
+  async add(entry: ServerEntry): Promise<void> {
+    try {
+      await this.db.insert(mcpServers).values({
+        ...toRow(entry),
+        sortOrder: sql`(select coalesce(max(${mcpServers.sortOrder}), -1) + 1 from ${mcpServers})`,
+      });
+    } catch (error) {
+      if (isUniqueViolation(error)) throw new RegistryError(409, `A server with id '${entry.id}' already exists`);
+      throw error;
+    }
+  }
+
+  async update(id: string, entry: ServerEntry): Promise<void> {
+    try {
+      await this.db.transaction(async (tx) => {
+        const { id: _id, ...values } = toRow(entry);
+        const updated = await tx.update(mcpServers).set({ id: entry.id, ...values, updatedAt: new Date() }).where(eq(mcpServers.id, id)).returning({ id: mcpServers.id });
+        if (updated.length === 0) throw new RegistryError(404, `No server with id '${id}'`);
+        // A saved key follows the server when its id changes
+        if (entry.id !== id) await tx.update(mcpServerKeys).set({ serverId: entry.id }).where(eq(mcpServerKeys.serverId, id));
+      });
+    } catch (error) {
+      if (isUniqueViolation(error)) throw new RegistryError(409, `A server with id '${entry.id}' already exists`);
+      throw error;
+    }
+  }
+
+  async remove(id: string): Promise<void> {
+    await this.db.transaction(async (tx) => {
+      const removed = await tx.delete(mcpServers).where(eq(mcpServers.id, id)).returning({ id: mcpServers.id });
+      if (removed.length === 0) throw new RegistryError(404, `No server with id '${id}'`);
+      await tx.delete(mcpServerKeys).where(eq(mcpServerKeys.serverId, id));
+    });
   }
 }

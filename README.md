@@ -71,7 +71,7 @@ Create the first admin (needs the database):
 - **On demand**: with the same variables set, run `pnpm seed:admin` (in the Docker container: `node dist/index.cjs --seed-admin`).
 
 #### Adding, changing and removing MCP servers
-The server list is shared by everyone using the UI and stored by the MCP gateway on the Akilimo 1.0 server (`packages/server/data/mcp-servers.json` locally, the `mcp-gateway` volume in Docker). It starts with Akilimo 1.0 and Akilimo 2.0. Only admins can change it; without a database there are no accounts, so the list is read-only.
+The server list is shared by everyone using the UI and stored in the accounts database (table `mcp_servers`). On the first start the table is filled with Akilimo 1.0 and Akilimo 2.0 (or, if an older `mcp-servers.json` registry file exists at `GATEWAY_DATA_FILE`, with its entries); after that the table is the only source, so restarts never bring removed servers back. Only admins can change it; without a database there are no accounts, so the list is read-only and the defaults (or that file) are used.
 1. Sign in as an admin and open **MCP servers → Manage**.
 2. Add a server with its **streamable HTTP** endpoint URL and how its key is sent (none, `Authorization: Bearer`, or a custom header such as `X-API-Key`). The gateway calls the URL, so it works even if the server does not allow browser requests, and internal addresses (e.g. `http://akilimo-mcp:3000/mcp`) are allowed.
 3. Use **Test connection** in the form (with an optional key that is used only for the test) before saving, or the plug button on any listed server. The gateway connects and reports the server name, response time and its tools, or why it failed (unreachable, wrong path, key missing or rejected).

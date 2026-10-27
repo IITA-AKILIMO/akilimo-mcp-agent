@@ -3,7 +3,7 @@ import { seedAdmin } from "./accounts/seed.js";
 import { AkilimoApiClient } from "./api/client.js";
 import { config } from "./config.js";
 import { closeDb, connectDb } from "./db/index.js";
-import { Registry } from "./gateway/registry.js";
+import { DbRegistry, FileRegistry } from "./gateway/registry.js";
 import { gatewayRouter } from "./gateway/routes.js";
 import { chatRouter } from "./chat/routes.js";
 import { ChatSettings } from "./chat/store.js";
@@ -47,12 +47,13 @@ async function main() {
   const api = new AkilimoApiClient(config.apiBaseUrl, config.apiKey);
 
   if (config.transport === "http") {
-    const registry = new Registry(config.gatewayDataFile, config.port);
-    await registry.load();
-
     const db = config.database ? await connectDb(config.database) : null;
     console.error(db ? "Accounts enabled (PostgreSQL)" : "Accounts disabled: set DB_HOST, DB_DATABASE, DB_USERNAME and DB_PASSWORD to enable sign-up and saved chats");
-    console.error(`MCP gateway registry: ${config.gatewayDataFile} (${db ? "editable by admin users" : "read-only without accounts"})`);
+    // With a database the MCP server list is a table (filled with the defaults on the first start);
+    // without one it is read-only
+    const registry = db ? new DbRegistry(db, config.gatewayDataFile, config.port) : new FileRegistry(config.gatewayDataFile, config.port);
+    await registry.load();
+    console.error(`MCP server list: ${db ? "database table mcp_servers, editable by admin users" : "read-only without accounts"}`);
     if (db && config.adminSeed) console.error(await seedAdmin(db, config.adminSeed));
     console.error(config.secretsKey
       ? "Secrets encryption enabled (SECRETS_KEY)"

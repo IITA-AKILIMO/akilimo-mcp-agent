@@ -77,6 +77,21 @@ export const activity = pgTable("activity", {
   index("activity_user_id_id_idx").on(t.userId, t.id.desc().nullsFirst()),
 ]);
 
+// The shared MCP server list (gateway and chat). Filled with the default servers on the first start
+// and managed by admins from then on. Keys for servers that need one are in mcp_server_keys.
+export const mcpServers = pgTable("mcp_servers", {
+  id: text("id").primaryKey(),
+  label: text("label").notNull(),
+  description: text("description").notNull().default(""),
+  url: text("url").notNull(),
+  authType: text("auth_type").notNull().default("none"), // none | bearer | header
+  authHeader: text("auth_header"),
+  enabled: boolean("enabled").notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamptz("created_at").notNull().defaultNow(),
+  updatedAt: timestamptz("updated_at").notNull().defaultNow(),
+});
+
 // Settings of the chat's LLM providers, managed by admins. The API key is encrypted (see
 // secrets/crypto.ts); key_hint only holds the last characters for display.
 export const llmProviders = pgTable("llm_providers", {

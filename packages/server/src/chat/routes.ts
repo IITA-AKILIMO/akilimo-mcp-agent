@@ -159,7 +159,7 @@ export function chatRouter(settings: ChatSettings, registry: Registry, db: Db | 
   router.put("/admin/server-keys/:id", express.json(), ...admin, async (req, res) => {
     try {
       const id = String(req.params.id);
-      if (!registry.get(id)) throw new SettingsError(404, `No server with id '${id}'`);
+      if (!(await registry.get(id))) throw new SettingsError(404, `No server with id '${id}'`);
       await settings.setServerKey(id, z.object({ key: z.string().trim().min(1).max(2000) }).parse(req.body).key);
       res.json({ keys: await settings.serverKeyHints() });
     } catch (error) {

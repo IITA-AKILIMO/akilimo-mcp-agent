@@ -4,7 +4,7 @@ import express, { type NextFunction, type Request, type Response } from "express
 import { z } from "zod/v4";
 import { loadUser, requireAdmin, requireJson } from "../accounts/auth.js";
 import type { Db } from "../db/index.js";
-import { Registry, RegistryError, ServerEntrySchema } from "./registry.js";
+import { RegistryError, ServerEntrySchema, type Registry } from "./registry.js";
 import { testConnection } from "./test.js";
 
 // Request headers worth forwarding to an upstream MCP server, and response headers worth returning
@@ -38,8 +38,12 @@ export function gatewayRouter(registry: Registry, db: Db | null) {
   const withUser = db ? loadUser(db) : passThrough;
   const admin = db ? [withUser, requireJson, requireAdmin] : [noAccounts];
 
-  router.get("/servers", withUser, (req, res) => {
-    res.json({ servers: registry.list(), editable: req.user?.role === "admin" });
+  router.get("/servers", withUser, async (req, res) => {
+    try {
+      res.json({ servers: await registry.list(), editable: req.user?.role === "admin" });
+    } catch (error) {
+      sendError(res, error);
+    }
   });
 
   router.post("/servers", express.json(), ...admin, async (req, res) => {
@@ -84,7 +88,7 @@ export function gatewayRouter(registry: Registry, db: Db | null) {
 
   // Streamable HTTP proxy to the registered server, streaming responses (SSE) back as they arrive
   router.all("/servers/:id/mcp", express.raw({ type: () => true, limit: "2mb" }), async (req, res) => {
-    const entry = registry.get(String(req.params.id));
+    const entry = await registry.get(String(req.params.id)).catch(() => undefined);
     if (!entry || !entry.enabled) {
       res.status(404).json({ error: `No enabled MCP server '${req.params.id}'` });
       return;

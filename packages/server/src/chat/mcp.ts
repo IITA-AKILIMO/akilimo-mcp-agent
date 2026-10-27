@@ -62,7 +62,7 @@ export async function openTools(registry: Registry, keys: Record<string, string>
   const tools: AgentTool[] = [];
   const warnings: string[] = [];
 
-  const entries = registry.list().filter((e) => e.enabled);
+  const entries = (await registry.list()).filter((e) => e.enabled);
   await Promise.all(entries.map(async (entry) => {
     // A server that needs a key and has none saved would only answer 401
     if (entry.auth.type !== "none" && !keys[entry.id]) {
