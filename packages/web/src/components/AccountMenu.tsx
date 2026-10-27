@@ -85,6 +85,7 @@ export const AccountMenu: React.FC<Props> = ({ enabled, user, onLogin, onRegiste
       <div className="d-flex align-items-center gap-2">
         <span className="small d-none d-md-inline-flex align-items-center gap-1" title={user.email}>
           <UserCircle size={16} className="text-akilimo" /> {user.name}
+          {user.role === 'admin' && <span className="badge text-bg-success">Admin</span>}
         </span>
         <button type="button" className="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1" onClick={onLogout} title="Sign out">
           <LogOut size={14} /> <span className="d-none d-sm-inline">Sign out</span>

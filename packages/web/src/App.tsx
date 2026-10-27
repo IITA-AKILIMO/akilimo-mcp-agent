@@ -6,7 +6,7 @@ import { useAccount } from './account/useAccount';
 import { AccountMenu } from './components/AccountMenu';
 import { ActivityFeed } from './components/ActivityFeed';
 import { ChatView } from './components/ChatView';
-import { ServerManager } from './components/ServerManager';
+import { AdminDialog } from './components/AdminDialog';
 import { ServerPanel } from './components/ServerPanel';
 import { ThemeToggle } from './components/ThemeToggle';
 import { ToolRunner } from './components/ToolRunner';
@@ -53,6 +53,7 @@ export default function App() {
     } else {
       pending.current = [];
       clearEvents();
+      setManaging(false);
     }
   }, [signedInAs, account.ready, replaceEvents, clearEvents]);
 
@@ -62,6 +63,7 @@ export default function App() {
   };
   const [mode, setMode] = useState<Mode>(savedMode);
   const [managing, setManaging] = useState(false);
+  const isAdmin = account.user?.role === 'admin';
 
   const changeMode = (next: Mode) => {
     setMode(next);
@@ -112,13 +114,15 @@ export default function App() {
           </div>
           <div className="col-12 col-lg-4 col-xxl-3 panel-col d-flex flex-column gap-3">
             <ServerPanel configs={configs} servers={servers} registryError={registryError}
-              onConnect={connect} onDisconnect={disconnect} onManage={() => setManaging(true)} />
+              onConnect={connect} onDisconnect={disconnect} canManage={isAdmin} onManage={() => setManaging(true)} />
             <ActivityFeed events={events} onClear={clearAll} />
           </div>
         </div>
       </main>
 
-      {managing && <ServerManager onClose={() => setManaging(false)} onChanged={reload} />}
+      {managing && isAdmin && account.user && (
+        <AdminDialog currentUser={account.user} onClose={() => setManaging(false)} onChanged={reload} />
+      )}
     </div>
   );
 }

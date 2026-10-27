@@ -1,8 +1,7 @@
-// Per-browser storage for upstream server keys and the gateway admin token. Keys are remembered
-// in localStorage by the user's choice; they are never sent to the gateway's registry, only
-// forwarded per request. Storage can be unavailable (private mode), so every access is guarded.
+// Per-browser storage for upstream server keys. Keys are remembered in localStorage by the
+// user's choice; they are never sent to the gateway's registry, only forwarded per request.
+// Storage can be unavailable (private mode), so every access is guarded.
 const KEYS = 'mcp-server-keys';
-const ADMIN = 'mcp-gateway-admin-token';
 
 const read = <T,>(name: string, fallback: T): T => {
   try {
@@ -30,5 +29,5 @@ export const saveKey = (id: string, key: string) => {
   write(KEYS, keys);
 };
 
-export const loadAdminToken = (): string => read(ADMIN, '');
-export const saveAdminToken = (token: string) => write(ADMIN, token);
+// Admin tokens were stored here before roles replaced them; remove any leftover
+try { localStorage.removeItem('mcp-gateway-admin-token'); } catch { /* storage unavailable */ }

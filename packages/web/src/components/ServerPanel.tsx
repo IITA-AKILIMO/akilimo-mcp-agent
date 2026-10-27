@@ -10,6 +10,8 @@ interface Props {
   registryError: string | null;
   onConnect: (id: string) => void;
   onDisconnect: (id: string) => void;
+  // Only admins see Manage; registry changes are checked server-side as well
+  canManage: boolean;
   onManage: () => void;
 }
 
@@ -20,7 +22,7 @@ const StatusBadge: Record<ConnectionStatus, string> = {
   error: 'text-bg-danger',
 };
 
-export const ServerPanel: React.FC<Props> = ({ configs, servers, registryError, onConnect, onDisconnect, onManage }) => {
+export const ServerPanel: React.FC<Props> = ({ configs, servers, registryError, onConnect, onDisconnect, canManage, onManage }) => {
   // Remembered in this browser (see mcp/keys.ts); sent only with requests to that server
   const [keys, setKeys] = useState<Record<string, string>>(loadKeys);
 
@@ -34,13 +36,17 @@ export const ServerPanel: React.FC<Props> = ({ configs, servers, registryError, 
       <div className="card-header d-flex align-items-center gap-2">
         <Server size={16} className="text-body-secondary" />
         <h2 className="h6 mb-0 text-uppercase small fw-semibold text-body-secondary">MCP servers</h2>
-        <button type="button" className="btn btn-sm btn-outline-secondary ms-auto d-inline-flex align-items-center gap-1" onClick={onManage}>
-          <Settings2 size={14} /> Manage
-        </button>
+        {canManage && (
+          <button type="button" className="btn btn-sm btn-outline-secondary ms-auto d-inline-flex align-items-center gap-1" onClick={onManage}>
+            <Settings2 size={14} /> Manage
+          </button>
+        )}
       </div>
       {registryError && <div className="alert alert-danger small m-2 mb-0">Cannot load the server list: {registryError}</div>}
       {!registryError && configs.length === 0 && (
-        <div className="small text-body-secondary p-3">No servers configured. Use Manage to add one.</div>
+        <div className="small text-body-secondary p-3">
+          No servers configured.{canManage ? ' Use Manage to add one.' : ' An admin can add them.'}
+        </div>
       )}
       <ul className="list-group list-group-flush">
         {configs.map(s => {

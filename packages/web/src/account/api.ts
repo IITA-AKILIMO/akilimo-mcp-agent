@@ -3,10 +3,17 @@
 import type { MCPEvent } from '@akilimo/shared';
 import type { ChatMessage } from '../llm/ollama';
 
+export type Role = 'user' | 'admin';
+
 export interface User {
   id: string;
   email: string;
   name: string;
+  role: Role;
+}
+
+export interface AdminUser extends User {
+  created_at: string;
 }
 
 export interface ConversationSummary {
@@ -57,3 +64,7 @@ export const saveActivity = (events: MCPEvent[]) =>
     events: events.map(e => ({ type: e.type, server: e.server, message: e.message, payload: e.payload, timestamp: e.timestamp.toISOString() })),
   });
 export const clearActivity = () => request<void>('DELETE', '/activity');
+
+// Admin only
+export const listUsers = () => request<{ users: AdminUser[] }>('GET', '/admin/users');
+export const setUserRole = (id: string, role: Role) => request<void>('PATCH', `/admin/users/${id}`, { role });
