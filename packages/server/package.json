@@ -13,6 +13,7 @@
     "seed:admin": "vite-node src/index.ts -- --seed-admin"
   },
   "dependencies": {
+    "@akilimo/llm": "workspace:*",
     "@akilimo/shared": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.3.2",
     "axios": "^1.7.0",

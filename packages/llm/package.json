@@ -1,0 +1,11 @@
+{
+  "name": "@akilimo/llm",
+  "version": "1.0.0",
+  "description": "LLM providers (Ollama, OpenAI-compatible APIs, Anthropic): model lists and chat calls with tool support",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "type": "module",
+  "dependencies": {
+    "@akilimo/shared": "workspace:*"
+  }
+}

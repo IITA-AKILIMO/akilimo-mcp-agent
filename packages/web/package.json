@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@akilimo/llm": "workspace:*",
     "@akilimo/shared": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.32.2",
     "bootstrap": "^5.3.8",

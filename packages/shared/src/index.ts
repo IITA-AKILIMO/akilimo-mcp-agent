@@ -171,3 +171,6 @@ export interface MCPEvent {
   message: string;
   payload?: unknown;
 }
+
+export * from './chat.js';
+export * from './countries.js';

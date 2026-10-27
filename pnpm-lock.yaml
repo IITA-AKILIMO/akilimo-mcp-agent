@@ -170,8 +170,17 @@ importers:
         specifier: ^5.0.0
         version: 5.9.3
 
+  packages/llm:
+    dependencies:
+      '@akilimo/shared':
+        specifier: workspace:*
+        version: link:../shared
+
   packages/server:
     dependencies:
+      '@akilimo/llm':
+        specifier: workspace:*
+        version: link:../llm
       '@akilimo/shared':
         specifier: workspace:*
         version: link:../shared
@@ -230,6 +239,9 @@ importers:
 
   packages/web:
     dependencies:
+      '@akilimo/llm':
+        specifier: workspace:*
+        version: link:../llm
       '@akilimo/shared':
         specifier: workspace:*
         version: link:../shared
