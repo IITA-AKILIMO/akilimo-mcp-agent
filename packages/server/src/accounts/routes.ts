@@ -26,11 +26,16 @@ const MessageSchema = z.object({
   content: z.string().max(200_000).default(""),
   tool_calls: z.array(z.unknown()).max(20).optional(),
   tool_name: z.string().max(200).optional(),
+  // A guided step (action, country, request and result); capped so one row cannot grow without limit
+  data: z.unknown().refine((v) => v === undefined || JSON.stringify(v).length <= 500_000, "Step data is too large").optional(),
 });
+
+const ConversationModeSchema = z.enum(["ai", "guided"]);
 
 const ConversationSchema = z.object({
   title: z.string().trim().min(1).max(120),
   model: z.string().max(100).optional(),
+  mode: ConversationModeSchema.default("ai"),
 });
 
 const RoleSchema = z.object({ role: z.enum(["user", "admin"]) });
@@ -54,8 +59,8 @@ const isUniqueViolation = (error: unknown) =>
 const isUuid = (value: string) => z.uuid().safeParse(value).success;
 
 // The web client expects snake_case fields
-const conversationJson = (c: { id: string; title: string; model: string | null; createdAt: Date; updatedAt: Date }) =>
-  ({ id: c.id, title: c.title, model: c.model, created_at: c.createdAt, updated_at: c.updatedAt });
+const conversationJson = (c: { id: string; title: string; model: string | null; mode: string; createdAt: Date; updatedAt: Date }) =>
+  ({ id: c.id, title: c.title, model: c.model, mode: c.mode, created_at: c.createdAt, updated_at: c.updatedAt });
 
 const sendError = (res: Response, error: unknown) => {
   if (error instanceof z.ZodError) {
@@ -139,14 +144,19 @@ export function apiRouter(db: Db | null) {
 
   // ── Conversations ─────────────────────────────────────────────────────────
   router.get("/conversations", handle(async (req, res) => {
+    // ?mode=ai|guided narrows the list to one kind of conversation
+    const mode = ConversationModeSchema.safeParse(req.query.mode);
     const rows = await db.select().from(conversations)
-      .where(eq(conversations.userId, req.user!.id)).orderBy(desc(conversations.updatedAt)).limit(200);
+      .where(mode.success
+        ? and(eq(conversations.userId, req.user!.id), eq(conversations.mode, mode.data))
+        : eq(conversations.userId, req.user!.id))
+      .orderBy(desc(conversations.updatedAt)).limit(200);
     res.json({ conversations: rows.map(conversationJson) });
   }));
 
   router.post("/conversations", handle(async (req, res) => {
-    const { title, model } = ConversationSchema.parse(req.body);
-    const [conversation] = await db.insert(conversations).values({ userId: req.user!.id, title, model: model ?? null }).returning();
+    const { title, model, mode } = ConversationSchema.parse(req.body);
+    const [conversation] = await db.insert(conversations).values({ userId: req.user!.id, title, model: model ?? null, mode }).returning();
     res.status(201).json(conversationJson(conversation!));
   }));
 
@@ -163,7 +173,7 @@ export function apiRouter(db: Db | null) {
     res.json({
       conversation: conversationJson(conversation),
       messages: history.map((m) => ({
-        role: m.role, content: m.content, tool_calls: m.toolCalls, tool_name: m.toolName, created_at: m.createdAt,
+        role: m.role, content: m.content, tool_calls: m.toolCalls, tool_name: m.toolName, data: m.data, created_at: m.createdAt,
       })),
     });
   }));
@@ -184,6 +194,7 @@ export function apiRouter(db: Db | null) {
         content: m.content,
         toolCalls: m.tool_calls ?? null,
         toolName: m.tool_name ?? null,
+        data: m.data ?? null,
       })));
       await tx.update(conversations).set({ updatedAt: new Date() }).where(eq(conversations.id, id));
     });

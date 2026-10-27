@@ -42,6 +42,8 @@ export const conversations = pgTable("conversations", {
   userId: uuid("user_id").notNull(),
   title: text("title").notNull(),
   model: text("model"),
+  // "ai" = the free-text chat, "guided" = buttons and forms answered by the AKILIMO tools
+  mode: text("mode").notNull().default("ai"),
   createdAt: timestamptz("created_at").notNull().defaultNow(),
   updatedAt: timestamptz("updated_at").notNull().defaultNow(),
 }, (t) => [
@@ -58,6 +60,8 @@ export const messages = pgTable("messages", {
   content: text("content").notNull().default(""),
   toolCalls: jsonb("tool_calls").$type<unknown[]>(),
   toolName: text("tool_name"),
+  // Guided conversations keep each step here: { action, country, request, result }
+  data: jsonb("data").$type<unknown>(),
   createdAt: timestamptz("created_at").notNull().defaultNow(),
 }, (t) => [
   foreignKey({ name: "messages_conversation_id_fkey", columns: [t.conversationId], foreignColumns: [conversations.id] }).onDelete("cascade").onUpdate("cascade"),
