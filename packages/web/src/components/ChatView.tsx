@@ -9,7 +9,9 @@ import {
 import { buildTools, runAgent, type AgentStep } from '../llm/agent';
 import { PROVIDERS, type ProviderId } from '../llm/providers';
 import type { ChatMessage } from '../llm/types';
+import { COUNTRIES, akilimoExamples, contextExamples, findCountry } from '../llm/countries';
 import { useLlm } from '../llm/useLlm';
+import { read, write } from '../mcp/keys';
 import type { McpServerConfig } from '../mcp/servers';
 import type { ServerState } from '../mcp/useMcpServers';
 import { LlmSettings } from './LlmSettings';
@@ -29,11 +31,10 @@ type Item =
   | { id: string; kind: 'user' | 'assistant'; text: string }
   | { id: string; kind: 'step'; step: AgentStep };
 
-const SUGGESTIONS = [
-  'I grow cassava in Tanzania. Which fertilizer should I use?',
-  'Which fertilizers are available in Nigeria and what do they cost?',
-  'What is the typical cassava price in Rwanda?',
-];
+const COUNTRY_KEY = 'chat-country';
+
+const hasContextTools = (servers: Record<string, ServerState>) =>
+  Object.values(servers).some(s => s.tools.some(t => /weather|soil|climate|forecast|agriculture_profile|compare_countries/i.test(t.name)));
 
 const newId = () => crypto.randomUUID();
 
@@ -61,8 +62,12 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
   const [error, setError] = useState<string | null>(null);
   const abort = useRef<AbortController | null>(null);
 
+  // The chat starts by asking where the user farms; the answer is remembered in this browser
+  const [countryCode, setCountryCode] = useState<string>(() => read<string>(COUNTRY_KEY, ''));
+  const country = findCountry(countryCode);
+
   const [showMap, setShowMap] = useState(false);
-  const [picked, setPicked] = useState<{ lat?: number; lon?: number; country?: string }>({});
+  const [picked, setPicked] = useState<{ lat?: number; lon?: number; country?: string }>(() => ({ country: countryCode || undefined }));
 
   // Saved conversation of a signed-in user; writes are chained so messages keep their order
   const conversationId = useRef<string | null>(null);
@@ -128,7 +133,7 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
 
   const send = async (text: string) => {
     const message = text.trim();
-    if (!message || !model) return;
+    if (!message || !model || !country) return;
     setInput('');
     if (busyRef.current) {
       setQueue([...queue.current, { id: newId(), text: message }]);
@@ -155,6 +160,7 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
         tools,
         callTool,
         signal: controller.signal,
+        country,
         onMessage: (m) => {
           history.current = [...history.current, m];
           persist([m], message);
@@ -179,7 +185,6 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
 
   const reset = () => {
     setQueue([]);
-    abort.current?.abort();
     abort.current?.abort();
     history.current = [];
     conversationId.current = null;
@@ -238,14 +243,31 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
     send(`My field is at ${picked.lat}, ${picked.lon}${picked.country ? ` (${picked.country})` : ''}`);
   };
 
+  // Choosing a different country while a conversation is open starts a new one, so answers never mix countries
+  const chooseCountry = (code: string) => {
+    if (code === countryCode) return;
+    if (countryCode && items.length > 0) reset();
+    setCountryCode(code);
+    write(COUNTRY_KEY, code);
+    setPicked(p => ({ ...p, country: code || undefined }));
+  };
+
   const noTools = tools.length === 0;
+  const exampleGroups = country
+    ? [...akilimoExamples(country), ...(hasContextTools(servers) ? [contextExamples(country)] : [])]
+    : [];
 
   return (
     <div className="card h-100 shadow-sm">
       <div className="card-header d-flex flex-wrap align-items-center gap-2 position-relative">
         <Bot size={16} className="text-akilimo" />
         <span className="small fw-semibold">AKILIMO assistant</span>
-        <select className="form-select form-select-sm w-auto ms-auto" aria-label="LLM provider" value={llm.provider}
+        <select className="form-select form-select-sm w-auto ms-auto" aria-label="Country" value={countryCode}
+          onChange={e => chooseCountry(e.target.value)}>
+          {!country && <option value="">Choose country…</option>}
+          {COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.name}</option>)}
+        </select>
+        <select className="form-select form-select-sm w-auto" aria-label="LLM provider" value={llm.provider}
           onChange={e => llm.setProvider(e.target.value as ProviderId)} disabled={busy}>
           {PROVIDERS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
         </select>
@@ -296,15 +318,35 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
           <div className="alert alert-info small mb-0">Connecting to the AKILIMO servers… switch one on in the MCP servers panel if this persists.</div>
         )}
 
-        {items.length === 0 && (
-          <div className="m-auto text-center" style={{ maxWidth: '32rem' }}>
+        {items.length === 0 && !country && (
+          <div className="m-auto text-center" style={{ maxWidth: '36rem' }}>
             <Bot size={40} className="text-akilimo mb-2" />
-            <p className="mb-1">Ask about fertilizer for your cassava field.</p>
-            <p className="small text-body-secondary">I will ask for the details I need, such as where the field is and when you plan to plant.</p>
-            <div className="d-flex flex-column gap-2 mt-3">
-              {SUGGESTIONS.map(s => (
-                <button key={s} type="button" className="btn btn-sm btn-outline-success text-start"
-                  onClick={() => send(s)} disabled={!model || noTools}>{s}</button>
+            <p className="mb-1">Where do you farm?</p>
+            <p className="small text-body-secondary">Choose your country first. I will use it for prices, fertilizers and the examples I suggest.</p>
+            <div className="d-flex flex-wrap justify-content-center gap-2 mt-3">
+              {COUNTRIES.map(c => (
+                <button key={c.code} type="button" className="btn btn-outline-success" onClick={() => chooseCountry(c.code)}>{c.name}</button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {items.length === 0 && country && (
+          <div className="m-auto text-center" style={{ maxWidth: '36rem' }}>
+            <Bot size={40} className="text-akilimo mb-2" />
+            <p className="mb-1">Ask about fertilizer for your cassava field in {country.name}.</p>
+            <p className="small text-body-secondary">I will ask for the details I need, such as where the field is and when you plan to plant. Pick an example to start, or type your own question. You can change the country at the top.</p>
+            <div className="text-start mt-3">
+              {exampleGroups.map(group => (
+                <div key={group.title} className="mb-3">
+                  <div className="small fw-semibold text-body-secondary mb-1">{group.title}</div>
+                  <div className="d-flex flex-column gap-2">
+                    {group.prompts.map(p => (
+                      <button key={p} type="button" className="btn btn-sm btn-outline-success text-start"
+                        onClick={() => send(p)} disabled={!model || noTools}>{p}</button>
+                    ))}
+                  </div>
+                </div>
               ))}
             </div>
           </div>
@@ -385,18 +427,18 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
         )}
         <form className="input-group" onSubmit={e => { e.preventDefault(); send(input); }}>
           <button type="button" className="btn btn-outline-secondary" onClick={() => setShowMap(v => !v)}
-            title="Share the field location on a map" aria-label="Share field location">
+            title="Share the field location on a map" aria-label="Share field location" disabled={!country}>
             <MapPin size={16} />
           </button>
-          <input className="form-control" placeholder={model ? 'Type your question…' : 'Waiting for a model…'}
-            value={input} onChange={e => setInput(e.target.value)} aria-label="Message" disabled={!model} />
+          <input className="form-control" placeholder={!country ? 'Choose your country first…' : model ? 'Type your question…' : 'Waiting for a model…'}
+            value={input} onChange={e => setInput(e.target.value)} aria-label="Message" disabled={!model || !country} />
           {busy && (
             <button type="button" className="btn btn-outline-danger d-inline-flex align-items-center gap-1" onClick={() => abort.current?.abort()}
               title="Stop the current answer; queued messages are still sent">
               <Square size={14} /> Stop
             </button>
           )}
-          <button type="submit" className="btn btn-akilimo d-inline-flex align-items-center gap-1" disabled={!input.trim() || !model || noTools}
+          <button type="submit" className="btn btn-akilimo d-inline-flex align-items-center gap-1" disabled={!input.trim() || !model || !country || noTools}
             title={busy ? 'Queue this message; it is sent when the current answer is done' : undefined}>
             <Send size={16} /> <span className="d-none d-sm-inline">{busy ? 'Queue' : 'Send'}</span>
           </button>

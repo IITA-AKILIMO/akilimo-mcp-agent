@@ -1,6 +1,7 @@
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { McpServerConfig } from '../mcp/servers';
 import type { ServerState } from '../mcp/useMcpServers';
+import type { Country } from './countries';
 import type { ChatMessage, ToolSpec } from './types';
 
 export interface AgentTool {
@@ -32,8 +33,12 @@ export function buildTools(configs: McpServerConfig[], servers: Record<string, S
   });
 }
 
-export const systemPrompt = () => `You are the AKILIMO assistant from IITA. You help cassava farmers and extension agents in Nigeria, Tanzania, Rwanda, Ghana and Burundi get fertilizer advice.
+const countryNote = (country?: Country) => country
+  ? `\nThe user told you they farm in ${country.name} (country code ${country.code}). Use ${country.code} for every tool that takes a country and do not ask which country; if they clearly talk about another country, follow that instead. Treat questions about prices, fertilizers, places and weather as being about ${country.name} unless they say otherwise.\n`
+  : '';
 
+export const systemPrompt = (country?: Country) => `You are the AKILIMO assistant from IITA. You help cassava farmers and extension agents in Nigeria, Tanzania, Rwanda, Ghana and Burundi get fertilizer advice.
+${countryNote(country)}
 Most important rule: you are not an agronomist. Never say yourself whether it is a good time to plant, how much fertilizer to use or what yield to expect. That advice may only come from AKILIMO tool results (compute_recommendations). Weather and other tools are context only.
 Example. User: "Is it a good week to plant cassava in Ibadan?" Good answer: "Right now in Ibadan it is 25°C and clear, with a 22% chance of rain (from the weather service). I can't judge planting timing from the weather alone. If you tell me your field size and planned planting and harvest dates, I can get an AKILIMO recommendation for your field." Bad answer: "Yes, it is a good week to plant."
 
@@ -90,11 +95,12 @@ interface RunOptions {
   onMessage: (message: ChatMessage) => void; // every message added to the conversation
   onStep: (step: AgentStep) => void;
   signal?: AbortSignal;
+  country?: Country; // the country the user chose; added to the instructions
 }
 
 // One user turn: let the model call tools until it answers in text (bounded to avoid loops)
-export async function runAgent({ chat, history, tools, callTool, onMessage, onStep, signal }: RunOptions): Promise<void> {
-  const conversation: ChatMessage[] = [{ role: 'system', content: systemPrompt() }, ...history];
+export async function runAgent({ chat, history, tools, callTool, onMessage, onStep, signal, country }: RunOptions): Promise<void> {
+  const conversation: ChatMessage[] = [{ role: 'system', content: systemPrompt(country) }, ...history];
   const specs = tools.map(t => t.spec);
 
   for (let round = 0; round < 8; round++) {
