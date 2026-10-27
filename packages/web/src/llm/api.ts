@@ -77,6 +77,7 @@ type StreamEvent =
   | { type: 'step'; step: AgentStep }
   | { type: 'warning'; text: string }
   | { type: 'error'; error: string }
+  | { type: 'ping' }
   | { type: 'done' };
 
 // One user turn: the server runs the agent loop and streams events as newline-delimited JSON
@@ -93,6 +94,7 @@ export async function streamChat({ provider, model, country, messages, signal, o
 
   const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
   let buffer = '';
+  let finished = false; // the server ends every answer with a "done" event
   for (;;) {
     const { done, value } = await reader.read();
     if (value) buffer += value;
@@ -105,7 +107,12 @@ export async function streamChat({ provider, model, country, messages, signal, o
       else if (event.type === 'step') onStep(event.step);
       else if (event.type === 'warning') onWarning(event.text);
       else if (event.type === 'error') throw new Error(event.error);
+      else if (event.type === 'done') finished = true;
     }
-    if (done) return;
+    if (done) {
+      // A stream that just ends (a proxy or the network cut it) must not look like a finished answer
+      if (!finished && !signal?.aborted) throw new Error('The connection was interrupted before the answer was complete. Please send your question again.');
+      return;
+    }
   }
 }
