@@ -42,17 +42,12 @@ ENV PORT=3000
 # MCP gateway registry; mount a volume on /app/data to keep it across rebuilds
 ENV GATEWAY_DATA_FILE=/app/data/mcp-servers.json
 
-# Prisma's migration engine needs OpenSSL on Alpine
-RUN apk add --no-cache openssl
-
 WORKDIR /app
 
 COPY --from=builder --chown=node:node /out/node_modules ./node_modules
 COPY --from=builder --chown=node:node /app/packages/server/dist ./dist
-# Schemas, migrations and config for `prisma migrate deploy` at start-up
-COPY --from=builder --chown=node:node /app/packages/server/prisma ./prisma
-COPY --from=builder --chown=node:node /app/packages/server/prisma.config.ts ./prisma.config.ts
-COPY --from=builder --chown=node:node /app/packages/server/scripts ./scripts
+# SQL migrations, applied by the server itself at start-up (no database CLI in the image)
+COPY --from=builder --chown=node:node /app/packages/server/drizzle ./drizzle
 RUN mkdir -p /app/data && chown node:node /app/data
 
 USER node
@@ -62,5 +57,5 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD wget -qO- "http://127.0.0.1:${PORT}/health" > /dev/null || exit 1
 
-# Apply pending migrations for the configured database (skipped when none), then start
-CMD ["sh", "-c", "node scripts/migrate.mjs && exec node dist/index.cjs"]
+# The server applies pending migrations when it connects to the configured database
+CMD ["node", "dist/index.cjs"]
