@@ -2,7 +2,7 @@
 
 Welcome to the Akilimo MCP Agent! This project allows an AI (like Claude or ChatGPT) to "talk" to the Akilimo Agricultural API to provide real-world farming advice, price checks, and recommendations.
 
-This repository is the **Akilimo 1.0** agent (`akilimo-1.0`), backed by the Akilimo 1.0 API. The separate, hosted **Akilimo 2.0** agent (`akilimo-2.0`) lives at `app2.akilimo.org`; see [docs/MCP_CONNECTION_GUIDE.md](docs/MCP_CONNECTION_GUIDE.md) for both.
+This repository is the **Akilimo 1.0** agent (`akilimo-1.0`), backed by the Akilimo 1.0 API. The separate, hosted **Akilimo 2.0** agent (`akilimo-2.0`) lives at `app2.akilimo.org`; see [docs/MCP_CONNECTION_GUIDE.md](docs/MCP_CONNECTION_GUIDE.md) for both. Using the server from the AKILIMO Android app: [docs/ANDROID_INTEGRATION.md](docs/ANDROID_INTEGRATION.md).
 
 ## 🎓 What is MCP?
 **MCP (Model Context Protocol)** is like a "universal plug" for AI. Instead of building a custom integration for every AI, we build an MCP Server. Any AI client that supports MCP can then use our tools to fetch data from the Akilimo API.
