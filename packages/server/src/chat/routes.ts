@@ -116,6 +116,9 @@ export function chatRouter(settings: ChatSettings, registry: Registry, db: Db | 
     const abort = new AbortController();
     res.on("close", () => { if (!res.writableEnded) abort.abort(); });
     const session = await openTools(registry, keys);
+    // A slow model can take minutes without sending anything, and proxies close connections that stay
+    // silent; a small line every 15 s keeps the stream open (the client ignores it)
+    const heartbeat = setInterval(() => send({ type: "ping" }), 15_000);
     try {
       for (const text of session.warnings) send({ type: "warning", text });
       await runAgent({
@@ -130,8 +133,13 @@ export function chatRouter(settings: ChatSettings, registry: Registry, db: Db | 
       });
       send({ type: "done" });
     } catch (error) {
-      if (!abort.signal.aborted) send({ type: "error", error: error instanceof Error ? error.message : String(error) });
+      const text = error instanceof Error ? error.message : String(error);
+      if (!abort.signal.aborted) {
+        console.error(`Chat failed (${body.provider} ${body.model}): ${text}`);
+        send({ type: "error", error: text });
+      }
     } finally {
+      clearInterval(heartbeat);
       await session.close();
       res.end();
     }

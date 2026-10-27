@@ -78,8 +78,20 @@ export async function runAgent({ chat, history, tools, callTool, onMessage, onSt
   const conversation: ChatMessage[] = [{ role: "system", content: systemPrompt(country) }, ...history];
   const specs = tools.map((t) => t.spec);
 
+  // Small models sometimes answer with nothing (or only hidden reasoning) after a tool result, which
+  // would look like the chat just stopped: ask once more, then say so in words
+  let nudged = false;
+
   for (let round = 0; round < 8; round++) {
-    const reply = await chat(conversation, specs, signal);
+    let reply = await chat(conversation, specs, signal);
+    if (!reply.tool_calls?.length && !reply.content.trim()) {
+      if (!nudged) {
+        nudged = true;
+        conversation.push({ role: "user", content: "Please answer now in plain words, using the information above." });
+        continue;
+      }
+      reply = { role: "assistant", content: "I could not put an answer together this time. Please try again, or ask in a different way." };
+    }
     conversation.push(reply);
     onMessage(reply);
     if (!reply.tool_calls?.length) return;
