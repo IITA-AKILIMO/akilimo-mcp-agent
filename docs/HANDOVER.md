@@ -7,7 +7,7 @@
 A pnpm monorepo (TypeScript) for IITA's AKILIMO cassava advisory tools:
 
 - **`packages/server`**: the **Akilimo 1.0** MCP server (MCP name `akilimo-1.0`). Wraps the Akilimo 1.0 REST API (Laravel repo `new-akilimo-api`, hosted at `https://api.akilimo.org`). Over HTTP it also hosts an **MCP gateway** (shared server registry and proxy) and an **accounts API** (PostgreSQL).
-- **`packages/web`**: a React + Bootstrap web UI that is a real MCP client. **Chat** mode (default) uses a local Ollama model; **Advanced** mode runs tools through forms generated from their schemas.
+- **`packages/web`**: a React + Bootstrap web UI that is a real MCP client. **Chat** mode (default) uses a local Ollama model, or a hosted provider/custom OpenAI-compatible server chosen in the chat header; **Advanced** mode runs tools through forms generated from their schemas.
 - **`packages/shared`**: the Zod compute-request schema and shared types.
 - **Akilimo 2.0** is a separate hosted MCP server (`https://mcp.akilimo.org/mcp`, partner key required). It is not in this repo.
 
@@ -68,7 +68,7 @@ Latest commits, newest first:
 
 1. **Naming**: this repo's agent is **Akilimo 1.0**; the hosted one is **Akilimo 2.0**. Use `akilimo-1.0` / `akilimo-2.0` everywhere.
 2. **No mocks** in the web UI: only real MCP servers; the user enters all information.
-3. **Chat is the default mode**, Advanced is the alternative. The LLM is local **Ollama** (data stays on the user's machine).
+3. **Chat is the default mode**, Advanced is the alternative. The default LLM is local **Ollama** (data stays on the user's machine). Users can switch to OpenAI, Anthropic, Gemini, DeepSeek, Groq, Mistral, OpenRouter (own key, relayed through the server's `/llm`, which only reaches those fixed hosts and their model-list/chat endpoints) or a custom OpenAI-compatible URL (called from the browser, so never an SSRF path through the server). Models are fetched live; provider, model per provider and keys are remembered in the browser. **Test connection** exists for LLM providers (also checks that the model calls tools) and, for admins, for MCP servers before saving (`POST /gateway/test`). Ollama models can be pulled from the chat's settings panel; that goes through `/proxy/ollama`, which is open to anyone who can reach the site.
 4. **MCP servers are managed through a shared gateway** on the backend, by users with the **admin role** (this replaced the earlier `GATEWAY_ADMIN_TOKEN`). It is not per browser. An admin can be seeded with `ADMIN_EMAIL`/`ADMIN_PASSWORD`.
 5. **Upstream keys are remembered in the browser** (localStorage), never stored on the server.
 6. **Accounts**: email + password, plus a unique username (sign-in accepts either), **guests can still use everything** (nothing is saved for them). Database: **PostgreSQL only**, one schema and one migration history managed by **Prisma**, configured with individual Laravel-style `DB_*` values (no `DATABASE_URL`). SQLite support was added and then removed on request, because Prisma needs a separate schema and migrations per database type.
@@ -83,7 +83,7 @@ Latest commits, newest first:
 - **Weather server dependency**: `mcp_weather_server` 0.6.1 crashes with the `mcp` 2.x SDK (`McpError` was renamed); pin `mcp[cli]==1.30.0`. The `weather-mcp` compose service (`docker/weather-mcp/Dockerfile`) installs both pinned versions. **Its image has not been built or run**: the user builds it; an earlier unpinned build exited at start for the reason above. Registries are only seeded on first start, so in Docker add it via Manage (`http://weather-mcp:8080/mcp`).
 - **Small local models guess when data is truncated.** Keep tool results compact; the system prompt forbids facts not found in tool results.
 - **`think: false`** is sent to Ollama models with the thinking capability (otherwise answers take minutes). The native `/api/chat` is used so `num_ctx` can be 8192.
-- **CORS**: Akilimo 2.0 and Ollama reject browser origins. The web app reaches everything through same-origin paths (`/gateway`, `/api`, `/proxy/ollama`), via Vite in dev and nginx in Docker. Ollama proxies drop `Origin`.
+- **CORS**: Akilimo 2.0 and Ollama reject browser origins. The web app reaches everything through same-origin paths (`/gateway`, `/api`, `/llm`, `/proxy/ollama`), via Vite in dev and nginx in Docker. Ollama proxies drop `Origin`.
 - **Ports**: port 3000 is taken by Dokploy on the dev machine, so the server defaults to **3001** locally; containers use 3000.
 - **pnpm 12 lockfile bug**: it may write `@modelcontextprotocol/sdk` as `1.32.2` instead of `1.32.2(zod@3.25.76)` for `packages/web`, leaving a broken link. Fix the importer entry by hand and run `pnpm install --frozen-lockfile`.
 - **Vite on Windows sometimes misses rapid edits** and serves stale modules. Touch the file (`(Get-Item f).LastWriteTime = Get-Date`).
@@ -95,7 +95,7 @@ Latest commits, newest first:
 ```bash
 pnpm install
 pnpm dev:server:http   # server on :3001 (reads repo-root .env)
-pnpm dev:web           # UI on :5173, proxies /gateway, /api, /proxy/ollama
+pnpm dev:web           # UI on :5173, proxies /gateway, /api, /llm, /proxy/ollama
 ```
 
 Relevant `.env` settings (see `.env.example`): `AKILIMO_API_BASE_URL`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` (PostgreSQL; enables accounts), `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_NAME`, `ADMIN_USERNAME` (optional admin seed). Docker additionally needs the `DB_*` values (compose requires them; `DB_HOST=db` for the bundled PostgreSQL) and `WEBUI_SECRET_KEY`. The user does not use `DATABASE_URL`; it is not supported. The user's own `.env` had a malformed first line (a literal `\n` joining two variables); they were told, but it was not edited because it holds secrets.

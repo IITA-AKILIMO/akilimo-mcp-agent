@@ -63,7 +63,7 @@ For clients that support remote MCP servers:
 - Akilimo 2.0: `https://mcp.akilimo.org/mcp` (streamable HTTP, partner key header required)
 
 ### This repo's web UI and MCP gateway
-`pnpm dev:web` (or the `web` compose service) reaches MCP servers through the **gateway** on the Akilimo 1.0 server, via the same-origin `/gateway/` path (see `packages/web/vite.config.ts` and `packages/web/nginx.conf`; override the dev target with `AKILIMO_1_MCP_URL`, default `http://localhost:3001`). Its chat mode reaches Ollama through `/proxy/ollama/` (dev: `OLLAMA_URL`, default `http://localhost:11434`; Docker: `OLLAMA_BASE_URL`).
+`pnpm dev:web` (or the `web` compose service) reaches MCP servers through the **gateway** on the Akilimo 1.0 server, via the same-origin `/gateway/` path (see `packages/web/vite.config.ts` and `packages/web/nginx.conf`; override the dev target with `AKILIMO_1_MCP_URL`, default `http://localhost:3001`). Its chat mode reaches Ollama through `/proxy/ollama/` (dev: `OLLAMA_URL`, default `http://localhost:11434`; Docker: `OLLAMA_BASE_URL`), and hosted LLM providers through the server's `/llm/<provider>/` relay (`openai`, `anthropic`, `gemini`, `deepseek`, `groq`, `mistral`, `openrouter`; only `GET models`, `POST chat/completions` and `POST messages`; the user's key in `X-Llm-Key`).
 
 Gateway endpoints (HTTP mode only):
 
@@ -71,6 +71,7 @@ Gateway endpoints (HTTP mode only):
 | :--- | :--- | :--- |
 | `GET /gateway/servers` | Registered servers; `editable` is true for a signed-in admin | none |
 | `POST /gateway/servers`, `PUT /gateway/servers/:id`, `DELETE /gateway/servers/:id` | Add, change, remove a server (JSON body) | signed-in **admin** (session cookie) |
+| `POST /gateway/test` | Connect to `{url, auth}` and list its tools without saving; optional key in `X-Mcp-Key` | signed-in **admin** |
 | `POST/GET/DELETE /gateway/servers/:id/mcp` | Streamable HTTP proxy to that server | the user's key in `X-Mcp-Key`, forwarded as the entry's bearer token or header |
 
 Registry changes need a user with the `admin` role (see README, "Admins and roles"); without a database there are no accounts and the registry is read-only. Only admins can add targets because the gateway will call any URL it is given, including internal ones. Admins also manage roles through `GET /api/admin/users` and `PATCH /api/admin/users/:id` (`{"role": "user" | "admin"}`).
