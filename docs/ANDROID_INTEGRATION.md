@@ -134,6 +134,20 @@ A real answer (inside `content[0].text`, parsed):
 
 Show `data.recommendation` to the farmer as the headline. When the location is outside the area AKILIMO serves, the text says so and `data` and `fertilizer_rates` are empty; the app should suggest checking the field location. `fertilizer_rates` lists the amounts per fertilizer when a recommendation exists; it was empty in this example, so check its exact fields against a response for a recommended field before you build the screen.
 
+### The other recommendation types
+
+`compute_recommendations` gives four kinds of advice, chosen by `farmInformation.use_case` and the flags under `recommendations`. Everything above (location, size, dates, cassava price) stays the same; for these three the `fertilizer_list` is empty and `fertilizer_rec` is `false`. The answers below were checked against the live API.
+
+| Advice | `use_case` | Flags | Answer (`data.rec_type`, `data.data`) |
+| :--- | :--- | :--- | :--- |
+| Planting practices | `PP` | `planting_practices_rec: true`; optionally `operationsDone` `{ploughing_done, harrowing_done, ridging_done}` for what the farmer does now | `PP`; one row per option: `ploughing`, `ridging`, `method_ploughing`, `method_ridging`, `TC` (cost), `NR` (net revenue), `dNR` (change against the current practice), `CP` (this row is the current practice) |
+| Planting and harvest dates | `SPHS` | `scheduled_planting_rec: true` and `scheduled_harvest_rec: true`; `planting.planting_date_window` and `harvest_date_window` (0 to 2 months) say how far the farmer can shift | `SP`; about 25 rows, best first: `PD` and `HD` (dates), `rPWnr` and `rHWnr` (shift in weeks), `GR` (income), `dGR` (change against the farmer's dates), `CP` |
+| Intercropping | `IC` | Nigeria: `interCropping` `{inter_cropped_crop: "maize", inter_cropping_maize_rec: true}`. Tanzania: `{inter_cropped_crop: "potato", inter_cropping_potato_rec: true}` (this is **sweet potato**) | `IC`; one row with `rec_IC` or `rec_D` flags and the reasons for the fertilizer advice, plus the advice text |
+
+Intercropping works for Nigeria and Tanzania only. For any other country the API answers successfully with no `rec_type` and `data.data.message` set to "Intercropping (IC) recommendations are not yet available for country: RW — supported countries are NG and TZ", so show that text instead of an empty screen. The API's own playground also limits the dates: planting no more than 6 months in the past, harvest 8 to 15 months after planting.
+
+For all types, show `data.recommendation` (plain text, may hold several lines) first and the table second.
+
 ## 4. Three ways to connect from Android
 
 | Option | Use it when | Notes |
