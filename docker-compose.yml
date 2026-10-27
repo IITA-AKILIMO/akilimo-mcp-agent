@@ -29,6 +29,13 @@ services:
       DB_DATABASE: ${DB_DATABASE:?DB_DATABASE must be set}
       DB_USERNAME: ${DB_USERNAME:?DB_USERNAME must be set}
       DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
+      # Encrypts the LLM provider keys and MCP server keys saved in the database (openssl rand -base64 32).
+      # Keep it: a different key cannot decrypt keys saved earlier.
+      SECRETS_KEY: ${SECRETS_KEY:-}
+      # Ollama for the chat's server-side model calls (admins can override it under Manage, AI providers)
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - mcp-gateway:/app/data
     restart: always

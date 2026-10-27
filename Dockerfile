@@ -17,6 +17,7 @@ WORKDIR /app
 # (the web manifest is needed for the frozen lockfile check, its source is not)
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY packages/shared/package.json ./packages/shared/
+COPY packages/llm/package.json ./packages/llm/
 COPY packages/server/package.json ./packages/server/
 COPY packages/web/package.json ./packages/web/
 
@@ -25,6 +26,7 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile --filter @akilimo/server...
 
 COPY packages/shared ./packages/shared
+COPY packages/llm ./packages/llm
 COPY packages/server ./packages/server
 
 RUN pnpm --filter @akilimo/server build
