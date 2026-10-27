@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { Pencil, Plus, Server, Shield, Trash2, Users, X } from 'lucide-react';
+import { CheckCircle2, Loader2, Pencil, Plug, Plus, Server, Shield, Trash2, Users, X, XCircle } from 'lucide-react';
 import { listUsers, setUserRole, type AdminUser, type Role, type User } from '../account/api';
+import { loadKeys } from '../mcp/keys';
 import {
-  addServer, describeAuth, listServers, removeServer, updateServer,
-  type McpServerConfig, type ServerAuth,
+  addServer, describeAuth, listServers, needsKey, removeServer, testServer, updateServer,
+  type ConnectionTest, type McpServerConfig, type ServerAuth,
 } from '../mcp/servers';
 
 interface Props {
@@ -15,6 +16,40 @@ interface Props {
 const EMPTY: McpServerConfig = { id: '', label: '', description: '', url: '', auth: { type: 'none' }, enabled: true };
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
+type TestState = { running: true } | { running: false; result: ConnectionTest } | null;
+
+const runTest = async (server: Pick<McpServerConfig, 'url' | 'auth'>, key: string | undefined, setState: (s: TestState) => void) => {
+  setState({ running: true });
+  try {
+    setState({ running: false, result: await testServer(server, key) });
+  } catch (e) {
+    setState({ running: false, result: { ok: false, ms: 0, error: message(e) } });
+  }
+};
+
+const TestResult: React.FC<{ state: TestState }> = ({ state }) => {
+  if (!state) return null;
+  if (state.running) return <div className="small text-body-secondary d-flex align-items-center gap-1 mt-2"><Loader2 size={14} className="spin" /> Connecting…</div>;
+  const { result } = state;
+  if (!result.ok) {
+    return (
+      <div className="small text-danger d-flex align-items-start gap-1 mt-2" style={{ whiteSpace: 'pre-wrap' }}>
+        <XCircle size={14} className="flex-shrink-0 mt-1" /> <span>Connection failed: {result.error}</span>
+      </div>
+    );
+  }
+  const tools = result.tools ?? [];
+  return (
+    <div className="small text-success-emphasis d-flex align-items-start gap-1 mt-2">
+      <CheckCircle2 size={14} className="flex-shrink-0 mt-1 text-success" />
+      <span>
+        Connected{result.server ? ` to ${result.server.name} ${result.server.version}` : ''} in {result.ms} ms, {tools.length} tool{tools.length === 1 ? '' : 's'}
+        {tools.length > 0 && <span className="text-body-secondary">: {tools.slice(0, 12).join(', ')}{tools.length > 12 ? `, +${tools.length - 12} more` : ''}</span>}
+      </span>
+    </div>
+  );
+};
+
 const ServerForm: React.FC<{
   initial: McpServerConfig;
   isNew: boolean;
@@ -24,7 +59,13 @@ const ServerForm: React.FC<{
   const [form, setForm] = useState<McpServerConfig>(initial);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const set = <K extends keyof McpServerConfig>(key: K, value: McpServerConfig[K]) => setForm(f => ({ ...f, [key]: value }));
+  // Only for the test; prefilled with the key this browser remembers for the server, never saved
+  const [testKey, setTestKey] = useState(() => loadKeys()[initial.id] ?? '');
+  const [test, setTest] = useState<TestState>(null);
+  const set = <K extends keyof McpServerConfig>(key: K, value: McpServerConfig[K]) => {
+    setForm(f => ({ ...f, [key]: value }));
+    setTest(null);
+  };
   const header = form.auth.type === 'header' ? form.auth.header : '';
 
   const setAuthType = (type: ServerAuth['type']) =>
@@ -86,6 +127,14 @@ const ServerForm: React.FC<{
               onChange={e => set('auth', { type: 'header', header: e.target.value })} />
           </div>
         )}
+        {form.auth.type !== 'none' && (
+          <div className="col-12">
+            <label className="form-label small mb-1" htmlFor="srv-test-key">Key for testing (optional)</label>
+            <input id="srv-test-key" type="password" className="form-control form-control-sm" autoComplete="off" value={testKey}
+              onChange={e => { setTestKey(e.target.value.trim()); setTest(null); }} />
+            <div className="form-text mt-0">Used only for “Test connection”; not saved</div>
+          </div>
+        )}
         <div className="col-12">
           <div className="form-check form-switch">
             <input id="srv-enabled" className="form-check-input" type="checkbox" role="switch" checked={form.enabled}
@@ -94,10 +143,15 @@ const ServerForm: React.FC<{
           </div>
         </div>
       </div>
+      <TestResult state={test} />
       {error && <div className="alert alert-danger small mt-2 mb-0" style={{ whiteSpace: 'pre-wrap' }}>{error}</div>}
       <div className="d-flex gap-2 mt-3">
         <button type="submit" className="btn btn-sm btn-akilimo" disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
-        <button type="button" className="btn btn-sm btn-outline-secondary" onClick={onCancel} disabled={saving}>Cancel</button>
+        <button type="button" className="btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-1"
+          onClick={() => runTest(form, form.auth.type === 'none' ? undefined : testKey, setTest)} disabled={saving || !form.url.trim() || test?.running}>
+          <Plug size={14} /> Test connection
+        </button>
+        <button type="button" className="btn btn-sm btn-outline-secondary ms-auto" onClick={onCancel} disabled={saving}>Cancel</button>
       </div>
     </form>
   );
@@ -108,9 +162,15 @@ const ServersTab: React.FC<{ onChanged: () => void }> = ({ onChanged }) => {
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ server: McpServerConfig; isNew: boolean } | null>(null);
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
+  const [tests, setTests] = useState<Record<string, TestState>>({});
+
+  // Registered servers are tested with the key this browser remembers for them, if any
+  const testRow = (s: McpServerConfig) =>
+    runTest(s, needsKey(s) ? loadKeys()[s.id] : undefined, state => setTests(prev => ({ ...prev, [s.id]: state })));
 
   const refresh = async () => {
     try {
+      setTests({});
       setServers((await listServers()).servers);
       setError(null);
     } catch (e) {
@@ -170,6 +230,10 @@ const ServersTab: React.FC<{ onChanged: () => void }> = ({ onChanged }) => {
               </div>
               {confirmRemove !== s.id ? (
                 <div className="d-flex gap-1 flex-shrink-0">
+                  <button type="button" className="btn btn-sm btn-outline-primary" aria-label={`Test ${s.label}`} title="Test connection"
+                    onClick={() => testRow(s)} disabled={tests[s.id]?.running}>
+                    <Plug size={14} />
+                  </button>
                   <button type="button" className="btn btn-sm btn-outline-secondary" aria-label={`Edit ${s.label}`}
                     onClick={() => { setEditing({ server: s, isNew: false }); setConfirmRemove(null); }} disabled={!!editing}>
                     <Pencil size={14} />
@@ -189,6 +253,7 @@ const ServersTab: React.FC<{ onChanged: () => void }> = ({ onChanged }) => {
                 </div>
               )}
             </div>
+            <TestResult state={tests[s.id] ?? null} />
           </li>
         ))}
       </ul>

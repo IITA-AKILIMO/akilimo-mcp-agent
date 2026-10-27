@@ -19,12 +19,12 @@ export const needsKey = (s: McpServerConfig) => s.auth.type !== 'none';
 export const describeAuth = (auth: ServerAuth) =>
   auth.type === 'none' ? 'No key' : auth.type === 'bearer' ? 'Key sent as Authorization: Bearer' : `Key sent as ${auth.header}`;
 
-const request = async <T,>(method: string, path: string, body?: unknown): Promise<T> => {
+const request = async <T,>(method: string, path: string, body?: unknown, extraHeaders: Record<string, string> = {}): Promise<T> => {
   const res = await fetch(`${BASE}${path}`, {
     method,
     credentials: 'same-origin',
     // Writes are always JSON: the gateway rejects other content types (CSRF guard)
-    headers: method === 'GET' ? undefined : { 'Content-Type': 'application/json' },
+    headers: method === 'GET' ? extraHeaders : { 'Content-Type': 'application/json', ...extraHeaders },
     body: method === 'GET' ? undefined : JSON.stringify(body ?? {}),
   });
   if (!res.ok) {
@@ -43,3 +43,14 @@ export const addServer = (server: McpServerConfig) => request<McpServerConfig>('
 export const updateServer = (id: string, server: McpServerConfig) =>
   request<McpServerConfig>('PUT', `/servers/${encodeURIComponent(id)}`, server);
 export const removeServer = (id: string) => request<void>('DELETE', `/servers/${encodeURIComponent(id)}`);
+
+export interface ConnectionTest {
+  ok: boolean;
+  ms: number;
+  server?: { name: string; version: string };
+  tools?: string[];
+  error?: string;
+}
+// Admin only: the gateway connects to the URL and lists its tools, without saving anything
+export const testServer = (server: Pick<McpServerConfig, 'url' | 'auth'>, key?: string) =>
+  request<ConnectionTest>('POST', '/test', { url: server.url, auth: server.auth }, key ? { 'X-Mcp-Key': key } : {});
