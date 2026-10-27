@@ -53,14 +53,11 @@ Every connection, tool call and response appears under **Activity**.
 #### Accounts, saved chats and activity
 People can use the UI as guests, or **Sign in / Create account** (top bar) to keep their chat history and activity. Signed-in users get a **History** button in the chat to reopen or delete past conversations; signing out clears the screen.
 
-This needs a database, **PostgreSQL or SQLite**, set with Laravel-style variables in `.env`:
+This needs **PostgreSQL**, set with Laravel-style variables in `.env`: `DB_HOST`, `DB_PORT` (default 5432), `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD`. Without `DB_HOST` the UI is guest-only.
 
-| | Variables |
-| :--- | :--- |
-| PostgreSQL | `DB_CONNECTION=pgsql`, `DB_HOST`, `DB_PORT` (default 5432), `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` |
-| SQLite | `DB_CONNECTION=sqlite`, `DB_DATABASE` = database file (e.g. `data/akilimo.db`) |
+The schema is managed with **Prisma** (`packages/server/prisma/schema.prisma`): `pnpm dev:server:http` and the Docker image apply pending migrations automatically; run them by hand with `pnpm db:migrate`. With docker compose, `DB_HOST=db` uses the bundled PostgreSQL service, which is created from the same `DB_*` values.
 
-Without `DB_CONNECTION` (or `DB_HOST`) the UI is guest-only. The schema is managed with **Prisma**: `pnpm dev:server:http` and the Docker image apply pending migrations automatically; run them by hand with `pnpm db:migrate`. With docker compose, `DB_HOST=db` uses the bundled PostgreSQL service, which is created from the same `DB_*` values.
+To add a table or column: edit `schema.prisma`, run `npx prisma migrate dev --name <change>` in `packages/server` against a development database, and commit the schema together with the new folder under `prisma/migrations/`.
 
 Passwords are stored as salted scrypt hashes and sessions as hashed tokens in an HttpOnly cookie. There is no email verification or password reset yet. Chats can contain farm details and locations, so treat the database as personal data under IITA's data guidelines (access, backups, retention).
 

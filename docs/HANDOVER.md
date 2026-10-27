@@ -15,7 +15,7 @@ A pnpm monorepo (TypeScript) for IITA's AKILIMO cassava advisory tools:
 
 | Area | State |
 | :--- | :--- |
-| Branch | `main`, **17 commits ahead of `origin/main`, nothing pushed**; working tree clean |
+| Branch | `main`, **20 commits ahead of `origin/main`, nothing pushed**; working tree clean |
 | Builds | `pnpm build` passes; the server passes a strict `tsc` check; `pnpm install --frozen-lockfile` passes |
 | Tests | No automated test suite exists. Everything below was verified by hand (scripts and browser) |
 
@@ -23,9 +23,12 @@ Latest commits, newest first:
 
 | Commit | Content |
 | :--- | :--- |
-| docs commit (this file) | README, `AGENTS.md`, this handover (Prisma, `DB_*`, weather server) |
+| docs commit (this file) | README, `AGENTS.md`, this handover (PostgreSQL only) |
+| `ddfc7ab` | Docker: SQLite settings removed from the image, compose and `.env.example` |
+| `c4d9770` | Server: PostgreSQL only, one Prisma schema and migration history (SQLite removed) |
+| `31f1ef8` | Docs: Prisma, `DB_*` settings, weather server |
 | `09eecc5` | Docker: migrations at start, `DB_*` in compose, `weather-mcp` service, `.env.example` |
-| `b077b11` | Server: Prisma 7 with PostgreSQL or SQLite, `DB_*` settings, `db:generate` / `db:migrate` |
+| `b077b11` | Server: Prisma 7 with PostgreSQL or SQLite (SQLite later removed in `c4d9770`), `DB_*` settings, `db:generate` / `db:migrate` |
 | `fdd4cdc` | Chat: no agronomic advice that is not from AKILIMO tools |
 | `f0b5e4b` | Gateway: survive clients disconnecting mid-stream (was a server crash) |
 | `7fc29f8` | Docs: chat, gateway, accounts; first version of this handover |
@@ -49,7 +52,7 @@ Latest commits, newest first:
 | MCP gateway: registry, admin API, proxy | `server/src/gateway/` | Add, edit, remove, validation, 401/404/409, key forwarding, Akilimo 2.0 401 passthrough |
 | Server manager UI | `ServerManager.tsx`, `ServerPanel.tsx` | Browser: unlock, add, connect, edit, remove |
 | Accounts, saved chats, activity | `server/src/accounts/`, `server/src/db/`, `web/src/account/` | API script (isolation, rate limit, CSRF guard, hashed storage) and browser round trip |
-| Prisma 7 with PostgreSQL **or** SQLite (`DB_CONNECTION`), migrations per database type | `server/prisma/`, `prisma.config.ts`, `scripts/migrate.mjs` | Full API script passed on both after `db:migrate`; repeat migrate = no-op; unmigrated DB refused at start; Docker image not built |
+| Prisma 7 with PostgreSQL, one schema and migration history | `server/prisma/`, `prisma.config.ts`, `scripts/migrate.mjs` | Full API script passed after `db:migrate`; moved migration recognised as applied; repeat migrate = no-op; unmigrated DB refused at start; Docker image not built |
 | Prefill buttons and map picker (country via Nominatim) | `web/src/mcp/presets.ts`, `MapPicker.tsx` | Browser |
 | Weather MCP server (`mcp_weather_server` 0.6.1, Open-Meteo) registered as `weather` | `uvx` locally (README); `weather-mcp` compose service for Docker | Locally through the gateway: 8 tools, live Ibadan weather; chat uses it unprompted. Docker image not built |
 | Gateway survives clients disconnecting mid-stream | `server/src/gateway/routes.ts` (`pipeline`) | Regression script: old build crashed on the first disconnect, fixed build survived three |
@@ -62,7 +65,7 @@ Latest commits, newest first:
 3. **Chat is the default mode**, Advanced is the alternative. The LLM is local **Ollama** (data stays on the user's machine).
 4. **MCP servers are managed through a shared gateway** on the backend, with an admin token. It is not per browser.
 5. **Upstream keys are remembered in the browser** (localStorage), never stored on the server.
-6. **Accounts**: email + password, **guests can still use everything** (nothing is saved for them). Database: **PostgreSQL or SQLite**, schema and migrations managed by **Prisma**, configured with individual Laravel-style `DB_*` values (no `DATABASE_URL`).
+6. **Accounts**: email + password, **guests can still use everything** (nothing is saved for them). Database: **PostgreSQL only**, one schema and one migration history managed by **Prisma**, configured with individual Laravel-style `DB_*` values (no `DATABASE_URL`). SQLite support was added and then removed on request, because Prisma needs a separate schema and migrations per database type.
 7. Bootstrap (not Tailwind), with a light/dark toggle.
 8. No `network_mode: host` in compose.
 
@@ -89,14 +92,14 @@ pnpm dev:server:http   # server on :3001 (reads repo-root .env)
 pnpm dev:web           # UI on :5173, proxies /gateway, /api, /proxy/ollama
 ```
 
-Relevant `.env` settings (see `.env.example`): `AKILIMO_API_BASE_URL`, `GATEWAY_ADMIN_TOKEN` (enables server editing), `DB_CONNECTION` (`pgsql` or `sqlite`) with `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` (enables accounts; for SQLite `DB_DATABASE` is the file). Docker additionally needs the `DB_*` values (compose requires them; `DB_HOST=db` for the bundled PostgreSQL) and `WEBUI_SECRET_KEY`. The user does not use `DATABASE_URL`; it is not supported. The user's own `.env` had a malformed first line (a literal `\n` joining two variables); they were told, but it was not edited because it holds secrets.
+Relevant `.env` settings (see `.env.example`): `AKILIMO_API_BASE_URL`, `GATEWAY_ADMIN_TOKEN` (enables server editing), `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` (PostgreSQL; enables accounts). Docker additionally needs the `DB_*` values (compose requires them; `DB_HOST=db` for the bundled PostgreSQL) and `WEBUI_SECRET_KEY`. The user does not use `DATABASE_URL`; it is not supported. The user's own `.env` had a malformed first line (a literal `\n` joining two variables); they were told, but it was not edited because it holds secrets.
 
 ## 7. Open items and suggested next steps
 
 1. **Push** `main` to `origin` once the user agrees (12 commits, see section 2).
 2. **Docker images have not been built** in this session (`docker compose up -d --build`), so the nginx template, the gateway volume and the `db` service are unverified at runtime. `docker compose config` passes.
 3. **Accounts**: no email verification, password reset, account deletion or data export. The rate limiter is in memory only (it resets on restart and is per instance).
-4. **Docker with SQLite**: compose requires the PostgreSQL `DB_*` values (the user's `:?` pattern) and always starts the bundled `db`; running the container on SQLite needs a compose override. Locally, SQLite works with just `DB_CONNECTION=sqlite`. The server and weather images with the Prisma changes have not been built (the user builds them).
+4. **Images not built**: the server image (Prisma, migrations at start) and the weather image have not been built (the user builds them).
 4. **Data protection**: chats can contain farm locations and personal details; agree on retention, backups and access with IITA IT Operations & Information Security.
 5. **No automated tests.** Good first candidates: shared schema vs the API test payload, gateway routes, and accounts routes (the manual scripts in section 3 show what to cover).
 6. **A full compute conversation through chat** (ending in `compute_recommendations`) has not been run, because it writes to the production API. Test against a local `new-akilimo-api` if possible.
