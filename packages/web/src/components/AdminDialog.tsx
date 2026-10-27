@@ -1,6 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { CheckCircle2, Loader2, Pencil, Plug, Plus, Server, Shield, Trash2, Users, X, XCircle } from 'lucide-react';
+import { CheckCircle2, Loader2, Pencil, Plug, Plus, Server, Shield, Sparkles, Trash2, Users, X, XCircle } from 'lucide-react';
 import { listUsers, setUserRole, type AdminUser, type Role, type User } from '../account/api';
+import {
+  deleteServerKey, fetchProviders, getServerKeys, setServerKey, updateProvider, type ProviderChange, type ProviderStatus,
+} from '../llm/api';
 import { loadKeys } from '../mcp/keys';
 import {
   addServer, describeAuth, listServers, needsKey, removeServer, testServer, updateServer,
@@ -329,9 +332,149 @@ const UsersTab: React.FC<{ currentUser: User }> = ({ currentUser }) => {
   );
 };
 
-// Admin-only dialog: shared MCP servers and user roles
+// One provider: its saved key (only the last characters are known here), address and on/off switch.
+// A key typed here is sent once and stored encrypted on the server; it is never shown again.
+const ProviderRow: React.FC<{ provider: ProviderStatus; onSaved: (providers: ProviderStatus[]) => void }> = ({ provider: p, onSaved }) => {
+  const [key, setKey] = useState('');
+  const [baseUrl, setBaseUrl] = useState(p.baseUrl ?? '');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const save = async (change: ProviderChange, after?: () => void) => {
+    setBusy(true);
+    setError(null);
+    try {
+      onSaved((await updateProvider(p.id, change)).providers);
+      after?.();
+    } catch (e) {
+      setError(message(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <li className="list-group-item">
+      <div className="d-flex align-items-center gap-2">
+        <div className="fw-semibold flex-grow-1">{p.label}</div>
+        {p.configured && p.enabled && <span className="badge text-bg-success">ready</span>}
+        {p.configured && !p.enabled && <span className="badge text-bg-secondary">off</span>}
+        {!p.configured && <span className="badge text-bg-warning">needs setup</span>}
+        <div className="form-check form-switch mb-0" title="Offer this provider to users">
+          <input className="form-check-input" type="checkbox" role="switch" aria-label={`${p.label} enabled`} checked={p.enabled}
+            disabled={busy} onChange={e => save({ enabled: e.target.checked })} />
+        </div>
+      </div>
+      {p.key !== 'none' && (
+        <div className="mt-2">
+          <div className="input-group input-group-sm">
+            <input type="password" className="form-control" autoComplete="off" aria-label={`${p.label} API key`} value={key}
+              placeholder={p.keyHint ? `Saved (${p.keyHint}); type a new key to replace it` : `API key${p.key === 'optional' ? ' (optional)' : ''}`}
+              onChange={e => setKey(e.target.value.trim())} />
+            <button type="button" className="btn btn-outline-success" disabled={busy || !key} onClick={() => save({ apiKey: key }, () => setKey(''))}>Save key</button>
+            {p.keyHint && <button type="button" className="btn btn-outline-danger" disabled={busy} onClick={() => save({ clearKey: true })}>Remove</button>}
+          </div>
+          {p.keyUrl && <div className="form-text mt-0"><a href={p.keyUrl} target="_blank" rel="noreferrer">Get a key</a></div>}
+        </div>
+      )}
+      {p.editableBase && (
+        <div className="input-group input-group-sm mt-2">
+          <input className="form-control font-monospace" aria-label={`${p.label} address`} value={baseUrl} spellCheck={false}
+            placeholder={p.id === 'ollama' ? 'http://host.docker.internal:11434' : 'http://localhost:1234/v1'} onChange={e => setBaseUrl(e.target.value.trim())} />
+          <button type="button" className="btn btn-outline-success" disabled={busy || baseUrl === (p.baseUrl ?? '')} onClick={() => save({ baseUrl })}>Save address</button>
+        </div>
+      )}
+      {error && <div className="small text-danger mt-1">{error}</div>}
+    </li>
+  );
+};
+
+// Keys the server uses when it calls MCP servers that need one (e.g. Akilimo 2.0), stored encrypted
+const ServerKeys: React.FC = () => {
+  const [servers, setServers] = useState<McpServerConfig[]>([]);
+  const [hints, setHints] = useState<Record<string, string>>({});
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        setServers((await listServers()).servers.filter(needsKey));
+        setHints((await getServerKeys()).keys);
+      } catch (e) {
+        setError(message(e));
+      }
+    })();
+  }, []);
+
+  const act = async (id: string, run: () => Promise<{ keys: Record<string, string> }>) => {
+    try {
+      setHints((await run()).keys);
+      setDrafts(prev => ({ ...prev, [id]: '' }));
+      setError(null);
+    } catch (e) {
+      setError(message(e));
+    }
+  };
+
+  if (servers.length === 0 && !error) return null;
+  return (
+    <>
+      <h3 className="h6 mt-4">Keys for MCP servers</h3>
+      <p className="small text-body-secondary">The chat runs its tool calls on the server, so servers that need a key use the one saved here (stored encrypted, shared by all users).</p>
+      {error && <div className="alert alert-danger small">{error}</div>}
+      <ul className="list-group">
+        {servers.map(s => (
+          <li key={s.id} className="list-group-item">
+            <div className="fw-semibold">{s.label} <span className="font-monospace small text-body-secondary">{s.id}</span></div>
+            <div className="input-group input-group-sm mt-1">
+              <input type="password" className="form-control" autoComplete="off" aria-label={`${s.label} key`} value={drafts[s.id] ?? ''}
+                placeholder={hints[s.id] ? `Saved (${hints[s.id]}); type a new key to replace it` : 'Key'}
+                onChange={e => setDrafts(prev => ({ ...prev, [s.id]: e.target.value.trim() }))} />
+              <button type="button" className="btn btn-outline-success" disabled={!drafts[s.id]} onClick={() => act(s.id, () => setServerKey(s.id, drafts[s.id]!))}>Save key</button>
+              {hints[s.id] && <button type="button" className="btn btn-outline-danger" onClick={() => act(s.id, () => deleteServerKey(s.id))}>Remove</button>}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+};
+
+const ProvidersTab: React.FC<{ onChanged: () => void }> = ({ onChanged }) => {
+  const [providers, setProviders] = useState<ProviderStatus[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { providers: list } = await fetchProviders();
+        setProviders(list.filter((p): p is ProviderStatus => 'configured' in p));
+      } catch (e) {
+        setError(`Cannot load providers: ${message(e)}`);
+      }
+    })();
+  }, []);
+
+  return (
+    <>
+      <p className="small text-body-secondary">
+        The chat calls these providers from the server, so users never handle keys. Keys are encrypted before they are stored and cannot be read back.
+      </p>
+      {error && <div className="alert alert-danger small">{error}</div>}
+      <ul className="list-group">
+        {providers.map(p => (
+          <ProviderRow key={p.id} provider={p} onSaved={list => { setProviders(list); onChanged(); }} />
+        ))}
+      </ul>
+      <ServerKeys />
+    </>
+  );
+};
+
+// Admin-only dialog: shared MCP servers, AI providers and user roles
 export const AdminDialog: React.FC<Props> = ({ currentUser, onClose, onChanged }) => {
-  const [tab, setTab] = useState<'servers' | 'users'>('servers');
+  const [tab, setTab] = useState<'servers' | 'providers' | 'users'>('servers');
 
   return (
     <div className="modal d-block" tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="admin-dialog-title"
@@ -353,13 +496,21 @@ export const AdminDialog: React.FC<Props> = ({ currentUser, onClose, onChanged }
                 </button>
               </li>
               <li className="nav-item" role="presentation">
+                <button type="button" role="tab" aria-selected={tab === 'providers'}
+                  className={`nav-link d-inline-flex align-items-center gap-1 ${tab === 'providers' ? 'active' : ''}`} onClick={() => setTab('providers')}>
+                  <Sparkles size={14} /> AI providers
+                </button>
+              </li>
+              <li className="nav-item" role="presentation">
                 <button type="button" role="tab" aria-selected={tab === 'users'}
                   className={`nav-link d-inline-flex align-items-center gap-1 ${tab === 'users' ? 'active' : ''}`} onClick={() => setTab('users')}>
                   <Users size={14} /> Users
                 </button>
               </li>
             </ul>
-            {tab === 'servers' ? <ServersTab onChanged={onChanged} /> : <UsersTab currentUser={currentUser} />}
+            {tab === 'servers' && <ServersTab onChanged={onChanged} />}
+            {tab === 'providers' && <ProvidersTab onChanged={() => undefined} />}
+            {tab === 'users' && <UsersTab currentUser={currentUser} />}
           </div>
         </div>
       </div>

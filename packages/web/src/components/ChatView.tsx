@@ -1,15 +1,13 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { Bot, History, Loader2, MapPin, RotateCcw, Send, Settings2, Square, Trash2, User, Wrench, X } from 'lucide-react';
 import {
   appendMessages, createConversation, deleteConversation, getConversation, listConversations,
   type ConversationSummary, type User as Account,
 } from '../account/api';
-import { buildTools, runAgent, type AgentStep } from '../llm/agent';
-import { PROVIDERS, type ProviderId } from '../llm/providers';
+import { streamChat, type AgentStep, type ProviderId } from '../llm/api';
 import type { ChatMessage } from '../llm/types';
-import { COUNTRIES, akilimoExamples, contextExamples, findCountry } from '../llm/countries';
+import { COUNTRIES, akilimoExamples, contextExamples, findCountry } from '@akilimo/shared';
 import { useLlm } from '../llm/useLlm';
 import { read, write } from '../mcp/keys';
 import type { McpServerConfig } from '../mcp/servers';
@@ -20,7 +18,6 @@ import { MapPicker } from './MapPicker';
 interface Props {
   configs: McpServerConfig[];
   servers: Record<string, ServerState>;
-  callTool: (server: string, name: string, args: Record<string, unknown>) => Promise<CallToolResult>;
   accountsEnabled: boolean;
   user: Account | null;
 }
@@ -46,14 +43,13 @@ const toChatMessage = (m: ChatMessage): ChatMessage => ({
   ...(m.tool_name ? { tool_name: m.tool_name } : {}),
 });
 
-export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accountsEnabled, user }) => {
-  const llm = useLlm();
+export const ChatView: React.FC<Props> = ({ configs, servers, accountsEnabled, user }) => {
+  // The server's keys belong to the organisation, so with accounts enabled the chat needs a sign-in
+  const canChat = !accountsEnabled || !!user;
+  const llm = useLlm(canChat);
   const { model } = llm;
   const [showSettings, setShowSettings] = useState(false);
-  // Open the provider settings when a key or URL is missing; they stay open while it is typed in
-  useEffect(() => {
-    if (llm.setup) setShowSettings(true);
-  }, [llm.setup]);
+  const [notices, setNotices] = useState<string[]>([]);
 
   const [items, setItems] = useState<Item[]>([]);
   const history = useRef<ChatMessage[]>([]);
@@ -78,7 +74,6 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
   const [historyError, setHistoryError] = useState<string | null>(null);
 
   const bottomRef = useRef<HTMLDivElement>(null);
-  const tools = useMemo(() => buildTools(configs, servers), [configs, servers]);
 
   const persist = (messages: ChatMessage[], titleHint: string) => {
     if (!user) return;
@@ -133,7 +128,7 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
 
   const send = async (text: string) => {
     const message = text.trim();
-    if (!message || !model || !country) return;
+    if (!message || !model || !country || !canChat) return;
     setInput('');
     if (busyRef.current) {
       setQueue([...queue.current, { id: newId(), text: message }]);
@@ -145,6 +140,7 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
   const run = async (message: string) => {
     busyRef.current = true;
     setError(null);
+    setNotices([]);
     add({ id: newId(), kind: 'user', text: message });
     const userMessage: ChatMessage = { role: 'user', content: message };
     history.current = [...history.current, userMessage];
@@ -154,13 +150,14 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
     abort.current = controller;
     setBusy(true);
     try {
-      await runAgent({
-        chat: llm.chat,
-        history: history.current,
-        tools,
-        callTool,
+      // The server calls the model and the MCP tools; each message comes back as it is produced
+      await streamChat({
+        provider: llm.provider as ProviderId,
+        model,
+        country: country?.code,
+        messages: history.current,
         signal: controller.signal,
-        country,
+        onWarning: (text) => setNotices(prev => [...prev, text]),
         onMessage: (m) => {
           history.current = [...history.current, m];
           persist([m], message);
@@ -252,7 +249,6 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
     setPicked(p => ({ ...p, country: code || undefined }));
   };
 
-  const noTools = tools.length === 0;
   const exampleGroups = country
     ? [...akilimoExamples(country), ...(hasContextTools(servers) ? [contextExamples(country)] : [])]
     : [];
@@ -268,8 +264,9 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
           {COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.name}</option>)}
         </select>
         <select className="form-select form-select-sm w-auto" aria-label="LLM provider" value={llm.provider}
-          onChange={e => llm.setProvider(e.target.value as ProviderId)} disabled={busy}>
-          {PROVIDERS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+          onChange={e => llm.setProvider(e.target.value as ProviderId)} disabled={busy || llm.providers.length === 0}>
+          {llm.providers.length === 0 && <option value="">No provider</option>}
+          {llm.providers.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
         </select>
         <select className="form-select form-select-sm w-auto" aria-label="Model" value={model} style={{ maxWidth: '14rem' }}
           onChange={e => llm.setModel(e.target.value)} disabled={llm.models.length === 0 || busy}>
@@ -313,10 +310,12 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
       {showSettings && <LlmSettings llm={llm} />}
 
       <div className="card-body overflow-auto min-h-0 d-flex flex-column gap-3">
-        {llm.error && <div className="alert alert-warning small mb-0">{llm.error}</div>}
-        {noTools && !llm.error && (
-          <div className="alert alert-info small mb-0">Connecting to the AKILIMO servers… switch one on in the MCP servers panel if this persists.</div>
+        {!canChat && <div className="alert alert-info small mb-0">Sign in to chat with the AKILIMO assistant.</div>}
+        {canChat && llm.error && <div className="alert alert-warning small mb-0">{llm.error}</div>}
+        {canChat && !llm.error && !llm.loading && llm.providers.length === 0 && (
+          <div className="alert alert-info small mb-0">No AI provider is set up yet. An administrator can add one under Manage, AI providers.</div>
         )}
+        {notices.map(text => <div key={text} className="alert alert-warning small mb-0 py-1">{text}</div>)}
 
         {items.length === 0 && !country && (
           <div className="m-auto text-center" style={{ maxWidth: '36rem' }}>
@@ -343,7 +342,7 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
                   <div className="d-flex flex-column gap-2">
                     {group.prompts.map(p => (
                       <button key={p} type="button" className="btn btn-sm btn-outline-success text-start"
-                        onClick={() => send(p)} disabled={!model || noTools}>{p}</button>
+                        onClick={() => send(p)} disabled={!model || !canChat}>{p}</button>
                     ))}
                   </div>
                 </div>
@@ -430,15 +429,15 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
             title="Share the field location on a map" aria-label="Share field location" disabled={!country}>
             <MapPin size={16} />
           </button>
-          <input className="form-control" placeholder={!country ? 'Choose your country first…' : model ? 'Type your question…' : 'Waiting for a model…'}
-            value={input} onChange={e => setInput(e.target.value)} aria-label="Message" disabled={!model || !country} />
+          <input className="form-control" placeholder={!canChat ? 'Sign in to chat…' : !country ? 'Choose your country first…' : model ? 'Type your question…' : 'Waiting for a model…'}
+            value={input} onChange={e => setInput(e.target.value)} aria-label="Message" disabled={!model || !country || !canChat} />
           {busy && (
             <button type="button" className="btn btn-outline-danger d-inline-flex align-items-center gap-1" onClick={() => abort.current?.abort()}
               title="Stop the current answer; queued messages are still sent">
               <Square size={14} /> Stop
             </button>
           )}
-          <button type="submit" className="btn btn-akilimo d-inline-flex align-items-center gap-1" disabled={!input.trim() || !model || !country || noTools}
+          <button type="submit" className="btn btn-akilimo d-inline-flex align-items-center gap-1" disabled={!input.trim() || !model || !country || !canChat}
             title={busy ? 'Queue this message; it is sent when the current answer is done' : undefined}>
             <Send size={16} /> <span className="d-none d-sm-inline">{busy ? 'Queue' : 'Send'}</span>
           </button>

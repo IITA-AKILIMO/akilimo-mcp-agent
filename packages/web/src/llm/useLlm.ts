@@ -1,110 +1,115 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  chat, listModels, loadProviderKeys, loadSettings, missingSetup, pickDefaultModel, providerInfo, saveProviderKey, saveSettings,
-  testConnection, type LlmConfig, type LlmTest, type ProviderId,
-} from './providers';
+import { read, write } from '../mcp/keys';
+import { fetchModels, fetchProviders, testProvider, type LlmTest, type ProviderId, type ProviderOption } from './api';
 
 export type LlmTestState = { running: true } | { running: false; result: LlmTest } | null;
-import type { ChatMessage, ToolSpec } from './types';
 
-// Selected provider and model for the chat, with the provider's models fetched live. Keys and URLs
-// are typed in, so listing waits until the user pauses.
-export function useLlm() {
+// Choices remembered in this browser: the provider and the last model per provider
+interface StoredSettings { provider: ProviderId | ''; models: Partial<Record<ProviderId, string>> }
+const SETTINGS = 'llm-settings';
+const loadSettings = (): StoredSettings => {
+  const stored = read<Partial<StoredSettings>>(SETTINGS, {});
+  return { provider: stored.provider ?? '', models: stored.models ?? {} };
+};
+
+// The providers an admin has set up on the server, the selected provider and model, and the model
+// list fetched live from the server. `enabled` is false while the user still has to sign in.
+export function useLlm(enabled: boolean) {
   const [settings, setSettings] = useState(loadSettings);
-  const [keys, setKeys] = useState(loadProviderKeys);
+  const [providers, setProviders] = useState<ProviderOption[]>([]);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [models, setModels] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [setup, setSetup] = useState<string | null>(null);
   const requestId = useRef(0);
 
-  const { provider, baseUrl } = settings;
-  const key = keys[provider] ?? '';
-  const info = providerInfo(provider);
-
-  const updateSettings = (change: (prev: typeof settings) => typeof settings) =>
+  const updateSettings = (change: (prev: StoredSettings) => StoredSettings) =>
     setSettings(prev => {
       const next = change(prev);
-      saveSettings(next);
+      write(SETTINGS, next);
       return next;
     });
 
-  const setModel = useCallback((model: string, forProvider: ProviderId = provider) =>
-    updateSettings(prev => ({ ...prev, models: { ...prev.models, [forProvider]: model } })), [provider]);
+  // Only providers that are turned on and have what they need (admins see the rest in Manage)
+  const loadProviders = useCallback(async () => {
+    if (!enabled) { setProviders([]); setIsAdmin(false); return; }
+    try {
+      const { admin, providers: list } = await fetchProviders();
+      setIsAdmin(admin);
+      setProviders(list.filter(p => !('configured' in p) || (p.enabled && p.configured)).map(({ id, label }) => ({ id, label })));
+      setError(null);
+    } catch (e) {
+      setProviders([]);
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }, [enabled]);
+  useEffect(() => { loadProviders(); }, [loadProviders]);
+
+  // Remembered provider if it is still available, otherwise the first one (Ollama comes first)
+  const provider: ProviderId | '' = providers.some(p => p.id === settings.provider) ? settings.provider as ProviderId : providers[0]?.id ?? '';
+  const label = providers.find(p => p.id === provider)?.label ?? '';
+
+  const setModel = useCallback((model: string, forProvider: ProviderId | '' = provider) => {
+    if (forProvider) updateSettings(prev => ({ ...prev, models: { ...prev.models, [forProvider]: model } }));
+  }, [provider]);
 
   const refresh = useCallback(async () => {
     const id = ++requestId.current;
-    const config: LlmConfig = { provider, key, baseUrl };
-    const missing = missingSetup(config);
-    setSetup(missing);
     setError(null);
     setModels([]);
-    if (missing) return;
+    if (!provider) return;
     setLoading(true);
     try {
-      const list = await listModels(config);
+      const { models: list, default: preferred } = await fetchModels(provider);
       if (id !== requestId.current) return;
       setModels(list);
       const remembered = loadSettings().models[provider];
-      if (!remembered || !list.includes(remembered)) setModel(pickDefaultModel(provider, list) ?? '', provider);
+      if (!remembered || !list.includes(remembered)) setModel(preferred ?? '', provider);
       if (list.length === 0) {
-        setError(provider === 'ollama' ? 'No Ollama model with tool support found. Run: ollama pull qwen3:8b' : `No chat models found on ${info.label}.`);
+        setError(provider === 'ollama' ? 'No Ollama model with tool support found. An admin can download one under Provider settings.' : `No chat models found on ${label}.`);
       }
     } catch (e) {
       if (id !== requestId.current) return;
-      setError(provider === 'ollama'
-        ? 'Cannot reach Ollama. Make sure it is running (default http://localhost:11434).'
-        : e instanceof Error ? e.message : String(e));
+      setError(e instanceof Error ? e.message : String(e));
     } finally {
       if (id === requestId.current) setLoading(false);
     }
-  }, [provider, key, baseUrl, info.label, setModel]);
+  }, [provider, label, setModel]);
+  useEffect(() => { refresh(); }, [refresh]);
 
-  // Immediately on a provider switch, after a pause while a key or URL is being typed
-  const lastProvider = useRef(provider);
-  useEffect(() => {
-    const switched = lastProvider.current !== provider;
-    lastProvider.current = provider;
-    const timer = setTimeout(refresh, switched ? 0 : 600);
-    return () => clearTimeout(timer);
-  }, [refresh, provider]);
-
-  const remembered = settings.models[provider] ?? '';
+  const remembered = provider ? settings.models[provider] ?? '' : '';
   const model = models.includes(remembered) ? remembered : '';
 
-  // A result describes one provider/key/URL combination; drop it when any of them changes
+  // A result describes one provider; drop it when the provider changes
   const [test, setTest] = useState<LlmTestState>(null);
-  useEffect(() => setTest(null), [provider, key, baseUrl]);
+  useEffect(() => setTest(null), [provider]);
   const runTest = async () => {
+    if (!provider) return;
     setTest({ running: true });
-    const result = await testConnection({ provider, key, baseUrl }, model);
-    setTest({ running: false, result });
-    // The test also lists models; pick up any that appeared (e.g. after a pull or a new key)
-    if (result.ok && result.models !== models.length) refresh();
+    try {
+      const result = await testProvider(provider, model);
+      setTest({ running: false, result });
+      // The test also lists models; pick up any that appeared (e.g. after a pull)
+      if (result.ok && result.models !== models.length) refresh();
+    } catch (e) {
+      setTest({ running: false, result: { ok: false, ms: 0, error: e instanceof Error ? e.message : String(e) } });
+    }
   };
 
   return {
+    providers,
     provider,
-    info,
-    key,
-    baseUrl,
+    isAdmin,
     models,
     model,
     loading,
     error,
-    setup, // what the user must enter first, if anything
     setProvider: (id: ProviderId) => updateSettings(prev => ({ ...prev, provider: id })),
     setModel: (m: string) => setModel(m),
-    setKey: (value: string) => {
-      setKeys(prev => ({ ...prev, [provider]: value }));
-      saveProviderKey(provider, value);
-    },
-    setBaseUrl: (url: string) => updateSettings(prev => ({ ...prev, baseUrl: url.trim() })),
     refresh,
+    reloadProviders: loadProviders,
     test,
     runTest,
-    // Bound to the current provider and model, for the agent loop
-    chat: (messages: ChatMessage[], tools: ToolSpec[], signal?: AbortSignal) => chat({ provider, key, baseUrl }, model, messages, tools, signal),
     // Saved with conversations
     label: model ? (provider === 'ollama' ? model : `${provider}:${model}`).slice(0, 100) : '',
   };

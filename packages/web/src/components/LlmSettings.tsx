@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { CheckCircle2, Download, ExternalLink, Loader2, Plug, RefreshCw, Square, TriangleAlert, XCircle } from 'lucide-react';
+import { CheckCircle2, Download, Loader2, Plug, RefreshCw, Square, TriangleAlert, XCircle } from 'lucide-react';
 import { pullModel, type PullProgress } from '../llm/ollama';
 import type { useLlm } from '../llm/useLlm';
 
@@ -112,54 +112,33 @@ const OllamaPull: React.FC<{ onPulled: () => void }> = ({ onPulled }) => {
   );
 };
 
-// Key, server URL, connection test and (for Ollama) model downloads, shown under the chat header
+// Model list status, and for admins the connection test and (for Ollama) model downloads, shown
+// under the chat header. Provider keys and URLs are managed in the admin dialog, not here.
 export const LlmSettings: React.FC<Props> = ({ llm }) => {
-  const { provider, info } = llm;
+  const { provider } = llm;
   return (
     <div className="border-bottom px-3 py-2 bg-body-tertiary d-flex flex-column gap-2 small">
-      {provider === 'custom' && (
-        <div>
-          <label className="form-label mb-1" htmlFor="llm-url">Server URL</label>
-          <input id="llm-url" className="form-control form-control-sm" placeholder="http://localhost:1234/v1" autoComplete="off"
-            spellCheck={false} value={llm.baseUrl} onChange={e => llm.setBaseUrl(e.target.value)} />
-          <div className="form-text">Any OpenAI-compatible server (LM Studio, vLLM, llama.cpp, …). The browser calls it directly, so it must allow this site (CORS).</div>
-        </div>
-      )}
-      {info.key !== 'none' && (
-        <div>
-          <div className="d-flex align-items-baseline">
-            <label className="form-label mb-1" htmlFor="llm-key">{info.label} API key{info.key === 'optional' && ' (optional)'}</label>
-            {info.keyUrl && (
-              <a className="ms-auto d-inline-flex align-items-center gap-1" href={info.keyUrl} target="_blank" rel="noreferrer">
-                Get a key <ExternalLink size={12} />
-              </a>
-            )}
-          </div>
-          <input id="llm-key" type="password" className="form-control form-control-sm" autoComplete="off"
-            value={llm.key} onChange={e => llm.setKey(e.target.value.trim())} />
-          <div className="form-text">
-            Remembered in this browser{provider === 'custom' ? ' and sent only to your server.' : `, and sent through this site's server to ${info.label} with each request; never stored on the server.`}
-            {llm.key && <> <button type="button" className="btn btn-link btn-sm p-0 align-baseline" onClick={() => llm.setKey('')}>Forget key</button></>}
-          </div>
-        </div>
-      )}
-      {info.key === 'none' && <div className="text-body-secondary">Runs on your own computer through Ollama; no key needed. Only installed models that support tools are listed.</div>}
       <div className="d-flex flex-wrap align-items-center gap-2">
-        <button type="button" className="btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-1"
-          onClick={llm.runTest} disabled={!!llm.setup || llm.test?.running}
-          title={llm.model ? `Check the connection and that ${llm.model} can call tools` : 'Check the connection'}>
-          <Plug size={14} /> Test connection
-        </button>
+        {llm.isAdmin && (
+          <button type="button" className="btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-1"
+            onClick={llm.runTest} disabled={!provider || llm.test?.running}
+            title={llm.model ? `Check the connection and that ${llm.model} can call tools` : 'Check the connection'}>
+            <Plug size={14} /> Test connection
+          </button>
+        )}
         <button type="button" className="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1"
-          onClick={llm.refresh} disabled={llm.loading || !!llm.setup}>
+          onClick={llm.refresh} disabled={llm.loading || !provider}>
           {llm.loading ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />} Reload models
         </button>
         <span className="text-body-secondary">
-          {llm.setup ?? (llm.loading ? 'Loading models…' : llm.error ? 'Could not load models' : `${llm.models.length} model${llm.models.length === 1 ? '' : 's'} available`)}
+          {!provider ? 'No provider is set up yet' : llm.loading ? 'Loading models…' : llm.error ? 'Could not load models' : `${llm.models.length} model${llm.models.length === 1 ? '' : 's'} available`}
         </span>
       </div>
-      <TestResult llm={llm} />
-      {provider === 'ollama' && <OllamaPull onPulled={llm.refresh} />}
+      {llm.isAdmin
+        ? <div className="text-body-secondary">Provider keys and addresses are saved encrypted on the server: open <strong>Manage</strong> and the <strong>AI providers</strong> tab.</div>
+        : <div className="text-body-secondary">The AI providers are set up by your administrators.</div>}
+      {llm.isAdmin && <TestResult llm={llm} />}
+      {llm.isAdmin && provider === 'ollama' && <OllamaPull onPulled={llm.refresh} />}
     </div>
   );
 };
