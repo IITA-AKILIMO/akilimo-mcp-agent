@@ -5,6 +5,7 @@ import { config } from "./config.js";
 import { connectDb } from "./db/index.js";
 import { Registry } from "./gateway/registry.js";
 import { gatewayRouter } from "./gateway/routes.js";
+import { llmRouter } from "./llm/routes.js";
 import { createServer } from "./server.js";
 import { startHttp } from "./transports/http.js";
 import { startStdio } from "./transports/stdio.js";
@@ -43,6 +44,7 @@ async function main() {
       allowedOrigins: config.allowedOrigins,
       gateway: gatewayRouter(registry, db),
       api: apiRouter(db),
+      llm: llmRouter(),
     });
   } else {
     await startStdio(createServer(api));
