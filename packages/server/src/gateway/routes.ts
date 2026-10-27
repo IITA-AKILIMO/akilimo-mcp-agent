@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { z } from "zod/v4";
 import { Registry, RegistryError, ServerEntrySchema } from "./registry.js";
@@ -117,7 +118,9 @@ export function gatewayRouter(registry: Registry, adminToken: string) {
         if (value) res.setHeader(name, value);
       }
       if (upstream.body) {
-        Readable.fromWeb(upstream.body as import("node:stream/web").ReadableStream).pipe(res);
+        // pipeline handles errors on both sides; a bare .pipe() left the abort error raised when
+        // the client disconnects mid-stream unhandled, which crashed the whole server
+        await pipeline(Readable.fromWeb(upstream.body as import("node:stream/web").ReadableStream), res);
       } else {
         res.end();
       }
