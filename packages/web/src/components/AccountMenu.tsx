@@ -5,8 +5,8 @@ import type { User } from '../account/api';
 interface Props {
   enabled: boolean;
   user: User | null;
-  onLogin: (email: string, password: string) => Promise<void>;
-  onRegister: (name: string, email: string, password: string) => Promise<void>;
+  onLogin: (login: string, password: string) => Promise<void>;
+  onRegister: (name: string, email: string, username: string, password: string) => Promise<void>;
   onLogout: () => Promise<void>;
 }
 
@@ -14,6 +14,8 @@ const AuthDialog: React.FC<Omit<Props, 'enabled' | 'user' | 'onLogout'> & { onCl
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
+  const [login, setLogin] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -23,8 +25,8 @@ const AuthDialog: React.FC<Omit<Props, 'enabled' | 'user' | 'onLogout'> & { onCl
     setBusy(true);
     setError(null);
     try {
-      if (mode === 'login') await onLogin(email, password);
-      else await onRegister(name, email, password);
+      if (mode === 'login') await onLogin(login, password);
+      else await onRegister(name, email, username, password);
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -50,10 +52,26 @@ const AuthDialog: React.FC<Omit<Props, 'enabled' | 'user' | 'onLogout'> & { onCl
                 <input id="auth-name" className="form-control" autoComplete="name" value={name} onChange={e => setName(e.target.value)} required />
               </div>
             )}
-            <div>
-              <label className="form-label small mb-1" htmlFor="auth-email">Email</label>
-              <input id="auth-email" type="email" className="form-control" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} required />
-            </div>
+            {mode === 'register' ? (
+              <>
+                <div>
+                  <label className="form-label small mb-1" htmlFor="auth-username">Username</label>
+                  <input id="auth-username" className="form-control" autoComplete="username" autoCapitalize="none" spellCheck={false}
+                    minLength={3} maxLength={30} pattern="[A-Za-z0-9._\-]+" value={username} onChange={e => setUsername(e.target.value)} required />
+                  <div className="form-text">3–30 letters, digits, dots, underscores or hyphens</div>
+                </div>
+                <div>
+                  <label className="form-label small mb-1" htmlFor="auth-email">Email</label>
+                  <input id="auth-email" type="email" className="form-control" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} required />
+                </div>
+              </>
+            ) : (
+              <div>
+                <label className="form-label small mb-1" htmlFor="auth-login">Email or username</label>
+                <input id="auth-login" className="form-control" autoComplete="username" autoCapitalize="none" spellCheck={false}
+                  value={login} onChange={e => setLogin(e.target.value)} required />
+              </div>
+            )}
             <div>
               <label className="form-label small mb-1" htmlFor="auth-password">Password</label>
               <input id="auth-password" type="password" className="form-control" minLength={mode === 'register' ? 8 : undefined}
@@ -83,7 +101,7 @@ export const AccountMenu: React.FC<Props> = ({ enabled, user, onLogin, onRegiste
   if (user) {
     return (
       <div className="d-flex align-items-center gap-2">
-        <span className="small d-none d-md-inline-flex align-items-center gap-1" title={user.email}>
+        <span className="small d-none d-md-inline-flex align-items-center gap-1" title={`@${user.username} · ${user.email}`}>
           <UserCircle size={16} className="text-akilimo" /> {user.name}
           {user.role === 'admin' && <span className="badge text-bg-success">Admin</span>}
         </span>

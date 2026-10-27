@@ -14,12 +14,12 @@ export function useAccount() {
       .finally(() => setReady(true));
   }, []);
 
-  const login = useCallback(async (email: string, password: string) => {
-    setUser((await signIn(email, password)).user);
+  const login = useCallback(async (login: string, password: string) => {
+    setUser((await signIn(login, password)).user);
   }, []);
 
-  const register = useCallback(async (name: string, email: string, password: string) => {
-    setUser((await signUp(name, email, password)).user);
+  const register = useCallback(async (name: string, email: string, username: string, password: string) => {
+    setUser((await signUp(name, email, username, password)).user);
   }, []);
 
   const logout = useCallback(async () => {

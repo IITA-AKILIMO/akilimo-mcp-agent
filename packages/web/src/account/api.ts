@@ -8,6 +8,7 @@ export type Role = 'user' | 'admin';
 export interface User {
   id: string;
   email: string;
+  username: string;
   name: string;
   role: Role;
 }
@@ -40,9 +41,10 @@ const request = async <T,>(method: string, path: string, body?: unknown): Promis
 };
 
 export const getStatus = () => request<{ enabled: boolean; user: User | null }>('GET', '/auth/status');
-export const signUp = (name: string, email: string, password: string) =>
-  request<{ user: User }>('POST', '/auth/signup', { name, email, password });
-export const signIn = (email: string, password: string) => request<{ user: User }>('POST', '/auth/login', { email, password });
+export const signUp = (name: string, email: string, username: string, password: string) =>
+  request<{ user: User }>('POST', '/auth/signup', { name, email, username, password });
+// `login` is an email or a username
+export const signIn = (login: string, password: string) => request<{ user: User }>('POST', '/auth/login', { login, password });
 export const signOut = () => request<void>('POST', '/auth/logout');
 
 export const listConversations = () => request<{ conversations: ConversationSummary[] }>('GET', '/conversations');

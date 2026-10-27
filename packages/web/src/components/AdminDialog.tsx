@@ -234,7 +234,7 @@ const UsersTab: React.FC<{ currentUser: User }> = ({ currentUser }) => {
                 {u.name}
                 {u.id === currentUser.id && <span className="text-body-secondary fw-normal ms-1">(you)</span>}
               </div>
-              <div className="small text-body-secondary text-truncate">{u.email} · joined {new Date(u.created_at).toLocaleDateString()}</div>
+              <div className="small text-body-secondary text-truncate">@{u.username} · {u.email} · joined {new Date(u.created_at).toLocaleDateString()}</div>
             </div>
             <span className={`badge ${u.role === 'admin' ? 'text-bg-success' : 'text-bg-secondary'}`}>{u.role}</span>
             {u.role === 'user' && (
