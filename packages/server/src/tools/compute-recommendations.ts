@@ -31,7 +31,7 @@ const ComputeToolInputSchema = z.object({
 
 export const computeRecommendationsTool: ToolDefinition = {
   name: "compute_recommendations",
-  description: "Compute fertilizer, intercropping and planting recommendations for a farm. Only farm location, size, use case and planting/harvest dates are required; other fields default to neutral values.",
+  description: "Compute a recommendation for a cassava field. Four types, chosen by farmInformation.use_case and the flags under recommendations: FR fertilizer (needs fertilizer_list with prices and selected), PP planting practices (ploughing and ridging), SPHS scheduled planting and harvest dates, IC intercropping (maize in Nigeria, sweet potato in Tanzania only). Location, field size, planting and harvest dates and the cassava root price are required; other fields default to neutral values. The answer holds rec_type, a recommendation text and data rows.",
   // Generated from the shared schema so the model sees exactly what validation accepts
   inputSchema: z.toJSONSchema(ComputeToolInputSchema, { io: "input" }) as ToolDefinition["inputSchema"],
 

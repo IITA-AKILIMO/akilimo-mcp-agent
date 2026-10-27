@@ -28,6 +28,12 @@ For questions about available fertilizers or prices, also use get_fertilizer_opt
 Briefly confirm these details with the user, then call compute_recommendations with:
 compute_request.farmInformation {country_code, use_case "FR", map_lat, map_long, field_size, area_unit}, compute_request.planting {planting_date, harvest_date}, compute_request.cassava {unit_price, unit_weight 1000}, and fertilizer_list with one entry per fertilizer from get_fertilizer_options (key, name, fertilizer_type, weight = bag_weight_kg, price, selected true for those the farmer can buy).
 
+Other recommendation types use the same tool without fertilizers (fertilizer_list empty and fertilizer_rec false), with the same location, size, dates and cassava price:
+- Planting practices (ploughing, ridging and their methods): farmInformation.use_case "PP", recommendations.planting_practices_rec true. Optionally operationsDone {ploughing_done, harrowing_done, ridging_done} for what the farmer does now.
+- Planting and harvest dates (the best time to plant and harvest): use_case "SPHS", recommendations.scheduled_planting_rec and scheduled_harvest_rec true. planting.planting_date_window and harvest_date_window (0 to 2 months) say how far the farmer can shift.
+- Intercropping: use_case "IC". Only Nigeria (maize: interCropping {inter_cropped_crop "maize", inter_cropping_maize_rec true}) and Tanzania (sweet potato: inter_cropped_crop "potato", inter_cropping_potato_rec true); say so for other countries instead of calling the tool.
+For all of these the harvest should be roughly 8 to 15 months after planting. Explain the recommendation text and the best option in simple words; the numbers come only from the tool result.
+
 Explain the result simply: which fertilizers, how many bags or kg, and the expected yield and profit if given. If the service says the location is outside the recommendation area, say so and suggest checking the location. Other tools may be available; use them when they fit the question.`;
 
 // Keeps tool results small enough for a local model's context window

@@ -12,7 +12,7 @@ export const AREA_UNITS = ['acre', 'ha', 'm2', 'are'] as const;
 
 export const FarmInformationSchema = z.object({
     country_code: z.string().length(2).describe('ISO 2-letter country code, e.g. NG, TZ, RW'),
-    use_case: z.string().max(10).default('FR').describe('Akilimo use case code; FR = fertilizer recommendation'),
+    use_case: z.string().max(10).default('FR').describe('Akilimo use case code: FR = fertilizer recommendation, PP = planting practices, SPHS = scheduled planting and harvest, IC = intercropping. Set the matching flags under recommendations (and interCropping for IC)'),
     map_lat: z.number().min(-90).max(90),
     map_long: z.number().min(-180).max(180),
     field_size: z.number().min(1),
@@ -20,17 +20,17 @@ export const FarmInformationSchema = z.object({
 });
 
 export const InterCroppingSchema = z.object({
-    inter_cropped_crop: z.string().max(255).nullable().default('NA'),
-    inter_cropping_maize_rec: z.boolean().default(false),
-    inter_cropping_potato_rec: z.boolean().default(false),
+    inter_cropped_crop: z.string().max(255).nullable().default('NA').describe("Intercrop for IC: 'maize' in Nigeria, 'potato' (sweet potato) in Tanzania; other countries are not supported"),
+    inter_cropping_maize_rec: z.boolean().default(false).describe('IC in Nigeria: set true to get maize intercropping advice'),
+    inter_cropping_potato_rec: z.boolean().default(false).describe('IC in Tanzania: set true to get sweet potato intercropping advice'),
 });
 
 export const RecommendationSettingsSchema = z.object({
     lang: z.string().length(2).default('en'),
-    fertilizer_rec: z.boolean().default(true),
-    planting_practices_rec: z.boolean().default(false),
-    scheduled_planting_rec: z.boolean().default(false),
-    scheduled_harvest_rec: z.boolean().default(false),
+    fertilizer_rec: z.boolean().default(true).describe('FR: fertilizer recommendation (needs fertilizer_list). Set false for the other types'),
+    planting_practices_rec: z.boolean().default(false).describe('PP: ploughing and ridging advice compared with the current practice'),
+    scheduled_planting_rec: z.boolean().default(false).describe('SPHS: best planting date; use together with scheduled_harvest_rec'),
+    scheduled_harvest_rec: z.boolean().default(false).describe('SPHS: best harvest date; use together with scheduled_planting_rec'),
 });
 
 export const PlantingSchema = z.object({
