@@ -10,9 +10,6 @@ RUN corepack enable
 
 WORKDIR /app
 
-# Fallback toolchain for building better-sqlite3 (SQLite driver) when no prebuilt binary matches
-RUN apk add --no-cache python3 make g++
-
 # Copy workspace configuration and package manifests for layer caching
 # (the web manifest is needed for the frozen lockfile check, its source is not)
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
@@ -39,8 +36,7 @@ FROM node:24-alpine AS runner
 ENV NODE_ENV=production
 ENV TRANSPORT=http
 ENV PORT=3000
-# MCP gateway registry (and the SQLite database, if DB_CONNECTION=sqlite); mount a volume on
-# /app/data to keep them across rebuilds
+# MCP gateway registry; mount a volume on /app/data to keep it across rebuilds
 ENV GATEWAY_DATA_FILE=/app/data/mcp-servers.json
 
 # Prisma's migration engine needs OpenSSL on Alpine
