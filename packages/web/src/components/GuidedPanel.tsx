@@ -3,6 +3,13 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { ArrowLeft, Banknote, ChevronRight, Leaf, Loader2, Sprout } from 'lucide-react';
 import type { Country } from '@akilimo/shared';
 import type { ServerState } from '../mcp/useMcpServers';
+import { COUNTRIES } from '@akilimo/shared';
+import type { GuidedEntry } from '../mcp/guided';
+import { ADVICE, ADVICE_ICONS, AdviceResult, AdviceScreen, intercropCrop, type AdviceKind } from './AdviceScreens';
+import {
+  Loading, Value, message, money, monthsFromNow, useLoad,
+  type Call, type FertilizerData, type PriceData, type Record_, type Row,
+} from './GuidedParts';
 import { MapPicker } from './MapPicker';
 
 // Guided mode: the same questions the AI chat answers, but asked with buttons and a short form and
@@ -11,62 +18,30 @@ interface Props {
   country: Country | undefined;
   servers: Record<string, ServerState>;
   callTool: (server: string, name: string, args: Record<string, unknown>) => Promise<CallToolResult>;
+  // Called once for every finished step, so the session can be saved to the history
+  onRecord?: (entry: GuidedEntry) => void;
+  // A saved session being viewed again (read-only); null in normal use
+  replay?: GuidedEntry[] | null;
+  onLeaveReplay?: () => void;
 }
-
-type Row = Record<string, unknown>;
-const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
-const money = (n: unknown) => (typeof n === 'number' && Number.isFinite(n) ? n.toLocaleString() : '–');
-const label = (key: string) => { const s = key.replace(/[_-]+/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').trim(); return s.charAt(0).toUpperCase() + s.slice(1); };
-
-const isoDate = (d: Date) => d.toISOString().slice(0, 10);
-const monthsFromNow = (months: number) => { const d = new Date(); d.setMonth(d.getMonth() + months); return isoDate(d); };
-
-// ── generic result view (the compute answer has many fields; show them all, readably) ──────────
-
-const Value: React.FC<{ value: unknown; depth?: number }> = ({ value, depth = 0 }) => {
-  if (value === null || value === undefined || value === '') return <span className="text-body-secondary">–</span>;
-  if (typeof value === 'number') return <>{value.toLocaleString(undefined, { maximumFractionDigits: 2 })}</>;
-  if (typeof value === 'boolean') return <>{value ? 'Yes' : 'No'}</>;
-  if (typeof value === 'string') return <>{value}</>;
-  if (Array.isArray(value)) {
-    if (value.length === 0) return <span className="text-body-secondary">none</span>;
-    const rows = value.filter((v): v is Row => typeof v === 'object' && v !== null && !Array.isArray(v));
-    if (rows.length === value.length) {
-      const columns = [...new Set(rows.flatMap(r => Object.keys(r)))].filter(k => rows.every(r => typeof r[k] !== 'object' || r[k] === null));
-      return (
-        <div className="table-responsive">
-          <table className="table table-sm table-striped mb-0 small">
-            <thead><tr>{columns.map(c => <th key={c}>{label(c)}</th>)}</tr></thead>
-            <tbody>{rows.map((r, i) => <tr key={i}>{columns.map(c => <td key={c}><Value value={r[c]} depth={depth + 1} /></td>)}</tr>)}</tbody>
-          </table>
-        </div>
-      );
-    }
-    return <ul className="mb-0 ps-3">{value.map((v, i) => <li key={i}><Value value={v} depth={depth + 1} /></li>)}</ul>;
-  }
-  const entries = Object.entries(value as Row);
-  return (
-    <dl className={`row mb-0 small ${depth > 0 ? 'ms-1' : ''}`}>
-      {entries.map(([k, v]) => (
-        <React.Fragment key={k}>
-          <dt className="col-sm-4 text-body-secondary fw-normal">{label(k)}</dt>
-          <dd className="col-sm-8 mb-1"><Value value={v} depth={depth + 1} /></dd>
-        </React.Fragment>
-      ))}
-    </dl>
-  );
-};
 
 // ── the panel ───────────────────────────────────────────────────────────────────────────────────
 
-type Screen = 'menu' | 'price' | 'fertilizers' | 'recommend';
+type Screen = 'menu' | 'price' | 'fertilizers' | 'recommend' | AdviceKind;
 
-interface FertilizerOption { key: string; name: string; fertilizer_type: string; bag_weight_kg: number; price_bands_per_bag: number[]; typical_price_per_bag: number | null }
-interface FertilizerData { country: string; currency: string | null; fertilizers: FertilizerOption[] }
-interface PriceData { country: string; currency: string | null; unit: string; price_bands: { min: number; max: number; average: number }[]; typical_price_per_tonne: number | null }
+// Records a finished step once, when its data first arrives (a ref keeps React's double effects from saving it twice)
+function useRecordOnce<T>(data: T | undefined, record: Record_, build: (data: T) => GuidedEntry) {
+  const done = React.useRef<T | undefined>(undefined);
+  useEffect(() => {
+    if (data === undefined || done.current === data) return;
+    done.current = data;
+    record(build(data));
+  }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
+}
 
-export const GuidedPanel: React.FC<Props> = ({ country, servers, callTool }) => {
+export const GuidedPanel: React.FC<Props> = ({ country, servers, callTool, onRecord, replay, onLeaveReplay }) => {
   const [screen, setScreen] = useState<Screen>('menu');
+  const record: Record_ = entry => onRecord?.(entry);
 
   // The server that offers the AKILIMO tools (normally akilimo-1.0)
   const serverId = useMemo(
@@ -84,6 +59,8 @@ export const GuidedPanel: React.FC<Props> = ({ country, servers, callTool }) => 
 
   // Back to the menu when the country changes, so nothing stale is shown
   useEffect(() => setScreen('menu'), [country?.code]);
+
+  if (replay) return <ReplayPanel entries={replay} onLeave={() => onLeaveReplay?.()} />;
 
   if (!country) {
     return <div className="card-body d-flex align-items-center justify-content-center text-body-secondary">Choose your country above to start.</div>;
@@ -104,25 +81,35 @@ export const GuidedPanel: React.FC<Props> = ({ country, servers, callTool }) => 
         </button>
       )}
       {screen === 'menu' && <Menu country={country} onPick={setScreen} />}
-      {screen === 'price' && <PriceScreen country={country} call={call} />}
-      {screen === 'fertilizers' && <FertilizerScreen country={country} call={call} />}
-      {screen === 'recommend' && <RecommendScreen country={country} call={call} />}
+      {screen === 'price' && <PriceScreen country={country} call={call} record={record} />}
+      {screen === 'fertilizers' && <FertilizerScreen country={country} call={call} record={record} />}
+      {screen === 'recommend' && <RecommendScreen country={country} call={call} record={record} />}
+      {(screen === 'practices' || screen === 'schedule' || screen === 'intercrop') && (
+        <AdviceScreen key={screen} kind={screen} country={country} call={call} record={record} />
+      )}
     </div>
   );
 };
 
-type Call = <T>(name: string, args: Record<string, unknown>) => Promise<T>;
-
 const Menu: React.FC<{ country: Country; onPick: (s: Screen) => void }> = ({ country, onPick }) => {
-  const options: { screen: Screen; icon: React.ReactNode; title: string; text: string }[] = [
-    { screen: 'recommend', icon: <Sprout size={22} />, title: 'Get a fertilizer recommendation', text: `Tell us about your field in ${country.name} and get advice on which fertilizer to use.` },
+  type Option = { screen: Screen; icon: React.ReactNode; title: string; text: string };
+  const intercrop = intercropCrop(country.code);
+  const advice: Option[] = [
+    { screen: 'recommend', icon: <Sprout size={22} />, title: 'Fertilizer recommendation', text: `Which fertilizer to use on your field in ${country.name}, and how much.` },
+    { screen: 'practices', icon: ADVICE_ICONS.practices, title: ADVICE.practices.title, text: ADVICE.practices.text },
+    { screen: 'schedule', icon: ADVICE_ICONS.schedule, title: ADVICE.schedule.title, text: ADVICE.schedule.text },
+    {
+      screen: 'intercrop', icon: ADVICE_ICONS.intercrop, title: ADVICE.intercrop.title,
+      text: intercrop ? `Would growing ${intercrop.crop} between your cassava pay off?` : 'Available for Nigeria (maize) and Tanzania (sweet potato) only.',
+    },
+  ];
+  const prices: Option[] = [
     { screen: 'fertilizers', icon: <Leaf size={22} />, title: 'Fertilizers and their prices', text: `See which fertilizers are available in ${country.name} and what a bag costs.` },
     { screen: 'price', icon: <Banknote size={22} />, title: 'Cassava root price', text: `See typical cassava prices per tonne in ${country.name}.` },
   ];
-  return (
-    <div className="mx-auto" style={{ maxWidth: '40rem' }}>
-      <h2 className="h5 mb-1">What would you like to do?</h2>
-      <p className="small text-body-secondary mb-3">Answers come straight from AKILIMO, with no AI model needed.</p>
+  const group = (heading: string, options: Option[]) => (
+    <section className="mb-4">
+      <h3 className="h6 text-body-secondary mb-2">{heading}</h3>
       <div className="d-flex flex-column gap-2">
         {options.map(o => (
           <button key={o.screen} type="button" className="btn btn-outline-success text-start d-flex align-items-center gap-3 p-3" onClick={() => onPick(o.screen)}>
@@ -132,88 +119,135 @@ const Menu: React.FC<{ country: Country; onPick: (s: Screen) => void }> = ({ cou
           </button>
         ))}
       </div>
+    </section>
+  );
+  return (
+    <div className="mx-auto" style={{ maxWidth: '40rem' }}>
+      <h2 className="h5 mb-1">What would you like to do?</h2>
+      <p className="small text-body-secondary mb-3">Answers come straight from AKILIMO, with no AI model needed.</p>
+      {group('Advice for your field', advice)}
+      {group('Prices', prices)}
     </div>
   );
 };
 
-// Loads once per screen/country and shows a spinner or the error while waiting
-function useLoad<T>(load: () => Promise<T>, deps: unknown[]) {
-  const [state, setState] = useState<{ data?: T; error?: string; loading: boolean }>({ loading: true });
-  useEffect(() => {
-    let live = true;
-    setState({ loading: true });
-    load().then(data => live && setState({ data, loading: false }), e => live && setState({ error: message(e), loading: false }));
-    return () => { live = false; };
-  }, deps); // eslint-disable-line react-hooks/exhaustive-deps
-  return state;
-}
-
-const Loading: React.FC<{ state: { error?: string; loading: boolean } }> = ({ state }) => (
-  <>
-    {state.loading && <div className="text-body-secondary d-flex align-items-center gap-2"><Loader2 size={16} className="spin" /> Loading…</div>}
-    {state.error && <div className="alert alert-danger small">{state.error}</div>}
-  </>
+const PriceView: React.FC<{ country: Country; d: PriceData }> = ({ country, d }) => (
+  d.price_bands.length === 0
+    ? <div className="alert alert-info small">There are no published cassava prices for {country.name} yet.</div>
+    : (
+      <>
+        <div className="card mb-3"><div className="card-body">
+          <div className="small text-body-secondary">Typical price</div>
+          <div className="fs-3 fw-semibold text-akilimo">{money(d.typical_price_per_tonne)} <span className="fs-6 text-body-secondary">{d.currency} per tonne</span></div>
+        </div></div>
+        <table className="table table-sm small">
+          <thead><tr><th>Price band ({d.currency} per tonne)</th><th className="text-end">Average</th></tr></thead>
+          <tbody>{d.price_bands.map((b, i) => <tr key={i}><td>{money(b.min)} – {money(b.max)}</td><td className="text-end">{money(b.average)}</td></tr>)}</tbody>
+        </table>
+        <div className="form-text">Fresh roots, per tonne (1000 kg). Source: AKILIMO.</div>
+      </>
+    )
 );
 
-const PriceScreen: React.FC<{ country: Country; call: Call }> = ({ country, call }) => {
-  const state = useLoad(() => call<PriceData>('get_cassava_price', { countryCode: country.code }), [country.code]);
-  const d = state.data;
+const PriceScreen: React.FC<{ country: Country; call: Call; record: Record_ }> = ({ country, call, record }) => {
+  const request = { countryCode: country.code };
+  const state = useLoad(() => call<PriceData>('get_cassava_price', request), [country.code]);
+  useRecordOnce(state.data, record, result => ({
+    action: 'price', country: country.code, title: `Cassava price in ${country.name}`, tool: 'get_cassava_price', request, result,
+  }));
   return (
     <>
       <h2 className="h5">Cassava root price in {country.name}</h2>
       <Loading state={state} />
-      {d && (d.price_bands.length === 0
-        ? <div className="alert alert-info small">There are no published cassava prices for {country.name} yet.</div>
-        : (
-          <>
-            <div className="card mb-3"><div className="card-body">
-              <div className="small text-body-secondary">Typical price</div>
-              <div className="fs-3 fw-semibold text-akilimo">{money(d.typical_price_per_tonne)} <span className="fs-6 text-body-secondary">{d.currency} per tonne</span></div>
-            </div></div>
-            <table className="table table-sm small">
-              <thead><tr><th>Price band ({d.currency} per tonne)</th><th className="text-end">Average</th></tr></thead>
-              <tbody>{d.price_bands.map((b, i) => <tr key={i}><td>{money(b.min)} – {money(b.max)}</td><td className="text-end">{money(b.average)}</td></tr>)}</tbody>
-            </table>
-            <div className="form-text">Fresh roots, per tonne (1000 kg). Source: AKILIMO.</div>
-          </>
-        ))}
+      {state.data && <PriceView country={country} d={state.data} />}
     </>
   );
 };
 
-const FertilizerScreen: React.FC<{ country: Country; call: Call }> = ({ country, call }) => {
-  const state = useLoad(() => call<FertilizerData>('get_fertilizer_options', { countryCode: country.code }), [country.code]);
-  const d = state.data;
+const FertilizerView: React.FC<{ country: Country; d: FertilizerData }> = ({ country, d }) => (
+  d.fertilizers.length === 0
+    ? <div className="alert alert-info small">No fertilizers are listed for {country.name} yet.</div>
+    : (
+      <div className="table-responsive">
+        <table className="table table-sm table-striped small align-middle">
+          <thead><tr><th>Fertilizer</th><th>Type</th><th className="text-end">Bag (kg)</th><th className="text-end">Typical price per bag ({d.currency})</th></tr></thead>
+          <tbody>
+            {d.fertilizers.map(f => (
+              <tr key={f.key}>
+                <td className="fw-semibold">{f.name}</td>
+                <td>{f.fertilizer_type}</td>
+                <td className="text-end">{f.bag_weight_kg}</td>
+                <td className="text-end">{f.typical_price_per_bag !== null ? money(f.typical_price_per_bag) : <span className="text-body-secondary">no price yet</span>}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )
+);
+
+const FertilizerScreen: React.FC<{ country: Country; call: Call; record: Record_ }> = ({ country, call, record }) => {
+  const request = { countryCode: country.code };
+  const state = useLoad(() => call<FertilizerData>('get_fertilizer_options', request), [country.code]);
+  useRecordOnce(state.data, record, result => ({
+    action: 'fertilizers', country: country.code, title: `Fertilizers in ${country.name}`, tool: 'get_fertilizer_options', request, result,
+  }));
   return (
     <>
       <h2 className="h5">Fertilizers in {country.name}</h2>
       <Loading state={state} />
-      {d && (d.fertilizers.length === 0
-        ? <div className="alert alert-info small">No fertilizers are listed for {country.name} yet.</div>
-        : (
-          <div className="table-responsive">
-            <table className="table table-sm table-striped small align-middle">
-              <thead><tr><th>Fertilizer</th><th>Type</th><th className="text-end">Bag (kg)</th><th className="text-end">Typical price per bag ({d.currency})</th></tr></thead>
-              <tbody>
-                {d.fertilizers.map(f => (
-                  <tr key={f.key}>
-                    <td className="fw-semibold">{f.name}</td>
-                    <td>{f.fertilizer_type}</td>
-                    <td className="text-end">{f.bag_weight_kg}</td>
-                    <td className="text-end">{f.typical_price_per_bag !== null ? money(f.typical_price_per_bag) : <span className="text-body-secondary">no price yet</span>}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ))}
+      {state.data && <FertilizerView country={country} d={state.data} />}
     </>
   );
 };
 
+// A saved session shown again: every step in order, read-only, straight from what was saved
+const ReplayPanel: React.FC<{ entries: GuidedEntry[]; onLeave: () => void }> = ({ entries, onLeave }) => (
+  <div className="card-body overflow-auto min-h-0">
+    <div className="d-flex align-items-center gap-2 mb-3">
+      <button type="button" className="btn btn-sm btn-outline-success" onClick={onLeave}>Continue from the menu</button>
+      <span className="small text-body-secondary">Saved session, {entries.length} step{entries.length === 1 ? '' : 's'}</span>
+    </div>
+    {entries.length === 0 && <div className="alert alert-info small">This session has no saved steps.</div>}
+    <div className="d-flex flex-column gap-4">
+      {entries.map((e, i) => {
+        const country = COUNTRIES.find(c => c.code === e.country);
+        return (
+          <section key={i}>
+            <h2 className="h6 mb-2">{e.title}</h2>
+            {e.action === 'price' && country && <PriceView country={country} d={e.result as PriceData} />}
+            {e.action === 'fertilizers' && country && <FertilizerView country={country} d={e.result as FertilizerData} />}
+            {e.action === 'recommend' && <RecommendationResult entry={e} />}
+            {(e.action === 'practices' || e.action === 'schedule' || e.action === 'intercrop') && <AdviceResult entry={e} />}
+          </section>
+        );
+      })}
+    </div>
+  </div>
+);
+
+// What the farmer entered, then the answer
+const RecommendationResult: React.FC<{ entry: GuidedEntry }> = ({ entry }) => {
+  const request = entry.request as { compute_request?: { farmInformation?: Row; planting?: Row; cassava?: Row }; fertilizer_list?: Row[] } | undefined;
+  const farm = request?.compute_request?.farmInformation;
+  const planting = request?.compute_request?.planting;
+  const chosen = (request?.fertilizer_list ?? []).filter(f => f.selected).map(f => String(f.name));
+  return (
+    <>
+      {farm && (
+        <div className="small text-body-secondary mb-2">
+          {String(farm.field_size)} {String(farm.area_unit)} at {String(farm.map_lat)}, {String(farm.map_long)}
+          {planting ? ` · plant ${String(planting.planting_date)}, harvest ${String(planting.harvest_date)}` : ''}
+          {chosen.length ? ` · fertilizers: ${chosen.join(', ')}` : ''}
+        </div>
+      )}
+      <div className="card"><div className="card-body"><Value value={entry.result} /></div></div>
+    </>
+  );
+};
 const AREA_UNITS = ['acre', 'ha', 'm2', 'are'];
 
-const RecommendScreen: React.FC<{ country: Country; call: Call }> = ({ country, call }) => {
+const RecommendScreen: React.FC<{ country: Country; call: Call; record: Record_ }> = ({ country, call, record }) => {
   const options = useLoad(async () => {
     const [fertilizers, price] = await Promise.all([
       call<FertilizerData>('get_fertilizer_options', { countryCode: country.code }),
@@ -232,7 +266,7 @@ const RecommendScreen: React.FC<{ country: Country; call: Call }> = ({ country, 
   const [prices, setPrices] = useState<Record<string, string>>({});
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<unknown>(null);
+  const [done, setDone] = useState<GuidedEntry | null>(null);
 
   // Prefill the prices with the typical ones once they are loaded
   const loaded = options.data;
@@ -258,7 +292,7 @@ const RecommendScreen: React.FC<{ country: Country; call: Call }> = ({ country, 
     setRunning(true);
     setError(null);
     try {
-      setResult(await call('compute_recommendations', {
+      const request = {
         compute_request: {
           farmInformation: { country_code: country.code, use_case: 'FR', map_lat: pos.lat, map_long: pos.lon, field_size: Number(size), area_unit: unit },
           planting: { planting_date: planting, harvest_date: harvest },
@@ -269,7 +303,14 @@ const RecommendScreen: React.FC<{ country: Country; call: Call }> = ({ country, 
           key: f.key, name: f.name, fertilizer_type: f.fertilizer_type, weight: f.bag_weight_kg,
           price: Number(prices[f.key]) || 0, selected: !!selected[f.key],
         })),
-      }));
+      };
+      const result = await call('compute_recommendations', request);
+      const entry: GuidedEntry = {
+        action: 'recommend', country: country.code, tool: 'compute_recommendations', request, result,
+        title: `Fertilizer recommendation: ${Number(size)} ${unit} in ${country.name}`,
+      };
+      setDone(entry);
+      record(entry);
     } catch (err) {
       setError(message(err));
     } finally {
@@ -277,12 +318,12 @@ const RecommendScreen: React.FC<{ country: Country; call: Call }> = ({ country, 
     }
   };
 
-  if (result) {
+  if (done) {
     return (
       <>
         <h2 className="h5">Your recommendation</h2>
-        <div className="card mb-3"><div className="card-body"><Value value={result} /></div></div>
-        <button type="button" className="btn btn-outline-success btn-sm" onClick={() => setResult(null)}>Change my answers</button>
+        <div className="mb-3"><RecommendationResult entry={done} /></div>
+        <button type="button" className="btn btn-outline-success btn-sm" onClick={() => setDone(null)}>Change my answers</button>
       </>
     );
   }

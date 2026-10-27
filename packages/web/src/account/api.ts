@@ -17,12 +17,19 @@ export interface AdminUser extends User {
   created_at: string;
 }
 
+// "ai" is the free-text chat; "guided" is the buttons-and-forms mode (see GuidedPanel)
+export type ConversationMode = 'ai' | 'guided';
+
 export interface ConversationSummary {
   id: string;
   title: string;
   model: string | null;
+  mode: ConversationMode;
   updated_at: string;
 }
+
+// One saved message. A guided step is saved as a tool message whose `data` holds the whole step.
+export type StoredMessage = ChatMessage & { data?: unknown };
 
 const request = async <T,>(method: string, path: string, body?: unknown): Promise<T> => {
   const res = await fetch(`/api${path}`, {
@@ -47,12 +54,13 @@ export const signUp = (name: string, email: string, username: string, password: 
 export const signIn = (login: string, password: string) => request<{ user: User }>('POST', '/auth/login', { login, password });
 export const signOut = () => request<void>('POST', '/auth/logout');
 
-export const listConversations = () => request<{ conversations: ConversationSummary[] }>('GET', '/conversations');
-export const createConversation = (title: string, model?: string) =>
-  request<ConversationSummary>('POST', '/conversations', { title, model });
+export const listConversations = (mode?: ConversationMode) =>
+  request<{ conversations: ConversationSummary[] }>('GET', `/conversations${mode ? `?mode=${mode}` : ''}`);
+export const createConversation = (title: string, model?: string, mode: ConversationMode = 'ai') =>
+  request<ConversationSummary>('POST', '/conversations', { title, model, mode });
 export const getConversation = (id: string) =>
-  request<{ conversation: ConversationSummary; messages: ChatMessage[] }>('GET', `/conversations/${id}`);
-export const appendMessages = (id: string, messages: ChatMessage[]) =>
+  request<{ conversation: ConversationSummary; messages: StoredMessage[] }>('GET', `/conversations/${id}`);
+export const appendMessages = (id: string, messages: StoredMessage[]) =>
   request<void>('POST', `/conversations/${id}/messages`, { messages });
 export const deleteConversation = (id: string) => request<void>('DELETE', `/conversations/${id}`);
 

@@ -13,6 +13,7 @@ import { useLlm } from '../llm/useLlm';
 import { read, write } from '../mcp/keys';
 import type { McpServerConfig } from '../mcp/servers';
 import type { ServerState } from '../mcp/useMcpServers';
+import { isGuidedEntry, type GuidedEntry } from '../mcp/guided';
 import { GuidedPanel } from './GuidedPanel';
 import { LlmSettings } from './LlmSettings';
 import { MapPicker } from './MapPicker';
@@ -59,6 +60,7 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
   const [view, setView] = useState<'guided' | 'ai'>(() => (read<string>(VIEW_KEY, 'guided') === 'ai' ? 'ai' : 'guided'));
   const chooseView = (next: 'guided' | 'ai') => {
     setView(next);
+    setShowHistory(false);
     write(VIEW_KEY, next);
   };
 
@@ -97,6 +99,31 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
         setSaveError(null);
       })
       .catch(e => setSaveError(`Not saved: ${e instanceof Error ? e.message : String(e)}`));
+  };
+
+  // Guided mode keeps its own saved conversation: every finished step (a price, the fertilizer list, a
+  // recommendation) is one message, with the request and result in `data`, so a session can be shown again
+  const guidedConversationId = useRef<string | null>(null);
+  const guidedChain = useRef<Promise<void>>(Promise.resolve());
+  const [replay, setReplay] = useState<GuidedEntry[] | null>(null);
+
+  const recordGuided = (entry: GuidedEntry) => {
+    if (!user) return;
+    guidedChain.current = guidedChain.current
+      .then(async () => {
+        if (!guidedConversationId.current) {
+          guidedConversationId.current = (await createConversation(entry.title.slice(0, 80), undefined, 'guided')).id;
+        }
+        await appendMessages(guidedConversationId.current, [{ role: 'tool', content: entry.title, tool_name: entry.tool, data: entry }]);
+        setSaveError(null);
+      })
+      .catch(e => setSaveError(`Not saved: ${e instanceof Error ? e.message : String(e)}`));
+  };
+
+  // The next step starts a new saved session
+  const resetGuided = () => {
+    guidedConversationId.current = null;
+    setReplay(null);
   };
 
   // Maps "akilimo-1_0__get_cassava_price" back to the registered server id and tool name
@@ -204,15 +231,17 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
   // A different account (or signing out) never continues the previous person's chat
   useEffect(() => {
     reset();
+    resetGuided();
     setShowHistory(false);
   }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // The list shows the conversations of the mode that is on screen
   const toggleHistory = async () => {
     if (showHistory) { setShowHistory(false); return; }
     setShowHistory(true);
     setHistoryError(null);
     try {
-      setConversations((await listConversations()).conversations);
+      setConversations((await listConversations(view)).conversations);
     } catch (e) {
       setHistoryError(e instanceof Error ? e.message : String(e));
     }
@@ -221,6 +250,21 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
   const openConversation = async (id: string) => {
     try {
       const { conversation, messages } = await getConversation(id);
+      if (conversation.mode === 'guided') {
+        // Show the saved steps; new steps are added to the same session
+        const entries = messages.map(m => m.data).filter(isGuidedEntry);
+        guidedConversationId.current = conversation.id;
+        setReplay(entries);
+        const saved = entries[0]?.country;
+        if (saved) {
+          setCountryCode(saved);
+          write(COUNTRY_KEY, saved);
+          setPicked(p => ({ ...p, country: saved }));
+        }
+        setSaveError(null);
+        setShowHistory(false);
+        return;
+      }
       setQueue([]);
       abort.current?.abort();
       const restored = messages.map(toChatMessage);
@@ -240,6 +284,7 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
       await deleteConversation(id);
       setConversations(prev => prev.filter(c => c.id !== id));
       if (conversationId.current === id) reset();
+      if (guidedConversationId.current === id) resetGuided();
     } catch (e) {
       setHistoryError(e instanceof Error ? e.message : String(e));
     }
@@ -255,6 +300,7 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
   const chooseCountry = (code: string) => {
     if (code === countryCode) return;
     if (countryCode && items.length > 0) reset();
+    resetGuided();
     setCountryCode(code);
     write(COUNTRY_KEY, code);
     setPicked(p => ({ ...p, country: code || undefined }));
@@ -300,17 +346,25 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
               onClick={() => setShowSettings(v => !v)} aria-expanded={showSettings} title="Provider settings" aria-label="Provider settings">
               <Settings2 size={14} />
             </button>
-            {user && (
-              <button type="button" className={`btn btn-sm d-inline-flex align-items-center gap-1 ${showHistory ? 'btn-secondary' : 'btn-outline-secondary'}`}
-                onClick={toggleHistory} aria-expanded={showHistory} disabled={busy} title="Your saved conversations">
-                <History size={14} /> History
-              </button>
-            )}
-            <button type="button" className="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1"
-              onClick={reset} disabled={items.length === 0} title="Start a new conversation">
-              <RotateCcw size={14} /> New
-            </button>
           </>
+        )}
+        {user && (
+          <button type="button" className={`btn btn-sm d-inline-flex align-items-center gap-1 ${showHistory ? 'btn-secondary' : 'btn-outline-secondary'}`}
+            onClick={toggleHistory} aria-expanded={showHistory} disabled={view === 'ai' && busy}
+            title={view === 'guided' ? 'Your saved guided sessions' : 'Your saved conversations'}>
+            <History size={14} /> History
+          </button>
+        )}
+        {view === 'ai' ? (
+          <button type="button" className="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1"
+            onClick={reset} disabled={items.length === 0} title="Start a new conversation">
+            <RotateCcw size={14} /> New
+          </button>
+        ) : (
+          <button type="button" className="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1"
+            onClick={resetGuided} title="Start a new guided session (the next step is saved as a new session)">
+            <RotateCcw size={14} /> New
+          </button>
         )}
 
         {showHistory && (
@@ -332,7 +386,7 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
           </div>
         )}
       </div>
-      {view === 'guided' ? <GuidedPanel country={country} servers={servers} callTool={callTool} /> : (
+      {view === 'guided' ? <GuidedPanel country={country} servers={servers} callTool={callTool} onRecord={recordGuided} replay={replay} onLeaveReplay={() => setReplay(null)} /> : (
       <>
       {showSettings && <LlmSettings llm={llm} />}
 
