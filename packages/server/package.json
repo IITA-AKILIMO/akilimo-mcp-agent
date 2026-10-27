@@ -9,7 +9,8 @@
     "build": "pnpm db:generate && vite build",
     "start": "node dist/index.cjs",
     "db:generate": "prisma generate",
-    "db:migrate": "node scripts/migrate.mjs"
+    "db:migrate": "node scripts/migrate.mjs",
+    "seed:admin": "pnpm db:generate && vite-node src/index.ts -- --seed-admin"
   },
   "dependencies": {
     "@akilimo/shared": "workspace:*",

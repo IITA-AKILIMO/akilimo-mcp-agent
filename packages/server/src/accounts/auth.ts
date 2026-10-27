@@ -2,10 +2,13 @@ import { createHash, randomBytes, scrypt, timingSafeEqual, type ScryptOptions } 
 import type { NextFunction, Request, Response } from "express";
 import type { Db } from "../db/index.js";
 
+export type Role = "user" | "admin";
+
 export interface User {
   id: string;
   email: string;
   name: string;
+  role: Role;
 }
 
 declare global {
@@ -81,7 +84,7 @@ export const loadUser = (db: Db) => async (req: Request, res: Response, next: Ne
     try {
       const session = await db.session.findFirst({
         where: { tokenHash: sha256(token), expiresAt: { gt: new Date() } },
-        select: { user: { select: { id: true, email: true, name: true } } },
+        select: { user: { select: { id: true, email: true, name: true, role: true } } },
       });
       req.user = session?.user;
     } catch (error) {
@@ -95,6 +98,19 @@ export const loadUser = (db: Db) => async (req: Request, res: Response, next: Ne
 export const requireUser = (req: Request, res: Response, next: NextFunction) => {
   if (!req.user) {
     res.status(401).json({ error: "Sign in required" });
+    return;
+  }
+  next();
+};
+
+// Admin actions (MCP server registry, user roles) need a signed-in admin
+export const requireAdmin = (req: Request, res: Response, next: NextFunction) => {
+  if (!req.user) {
+    res.status(401).json({ error: "Sign in as an admin to do this" });
+    return;
+  }
+  if (req.user.role !== "admin") {
+    res.status(403).json({ error: "Only admins can do this" });
     return;
   }
   next();

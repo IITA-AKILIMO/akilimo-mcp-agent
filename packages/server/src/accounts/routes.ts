@@ -2,7 +2,7 @@ import express, { type Request, type Response } from "express";
 import { z } from "zod/v4";
 import type { Db } from "../db/index.js";
 import {
-  endSession, hashPassword, loadUser, rateLimit, requireJson, requireUser, startSession, verifyPassword,
+  endSession, hashPassword, loadUser, rateLimit, requireAdmin, requireJson, requireUser, startSession, verifyPassword,
 } from "./auth.js";
 
 const SignupSchema = z.object({
@@ -27,6 +27,8 @@ const ConversationSchema = z.object({
   title: z.string().trim().min(1).max(120),
   model: z.string().max(100).optional(),
 });
+
+const RoleSchema = z.object({ role: z.enum(["user", "admin"]) });
 
 const ActivitySchema = z.object({
   type: z.string().max(40),
@@ -83,7 +85,7 @@ export function apiRouter(db: Db | null) {
     const passwordHash = await hashPassword(password);
     let user;
     try {
-      user = await db.user.create({ data: { email, name, passwordHash }, select: { id: true, email: true, name: true } });
+      user = await db.user.create({ data: { email, name, passwordHash }, select: { id: true, email: true, name: true, role: true } });
     } catch (error) {
       if (!isUniqueViolation(error)) throw error;
       res.status(409).json({ error: "An account with this email already exists. Sign in instead." });
@@ -95,14 +97,14 @@ export function apiRouter(db: Db | null) {
 
   router.post("/auth/login", authLimit, handle(async (req, res) => {
     const { email, password } = LoginSchema.parse(req.body);
-    const user = await db.user.findUnique({ where: { email }, select: { id: true, name: true, passwordHash: true } });
+    const user = await db.user.findUnique({ where: { email }, select: { id: true, name: true, role: true, passwordHash: true } });
     const valid = await verifyPassword(password, user?.passwordHash ?? DUMMY_HASH);
     if (!user || !valid) {
       res.status(401).json({ error: "Email or password is incorrect" });
       return;
     }
     await startSession(db, req, res, user.id);
-    res.json({ user: { id: user.id, email, name: user.name } });
+    res.json({ user: { id: user.id, email, name: user.name, role: user.role } });
   }));
 
   router.post("/auth/logout", handle(async (req, res) => {
@@ -213,6 +215,35 @@ export function apiRouter(db: Db | null) {
 
   router.delete("/activity", handle(async (req, res) => {
     await db.activity.deleteMany({ where: { userId: req.user!.id } });
+    res.status(204).end();
+  }));
+
+  // ── Admin: users and roles ────────────────────────────────────────────────
+  router.get("/admin/users", requireAdmin, handle(async (req, res) => {
+    const users = await db.user.findMany({
+      orderBy: { createdAt: "asc" },
+      select: { id: true, email: true, name: true, role: true, createdAt: true },
+    });
+    res.json({ users: users.map((u) => ({ id: u.id, email: u.email, name: u.name, role: u.role, created_at: u.createdAt })) });
+  }));
+
+  router.patch("/admin/users/:id", requireAdmin, handle(async (req, res) => {
+    const { role } = RoleSchema.parse(req.body);
+    const id = String(req.params.id);
+    const target = await db.user.findUnique({ where: { id }, select: { role: true } });
+    if (!target) {
+      res.status(404).json({ error: "User not found" });
+      return;
+    }
+    // Never leave the system without an admin (including an admin demoting themselves)
+    if (target.role === "admin" && role !== "admin") {
+      const otherAdmins = await db.user.count({ where: { role: "admin", id: { not: id } } });
+      if (!otherAdmins) {
+        res.status(409).json({ error: "This is the last admin; make someone else an admin first" });
+        return;
+      }
+    }
+    await db.user.update({ where: { id }, data: { role } });
     res.status(204).end();
   }));
 

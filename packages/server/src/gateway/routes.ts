@@ -1,8 +1,9 @@
-import { timingSafeEqual } from "node:crypto";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { z } from "zod/v4";
+import { loadUser, requireAdmin, requireJson } from "../accounts/auth.js";
+import type { Db } from "../db/index.js";
 import { Registry, RegistryError, ServerEntrySchema } from "./registry.js";
 
 // Request headers worth forwarding to an upstream MCP server, and response headers worth returning
@@ -12,26 +13,11 @@ const FORWARD_RESPONSE = ["content-type", "mcp-session-id", "cache-control", "ww
 // The browser sends the user's key for an upstream server in this header; it is never stored here
 const KEY_HEADER = "x-mcp-key";
 
-const sameToken = (given: string, expected: string) => {
-  const a = Buffer.from(given);
-  const b = Buffer.from(expected);
-  return a.length === b.length && timingSafeEqual(a, b);
+const noAccounts = (req: Request, res: Response) => {
+  res.status(403).json({ error: "Editing needs user accounts: configure the database and sign in as an admin" });
 };
 
-// Registry edits need GATEWAY_ADMIN_TOKEN: an open registry would let anyone point the
-// gateway at internal services (SSRF)
-const requireAdmin = (adminToken: string) => (req: Request, res: Response, next: NextFunction) => {
-  if (!adminToken) {
-    res.status(403).json({ error: "Editing is disabled: set GATEWAY_ADMIN_TOKEN on the MCP server" });
-    return;
-  }
-  const given = req.header("authorization")?.replace(/^Bearer\s+/i, "") ?? "";
-  if (!sameToken(given, adminToken)) {
-    res.status(401).json({ error: "Invalid admin token" });
-    return;
-  }
-  next();
-};
+const passThrough = (req: Request, res: Response, next: NextFunction) => next();
 
 const sendError = (res: Response, error: unknown) => {
   if (error instanceof z.ZodError) {
@@ -43,20 +29,19 @@ const sendError = (res: Response, error: unknown) => {
   }
 };
 
-export function gatewayRouter(registry: Registry, adminToken: string) {
+// Registry edits need a signed-in admin: an open registry would let anyone point the gateway at
+// internal services (SSRF). Without a database there are no accounts, so the registry is read-only.
+export function gatewayRouter(registry: Registry, db: Db | null) {
   const router = express.Router();
-  const admin = requireAdmin(adminToken);
+  // Session lookup only on registry routes, not on proxied MCP traffic
+  const withUser = db ? loadUser(db) : passThrough;
+  const admin = db ? [withUser, requireJson, requireAdmin] : [noAccounts];
 
-  router.get("/servers", (req, res) => {
-    res.json({ servers: registry.list(), editable: Boolean(adminToken) });
+  router.get("/servers", withUser, (req, res) => {
+    res.json({ servers: registry.list(), editable: req.user?.role === "admin" });
   });
 
-  // Lets the UI check a token before showing edit controls
-  router.get("/admin", admin, (req, res) => {
-    res.status(204).end();
-  });
-
-  router.post("/servers", admin, express.json(), async (req, res) => {
+  router.post("/servers", express.json(), ...admin, async (req, res) => {
     try {
       const entry = ServerEntrySchema.parse(req.body);
       await registry.add(entry);
@@ -66,7 +51,7 @@ export function gatewayRouter(registry: Registry, adminToken: string) {
     }
   });
 
-  router.put("/servers/:id", admin, express.json(), async (req, res) => {
+  router.put("/servers/:id", express.json(), ...admin, async (req, res) => {
     try {
       const entry = ServerEntrySchema.parse(req.body);
       await registry.update(String(req.params.id), entry);
@@ -76,7 +61,7 @@ export function gatewayRouter(registry: Registry, adminToken: string) {
     }
   });
 
-  router.delete("/servers/:id", admin, async (req, res) => {
+  router.delete("/servers/:id", ...admin, async (req, res) => {
     try {
       await registry.remove(String(req.params.id));
       res.status(204).end();

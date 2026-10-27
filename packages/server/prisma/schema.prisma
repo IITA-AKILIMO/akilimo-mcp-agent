@@ -12,11 +12,18 @@ datasource db {
   provider = "postgresql"
 }
 
+// Admins manage the shared MCP server registry and other users' roles
+enum Role {
+  user
+  admin
+}
+
 model User {
   id            String         @id @default(uuid()) @db.Uuid
   email         String         @unique
   name          String
   passwordHash  String         @map("password_hash")
+  role          Role           @default(user)
   createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
   sessions      Session[]
   conversations Conversation[]

@@ -8,7 +8,8 @@
     "dev:web": "pnpm --filter @akilimo/web dev",
     "build": "pnpm --filter \"@akilimo/*\" build",
     "start": "pnpm --filter @akilimo/server start",
-    "db:migrate": "pnpm --filter @akilimo/server db:migrate"
+    "db:migrate": "pnpm --filter @akilimo/server db:migrate",
+    "seed:admin": "pnpm --filter @akilimo/server seed:admin"
   },
   "devDependencies": {
     "typescript": "^5.0.0"
