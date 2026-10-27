@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
+import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import ReactMarkdown from 'react-markdown';
-import { Bot, History, Loader2, MapPin, RotateCcw, Send, Settings2, Square, Trash2, User, Wrench, X } from 'lucide-react';
+import { Bot, Compass, History, MessageSquare, Loader2, MapPin, RotateCcw, Send, Settings2, Square, Trash2, User, Wrench, X } from 'lucide-react';
 import {
   appendMessages, createConversation, deleteConversation, getConversation, listConversations,
   type ConversationSummary, type User as Account,
@@ -12,12 +13,14 @@ import { useLlm } from '../llm/useLlm';
 import { read, write } from '../mcp/keys';
 import type { McpServerConfig } from '../mcp/servers';
 import type { ServerState } from '../mcp/useMcpServers';
+import { GuidedPanel } from './GuidedPanel';
 import { LlmSettings } from './LlmSettings';
 import { MapPicker } from './MapPicker';
 
 interface Props {
   configs: McpServerConfig[];
   servers: Record<string, ServerState>;
+  callTool: (server: string, name: string, args: Record<string, unknown>) => Promise<CallToolResult>;
   accountsEnabled: boolean;
   user: Account | null;
 }
@@ -29,6 +32,7 @@ type Item =
   | { id: string; kind: 'step'; step: AgentStep };
 
 const COUNTRY_KEY = 'chat-country';
+const VIEW_KEY = 'chat-view';
 
 const hasContextTools = (servers: Record<string, ServerState>) =>
   Object.values(servers).some(s => s.tools.some(t => /weather|soil|climate|forecast|agriculture_profile|compare_countries/i.test(t.name)));
@@ -43,13 +47,20 @@ const toChatMessage = (m: ChatMessage): ChatMessage => ({
   ...(m.tool_name ? { tool_name: m.tool_name } : {}),
 });
 
-export const ChatView: React.FC<Props> = ({ configs, servers, accountsEnabled, user }) => {
+export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accountsEnabled, user }) => {
   // The server's keys belong to the organisation, so with accounts enabled the chat needs a sign-in
   const canChat = !accountsEnabled || !!user;
   const llm = useLlm(canChat);
   const { model } = llm;
   const [showSettings, setShowSettings] = useState(false);
   const [notices, setNotices] = useState<string[]>([]);
+  // Guided mode (buttons and a form, answered by the AKILIMO tools directly) is the default and needs
+  // no AI provider; "Ask AI" is the free-text chat
+  const [view, setView] = useState<'guided' | 'ai'>(() => (read<string>(VIEW_KEY, 'guided') === 'ai' ? 'ai' : 'guided'));
+  const chooseView = (next: 'guided' | 'ai') => {
+    setView(next);
+    write(VIEW_KEY, next);
+  };
 
   const [items, setItems] = useState<Item[]>([]);
   const history = useRef<ChatMessage[]>([]);
@@ -258,35 +269,49 @@ export const ChatView: React.FC<Props> = ({ configs, servers, accountsEnabled, u
       <div className="card-header d-flex flex-wrap align-items-center gap-2 position-relative">
         <Bot size={16} className="text-akilimo" />
         <span className="small fw-semibold">AKILIMO assistant</span>
+        <div className="btn-group btn-group-sm ms-2" role="group" aria-label="Mode">
+          <button type="button" className={`btn d-inline-flex align-items-center gap-1 ${view === 'guided' ? 'btn-akilimo' : 'btn-outline-secondary'}`}
+            aria-pressed={view === 'guided'} onClick={() => chooseView('guided')} title="Answers from AKILIMO with buttons and a form; no AI needed">
+            <Compass size={14} /> Guided
+          </button>
+          <button type="button" className={`btn d-inline-flex align-items-center gap-1 ${view === 'ai' ? 'btn-akilimo' : 'btn-outline-secondary'}`}
+            aria-pressed={view === 'ai'} onClick={() => chooseView('ai')} title="Ask in your own words; needs an AI provider">
+            <MessageSquare size={14} /> Ask AI
+          </button>
+        </div>
         <select className="form-select form-select-sm w-auto ms-auto" aria-label="Country" value={countryCode}
           onChange={e => chooseCountry(e.target.value)}>
           {!country && <option value="">Choose country…</option>}
           {COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.name}</option>)}
         </select>
-        <select className="form-select form-select-sm w-auto" aria-label="LLM provider" value={llm.provider}
-          onChange={e => llm.setProvider(e.target.value as ProviderId)} disabled={busy || llm.providers.length === 0}>
-          {llm.providers.length === 0 && <option value="">No provider</option>}
-          {llm.providers.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
-        </select>
-        <select className="form-select form-select-sm w-auto" aria-label="Model" value={model} style={{ maxWidth: '14rem' }}
-          onChange={e => llm.setModel(e.target.value)} disabled={llm.models.length === 0 || busy}>
-          {llm.models.length === 0 && <option value="">{llm.loading ? 'Loading models…' : 'No model'}</option>}
-          {llm.models.map(m => <option key={m} value={m}>{m}</option>)}
-        </select>
-        <button type="button" className={`btn btn-sm ${showSettings ? 'btn-secondary' : 'btn-outline-secondary'}`}
-          onClick={() => setShowSettings(v => !v)} aria-expanded={showSettings} title="Provider settings" aria-label="Provider settings">
-          <Settings2 size={14} />
-        </button>
-        {user && (
-          <button type="button" className={`btn btn-sm d-inline-flex align-items-center gap-1 ${showHistory ? 'btn-secondary' : 'btn-outline-secondary'}`}
-            onClick={toggleHistory} aria-expanded={showHistory} disabled={busy} title="Your saved conversations">
-            <History size={14} /> History
-          </button>
+        {view === 'ai' && (
+          <>
+            <select className="form-select form-select-sm w-auto" aria-label="LLM provider" value={llm.provider}
+              onChange={e => llm.setProvider(e.target.value as ProviderId)} disabled={busy || llm.providers.length === 0}>
+              {llm.providers.length === 0 && <option value="">No provider</option>}
+              {llm.providers.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+            </select>
+            <select className="form-select form-select-sm w-auto" aria-label="Model" value={model} style={{ maxWidth: '14rem' }}
+              onChange={e => llm.setModel(e.target.value)} disabled={llm.models.length === 0 || busy}>
+              {llm.models.length === 0 && <option value="">{llm.loading ? 'Loading models…' : 'No model'}</option>}
+              {llm.models.map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+            <button type="button" className={`btn btn-sm ${showSettings ? 'btn-secondary' : 'btn-outline-secondary'}`}
+              onClick={() => setShowSettings(v => !v)} aria-expanded={showSettings} title="Provider settings" aria-label="Provider settings">
+              <Settings2 size={14} />
+            </button>
+            {user && (
+              <button type="button" className={`btn btn-sm d-inline-flex align-items-center gap-1 ${showHistory ? 'btn-secondary' : 'btn-outline-secondary'}`}
+                onClick={toggleHistory} aria-expanded={showHistory} disabled={busy} title="Your saved conversations">
+                <History size={14} /> History
+              </button>
+            )}
+            <button type="button" className="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1"
+              onClick={reset} disabled={items.length === 0} title="Start a new conversation">
+              <RotateCcw size={14} /> New
+            </button>
+          </>
         )}
-        <button type="button" className="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1"
-          onClick={reset} disabled={items.length === 0} title="Start a new conversation">
-          <RotateCcw size={14} /> New
-        </button>
 
         {showHistory && (
           <div className="dropdown-menu show end-0 top-100 me-2 shadow p-0" style={{ width: 'min(24rem, 90vw)', maxHeight: '22rem', overflowY: 'auto' }}>
@@ -307,6 +332,8 @@ export const ChatView: React.FC<Props> = ({ configs, servers, accountsEnabled, u
           </div>
         )}
       </div>
+      {view === 'guided' ? <GuidedPanel country={country} servers={servers} callTool={callTool} /> : (
+      <>
       {showSettings && <LlmSettings llm={llm} />}
 
       <div className="card-body overflow-auto min-h-0 d-flex flex-column gap-3">
@@ -443,6 +470,8 @@ export const ChatView: React.FC<Props> = ({ configs, servers, accountsEnabled, u
           </button>
         </form>
       </div>
+      </>
+      )}
     </div>
   );
 };
