@@ -15,7 +15,7 @@ A pnpm monorepo (TypeScript) for IITA's AKILIMO cassava advisory tools:
 
 | Area | State |
 | :--- | :--- |
-| Branch | `main`; everything up to `7e8824d` is pushed; **4 newer commits are local only** (roles and admin seeding); working tree clean |
+| Branch | `main`; everything up to `7e8824d` is pushed; **all newer commits are local only** (roles, usernames, LLM providers, connection tests, GHCR publishing) |
 | Builds | `pnpm build` passes; the server passes a strict `tsc` check; `pnpm install --frozen-lockfile` passes |
 | Tests | No automated test suite exists. Everything below was verified by hand (scripts and browser) |
 
@@ -102,7 +102,8 @@ Relevant `.env` settings (see `.env.example`): `AKILIMO_API_BASE_URL`, `DB_HOST`
 
 ## 7. Open items and suggested next steps
 
-1. **Push** the 4 local commits (roles and admin seeding, see section 2) once the user agrees.
+1. **Push** the local commits (see section 2) once the user agrees. The first push to `main` runs `docker-publish.yml`, which creates the GHCR packages; check their visibility (packages under an org start private unless the org allows otherwise) so the server can pull them, or log the host in to ghcr.io.
+2. **Production deployment** (`proxy-tool` repo, uncommitted there): service `mcp` added to `stacks/akilimo/docker-compose.yml` (`127.0.0.1:9101`, `AKILIMO_MCP_*` env, volume `akilimo-mcp-data`) and the Caddy site `akilimo-mcp.akilimo.org` in `config/caddy/snippets/domains/akilimo.caddy` (mirrored in `stacks/akilimo/Caddyfile`). Still needed: a DNS record for `akilimo-mcp.akilimo.org` pointing at the host, `AKILIMO_MCP_TAG` in the stack `.env`, optionally the `akilimo_mcp` database on the shared PostgreSQL for accounts, then `docker compose up -d mcp` and a Caddy reload.
 2. **Docker images have not been built** in this session (`docker compose up -d --build`), so the nginx template, the gateway volume and the `db` service are unverified at runtime. `docker compose config` passes.
 3. **Accounts**: no email verification, password reset, account deletion or data export. The rate limiter is in memory only (it resets on restart and is per instance).
 4. **Images not built**: the server image (Prisma, migrations at start) and the weather image have not been built (the user builds them).

@@ -110,6 +110,11 @@ If you don't want to install Node.js or pnpm manually, you can run everything us
    - Web UI: `http://localhost:4173`
    - Akilimo 1.0 MCP server: `http://localhost:3080/mcp` (streamable HTTP) or `/sse`; inside the compose network Open WebUI reaches it at `http://akilimo-mcp:3000/mcp`
 
+### Published images (GHCR)
+`.github/workflows/docker-publish.yml` builds both images on every push to `main` and on `v*` tags and pushes them to GitHub Container Registry (not Docker Hub): `ghcr.io/iita-akilimo/akilimo-mcp-agent` (MCP server) and `ghcr.io/iita-akilimo/akilimo-mcp-agent-web` (web UI), tagged `latest` (main), the version (`v1.2.3` → `1.2.3`, `1.2`) and `sha-<commit>`. Pull requests only build. `docker compose build` tags local builds with the same names. The Node and nginx base images come from Docker Hub by default; set the repository variables `NODE_IMAGE` / `NGINX_IMAGE` (or the `--build-arg`s of the same names) to pull them from a mirror instead.
+
+In production the server runs in the `akilimo` stack of the hosting repo (`proxy-tool`), service `mcp`, behind Caddy at `https://akilimo-mcp.akilimo.org` (only `/mcp`, `/sse`, `/messages` and `/health` are public). `mcp.akilimo.org` is the Akilimo 2.0 MCP.
+
 Open WebUI uses **Ollama running on your machine** (not in Docker). On Linux, Ollama must listen beyond localhost (`OLLAMA_HOST=0.0.0.0`). With Docker in WSL and Ollama on Windows, enable `hostAddressLoopback=true` in `.wslconfig` and set `OLLAMA_BASE_URL=http://<Windows IP>:11434` in `.env`. Pick a model that supports tools (e.g. `qwen3:8b`, `llama3.1:8b`); plain `llama3` does not.
 
 ---
