@@ -9,7 +9,7 @@ import { useCountries } from '../mcp/countries';
 import type { GuidedEntry } from '../mcp/guided';
 import { ADVICE, ADVICE_ICONS, AdviceResult, AdviceScreen, intercropCrop, type AdviceKind } from './AdviceScreens';
 import {
-  Loading, PriceHint, RiskSelect, SellSelect, WINDOWS, YieldSelect, dateProblem, harvestRange, message, money, monthsFromNow, plantingMin, useLoad, windowLabel,
+  Loading, CassavaPriceInput, PriceHint, RiskSelect, SellSelect, WINDOWS, YieldSelect, dateProblem, harvestRange, message, money, monthsFromNow, plantingMin, useLoad, windowLabel,
   type Call, type FertilizerData, type MarketOptions, type PriceData, type Record_, type Row,
 } from './GuidedParts';
 import { MapPicker } from './MapPicker';
@@ -435,6 +435,7 @@ const RecommendScreen: React.FC<{ country: Country; call: Call; record: Record_ 
   const [yieldClass, setYieldClass] = useState(11.25); // t/ha class sent as yieldInfo.current_field_yield
   const [risk, setRisk] = useState(1); // user_info.risk_attitude
   const [factory, setFactory] = useState(''); // starch factory key, or '' for the open market
+  const [sellUnit, setSellUnit] = useState(1000); // the unit the cassava price is quoted in, in kg (the API's cassava units)
   const [plantingWindow, setPlantingWindow] = useState(1);
   const [harvestWindow, setHarvestWindow] = useState(1);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
@@ -472,7 +473,7 @@ const RecommendScreen: React.FC<{ country: Country; call: Call; record: Record_ 
     inArea === false ? 'The chosen spot is outside the supported area; pick a point inside the green area' :
     !(Number(size) > 0) ? 'Enter the field size' :
     dateProblem(planting, harvest) ??
-    (!(Number(rootPrice) > 0) ? 'Enter the cassava root price per tonne' :
+    (!(Number(rootPrice) > 0) ? 'Enter the cassava root price' :
     chosen.length === 0 ? 'Select at least one fertilizer you can buy' :
     chosen.some(f => !(Number(prices[f.key]) > 0)) ? 'Enter a price for each selected fertilizer' : null);
   const harvestLimits = harvestRange(planting);
@@ -487,7 +488,7 @@ const RecommendScreen: React.FC<{ country: Country; call: Call; record: Record_ 
         compute_request: {
           farmInformation: { country_code: country.code, use_case: 'FR', map_lat: pos.lat, map_long: pos.lon, field_size: Number(size), area_unit: unit },
           planting: { planting_date: planting, harvest_date: harvest, planting_date_window: plantingWindow, harvest_date_window: harvestWindow },
-          cassava: { unit_price: Number(rootPrice), unit_weight: 1000 },
+          cassava: { unit_price: Number(rootPrice), unit_weight: sellUnit },
           yieldInfo: { current_field_yield: yieldClass, ...(factory ? { sell_to_starch_factory: true, starch_factory_name: factory } : {}) },
           ...(Number(budget) > 0 ? { maxInvestment: Number(budget) } : {}),
           recommendations: { lang: 'en' },
@@ -569,11 +570,8 @@ const RecommendScreen: React.FC<{ country: Country; call: Call; record: Record_ 
 
           <section>
             <h3 className="h6">4. What do you get for your cassava?</h3>
-            <div className="input-group" style={{ maxWidth: '20rem' }}>
-              <input type="number" min="0" step="any" className="form-control" aria-label="Cassava root price per tonne" value={rootPrice} onChange={e => setRootPrice(e.target.value)} />
-              <span className="input-group-text">{currency} per tonne</span>
-            </div>
-            <PriceHint call={call} country={country.code} item="cassava" value={rootPrice} />
+            <CassavaPriceInput id="g-price" call={call} country={country.code} currency={currency} price={rootPrice} unit={sellUnit}
+              onChange={(price, unit) => { setRootPrice(price); setSellUnit(unit); }} />
             <SellSelect id="g-sell" call={call} country={country.code} value={factory} onChange={key => setFactory(key)} />
             <div className="form-text">We filled in the typical price for {country.name}; change it if yours is different.</div>
           </section>

@@ -3,7 +3,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { Country } from '@akilimo/shared';
 import type { ServerState } from '../mcp/useMcpServers';
 import { AREA_UNITS, intercropCrop, type CropOption, type CropPrices, type OperationCosts } from './AdviceScreens';
-import { PriceHint, RISK_OPTIONS, SellSelect, YIELD_CLASSES, makeCall, money, type PriceData } from './GuidedParts';
+import { CassavaPriceInput, PriceHint, RISK_OPTIONS, SellSelect, YIELD_CLASSES, makeCall, money, unitLabel, type PriceData } from './GuidedParts';
 
 // Forms of the Ask AI chat that replace typing exact answers: each sends one message in a fixed wording
 // that the chat instructions (server/chat/agent.ts) tell the model how to read.
@@ -50,6 +50,7 @@ export const FieldPicker: React.FC<Props> = ({ country, servers, callTool, onSen
   const [unit, setUnit] = useState('acre');
   const [yieldClass, setYieldClass] = useState(11.25);
   const [price, setPrice] = useState('');
+  const [sellUnit, setSellUnit] = useState(1000); // the unit the price is quoted in, in kg
   const [currency, setCurrency] = useState('');
   const [budget, setBudget] = useState('0');
   const [budgets, setBudgets] = useState<InvestmentData | null>(null);
@@ -76,7 +77,7 @@ export const FieldPicker: React.FC<Props> = ({ country, servers, callTool, onSen
     return () => { live = false; clearTimeout(timer); };
   }, [country.code, size, unit]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const problem = !(Number(size) > 0) ? 'Enter the field size' : !(Number(price) > 0) ? 'Enter the cassava root price per tonne' : null;
+  const problem = !(Number(size) > 0) ? 'Enter the field size' : !(Number(price) > 0) ? 'Enter the cassava root price' : null;
   const send = () => {
     if (problem) return;
     const yieldLabel = YIELD_CLASSES.find(c => c.value === yieldClass)?.label ?? '';
@@ -89,7 +90,7 @@ export const FieldPicker: React.FC<Props> = ({ country, servers, callTool, onSen
       : '';
     onSend(
       `My field is ${Number(size)} ${unit}. My cassava yield now is in the class "${yieldLabel}" (current_field_yield ${yieldClass}). `
-      + `I sell cassava roots at ${Number(price)} ${currency} per tonne. ${budgetText} My risk attitude is ${riskLabel.toLowerCase()} (risk_attitude ${risk}).${sellText}`,
+      + `I sell cassava roots at ${Number(price)} ${currency} per ${unitLabel(sellUnit)} (unit_weight ${sellUnit}). ${budgetText} My risk attitude is ${riskLabel.toLowerCase()} (risk_attitude ${risk}).${sellText}`,
     );
   };
 
@@ -114,12 +115,9 @@ export const FieldPicker: React.FC<Props> = ({ country, servers, callTool, onSen
           </Field>
         </div>
         <div className="col-sm-6">
-          <Field id="cp-price" label="Cassava root price per tonne">
-            <div className="input-group input-group-sm">
-              <input id="cp-price" type="number" min="0" step="any" className="form-control" value={price} onChange={e => setPrice(e.target.value)} />
-              <span className="input-group-text">{currency}</span>
-            </div>
-            <PriceHint call={call} country={country.code} item="cassava" value={price} />
+          <Field id="cp-price" label="Cassava root price">
+            <CassavaPriceInput id="cp-price" small call={call} country={country.code} currency={currency} price={price} unit={sellUnit}
+              onChange={(value, unit) => { setPrice(value); setSellUnit(unit); }} />
           </Field>
         </div>
         <div className="col-sm-6">

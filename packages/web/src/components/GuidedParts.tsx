@@ -49,10 +49,11 @@ interface PriceCheck { ok: boolean | null; message: string }
 
 // Asks the check_price tool whether a typed price is believable, a moment after typing stops. An
 // answer of false is a warning, never a block: the farmer may know better. Errors mean no warning.
-export function usePriceCheck(call: Call, country: string, item: PriceItem, value: string, fertilizerKey?: string): PriceCheck | null {
+export function usePriceCheck(call: Call, country: string, item: PriceItem, value: string, fertilizerKey?: string, unitWeight = 1000): PriceCheck | null {
   const [result, setResult] = useState<PriceCheck | null>(null);
   useEffect(() => {
-    const price = Number(value);
+    // The accepted ranges are per tonne (1000 kg); a price quoted per kg or per bag is scaled to that first
+    const price = (Number(value) * 1000) / unitWeight;
     if (!(price > 0)) { setResult(null); return; }
     let live = true;
     const timer = setTimeout(() => {
@@ -60,17 +61,70 @@ export function usePriceCheck(call: Call, country: string, item: PriceItem, valu
         .then(r => live && setResult(r), () => live && setResult(null));
     }, 600);
     return () => { live = false; clearTimeout(timer); };
-  }, [value, country, item, fertilizerKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [value, country, item, fertilizerKey, unitWeight]); // eslint-disable-line react-hooks/exhaustive-deps
   return result;
 }
 
 // The warning under a price field; nothing while the price is fine or cannot be checked
-export const PriceHint: React.FC<{ call: Call; country: string; item: PriceItem; value: string; fertilizerKey?: string }> = ({ call, country, item, value, fertilizerKey }) => {
-  const check = usePriceCheck(call, country, item, value, fertilizerKey);
+export const PriceHint: React.FC<{ call: Call; country: string; item: PriceItem; value: string; fertilizerKey?: string; unitWeight?: number }> = ({ call, country, item, value, fertilizerKey, unitWeight }) => {
+  const check = usePriceCheck(call, country, item, value, fertilizerKey, unitWeight);
   if (!check || check.ok !== false) return null;
   return <div className="small text-warning-emphasis mt-1">{check.message}</div>;
 };
 
+// ── the unit cassava is sold in ─────────────────────────────────────────────────────────────────
+// Farmers quote cassava per kg, per 50 or 100 kg bag or per tonne. The units come from the Akilimo API
+// (cassava-units); the compute service takes the price per unit plus the unit's weight in kg.
+export interface SellUnit { weight: number; label: string }
+
+const TONNE = 1000;
+export const unitLabel = (weight: number) => (weight === TONNE ? 'tonne' : weight > TONNE ? `${weight / TONNE} tonnes` : `${weight} kg`);
+export const perTonne = (price: number, weight: number) => (price * TONNE) / weight;
+export const perUnit = (priceForTonne: number, weight: number) => Math.round(((priceForTonne * weight) / TONNE) * 100) / 100;
+
+export function useSellUnits(call: Call): SellUnit[] {
+  const [units, setUnits] = useState<SellUnit[]>([{ weight: TONNE, label: unitLabel(TONNE) }]);
+  useEffect(() => {
+    let live = true;
+    call<{ data?: Row[] }>('get_reference_data', { category: 'cassava-units' }).then(res => {
+      const list = (res.data ?? [])
+        .filter(r => r.active !== false && Number(r.unit_weight) > 0)
+        .sort((a, b) => Number(a.sort_order) - Number(b.sort_order))
+        .map(r => ({ weight: Number(r.unit_weight), label: unitLabel(Number(r.unit_weight)) }));
+      if (live && list.length > 0) setUnits(list);
+    }, () => undefined); // without the list only the tonne is offered
+    return () => { live = false; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  return units;
+}
+
+// The cassava price field: the price, its currency and the unit it is quoted in. Changing the unit keeps
+// the same rate (a price per tonne becomes the matching price per bag), so the farmer only types a price
+// in the unit they know.
+export const CassavaPriceInput: React.FC<{
+  id: string; call: Call; country: string; currency: string; price: string; unit: number;
+  onChange: (price: string, unit: number) => void; small?: boolean;
+}> = ({ id, call, country, currency, price, unit, onChange, small }) => {
+  const units = useSellUnits(call);
+  const changeUnit = (next: number) => {
+    const current = Number(price);
+    onChange(current > 0 ? String(perUnit(perTonne(current, unit), next)) : price, next);
+  };
+  return (
+    <>
+      <div className={`input-group ${small ? 'input-group-sm' : ''}`} style={small ? undefined : { maxWidth: '30rem' }}>
+        <input id={id} type="number" min="0" step="any" className="form-control" aria-label={`Cassava root price per ${unitLabel(unit)}`} value={price}
+          onChange={e => onChange(e.target.value, unit)} />
+        <span className="input-group-text">{currency} per</span>
+        <select className="form-select" style={{ maxWidth: '8.5rem' }} aria-label="The unit you sell cassava in" title="The unit you sell cassava in" value={unit}
+          onChange={e => changeUnit(Number(e.target.value))}>
+          {(units.some(u => u.weight === unit) ? units : [...units, { weight: unit, label: unitLabel(unit) }]).map(u => <option key={u.weight} value={u.weight}>{u.label}</option>)}
+        </select>
+      </div>
+      <PriceHint call={call} country={country} item="cassava" value={price} unitWeight={unit} />
+    </>
+  );
+};
 // The cassava yield classes of the AKILIMO app, in t/ha of fresh roots; the value sent as
 // yieldInfo.current_field_yield. The compute service treats 15 or more as a high yield: for planting
 // practices tillage only pays on high-yield fields, so a low class always ends in "do not plough".

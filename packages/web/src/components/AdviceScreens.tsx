@@ -3,7 +3,7 @@ import { CalendarDays, Loader2, Shovel, Wheat } from 'lucide-react';
 import { findCountry, type Country } from '@akilimo/shared';
 import { useCountries } from '../mcp/countries';
 import type { GuidedEntry } from '../mcp/guided';
-import { Loading, PriceHint, RiskSelect, SellSelect, WINDOWS, YieldSelect, dateProblem, harvestRange, label, message, monthsFromNow, plantingMin, useLoad, windowLabel, type Call, type PriceData, type PriceItem, type Record_, type Row } from './GuidedParts';
+import { Loading, CassavaPriceInput, PriceHint, RiskSelect, SellSelect, WINDOWS, YieldSelect, dateProblem, harvestRange, label, message, monthsFromNow, plantingMin, useLoad, windowLabel, type Call, type PriceData, type PriceItem, type Record_, type Row } from './GuidedParts';
 import { MapPicker } from './MapPicker';
 
 // The three recommendation types besides fertilizer advice, which share one short form:
@@ -108,6 +108,7 @@ export const AdviceScreen: React.FC<{ kind: AdviceKind; country: Country; call: 
   const [yieldClass, setYieldClass] = useState(11.25); // t/ha class sent as yieldInfo.current_field_yield
   const [risk, setRisk] = useState(1); // user_info.risk_attitude
   const [factory, setFactory] = useState(''); // starch factory key, or '' for the open market
+  const [sellUnit, setSellUnit] = useState(1000); // the unit the cassava price is quoted in, in kg (the API's cassava units)
   const [planting, setPlanting] = useState(monthsFromNow(1));
   const [harvest, setHarvest] = useState(monthsFromNow(11));
   const [rootPrice, setRootPrice] = useState('');
@@ -174,7 +175,7 @@ export const AdviceScreen: React.FC<{ kind: AdviceKind; country: Country; call: 
     inArea === false ? 'The chosen spot is outside the supported area; pick a point inside the green area' :
     !(Number(size) > 0) ? 'Enter the field size' :
     dateProblem(planting, harvest) ??
-    (!(Number(rootPrice) > 0) ? 'Enter the cassava root price per tonne' : null);
+    (!(Number(rootPrice) > 0) ? 'Enter the cassava root price' : null);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -186,7 +187,7 @@ export const AdviceScreen: React.FC<{ kind: AdviceKind; country: Country; call: 
         compute_request: {
           farmInformation: { country_code: country.code, use_case: info.useCase, map_lat: pos.lat, map_long: pos.lon, field_size: Number(size), area_unit: unit },
           planting: { planting_date: planting, harvest_date: harvest, planting_date_window: plantingWindow, harvest_date_window: harvestWindow },
-          cassava: { unit_price: Number(rootPrice), unit_weight: 1000 },
+          cassava: { unit_price: Number(rootPrice), unit_weight: sellUnit },
           yieldInfo: { current_field_yield: yieldClass, ...(factory ? { sell_to_starch_factory: true, starch_factory_name: factory } : {}) },
           recommendations: { lang: 'en', ...info.flags },
           ...(kind === 'intercrop' && second ? {
@@ -299,11 +300,8 @@ export const AdviceScreen: React.FC<{ kind: AdviceKind; country: Country; call: 
 
           <section>
             <h3 className="h6">4. What do you get for your cassava?</h3>
-            <div className="input-group" style={{ maxWidth: '20rem' }}>
-              <input type="number" min="0" step="any" className="form-control" aria-label="Cassava root price per tonne" value={rootPrice} onChange={e => setRootPrice(e.target.value)} />
-              <span className="input-group-text">{price.data?.currency ?? ''} per tonne</span>
-            </div>
-            <PriceHint call={call} country={country.code} item="cassava" value={rootPrice} />
+            <CassavaPriceInput id={`a-price-${kind}`} call={call} country={country.code} currency={price.data?.currency ?? ''} price={rootPrice} unit={sellUnit}
+              onChange={(value, unit) => { setRootPrice(value); setSellUnit(unit); }} />
             <SellSelect id={`a-sell-${kind}`} call={call} country={country.code} value={factory} onChange={key => setFactory(key)} />
             <div className="form-text">The typical price for {country.name} is filled in when there is one; change it if yours is different.</div>
           </section>
