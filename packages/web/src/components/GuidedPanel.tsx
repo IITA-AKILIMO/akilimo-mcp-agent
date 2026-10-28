@@ -2,12 +2,13 @@ import React, { useEffect, useMemo, useState } from 'react';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { ArrowLeft, Banknote, ChevronRight, Leaf, Loader2, Sprout } from 'lucide-react';
 import type { Country } from '@akilimo/shared';
+import { planBags } from '@akilimo/shared';
 import type { ServerState } from '../mcp/useMcpServers';
 import { COUNTRIES } from '@akilimo/shared';
 import type { GuidedEntry } from '../mcp/guided';
 import { ADVICE, ADVICE_ICONS, AdviceResult, AdviceScreen, intercropCrop, type AdviceKind } from './AdviceScreens';
 import {
-  Loading, Value, WINDOWS, YieldSelect, dateProblem, harvestRange, message, money, monthsFromNow, plantingMin, useLoad, windowLabel,
+  Loading, PriceHint, WINDOWS, YieldSelect, dateProblem, harvestRange, message, money, monthsFromNow, plantingMin, useLoad, windowLabel,
   type Call, type FertilizerData, type PriceData, type Record_, type Row,
 } from './GuidedParts';
 import { MapPicker } from './MapPicker';
@@ -244,11 +245,80 @@ const RecommendationResult: React.FC<{ entry: GuidedEntry }> = ({ entry }) => {
           {chosen.length ? ` · fertilizers: ${chosen.join(', ')}` : ''}
         </div>
       )}
-      <div className="card"><div className="card-body"><Value value={entry.result} /></div></div>
+      <FertilizerSummary entry={entry} />
+      <BagPlan entry={entry} />
     </>
   );
 };
+
+// The compute answer as a message and a table of plain-language figures instead of the raw fields
+const FertilizerSummary: React.FC<{ entry: GuidedEntry }> = ({ entry }) => {
+  const data = (entry.result as { data?: { recommendation?: string; data?: unknown } } | undefined)?.data;
+  const row = Array.isArray(data?.data) ? (data.data[0] as Row | undefined) : undefined;
+  const num = (key: string) => (typeof row?.[key] === 'number' ? (row[key] as number) : null);
+  const current = num('CurrentY');
+  const target = num('TargetY');
+  const fixed = (n: number | null, digits = 1) => (n === null ? null : n.toLocaleString(undefined, { maximumFractionDigits: digits }));
+  const rows: [string, string | null][] = [
+    ['Yield now', current === null ? null : `${fixed(current)} t/ha`],
+    ['Yield with the advice', target === null ? null : `${fixed(target)} t/ha`],
+    ['Extra yield', current !== null && target !== null ? `${fixed(target - current)} t/ha` : null],
+    ['Best possible yield (rain and sun limited)', num('WLY') === null ? null : `${fixed(num('WLY'))} t/ha`],
+    ['Fertilizer needed (nitrogen, phosphorus, potassium)', num('N') === null && num('P') === null && num('K') === null ? null : `${fixed(num('N') ?? 0, 0)} / ${fixed(num('P') ?? 0, 0)} / ${fixed(num('K') ?? 0, 0)} kg/ha`],
+    ['Fertilizer cost', num('TC') === null ? null : money(Math.round(num('TC') as number))],
+    ['Extra income after fertilizer cost', num('NR') === null ? null : money(Math.round(num('NR') as number))],
+  ];
+  const shown = rows.filter((r): r is [string, string] => r[1] !== null);
+  return (
+    <>
+      {data?.recommendation && (
+        <div className="card mb-3 border-success"><div className="card-body">
+          {data.recommendation.split('\n').filter(Boolean).map((line, i) => <p key={i} className="mb-1">{line}</p>)}
+        </div></div>
+      )}
+      {shown.length > 0 && (
+        <table className="table table-sm table-striped small mb-3">
+          <thead><tr><th>What</th><th className="text-end">Value</th></tr></thead>
+          <tbody>{shown.map(([k, v]) => <tr key={k}><td>{k}</td><td className="text-end fw-semibold">{v}</td></tr>)}</tbody>
+        </table>
+      )}
+    </>
+  );
+};
+
+// The recommended kilograms as bags to buy and what they cost, from the same rules the compute service uses
+// (rounded to half bags). Worked out from the saved request and answer, so a replayed session shows it too.
+const BagPlan: React.FC<{ entry: GuidedEntry }> = ({ entry }) => {
+  const request = entry.request as { fertilizer_list?: Row[] } | undefined;
+  const data = (entry.result as { data?: { fertilizer_rates?: unknown } } | undefined)?.data;
+  const rates = Array.isArray(data?.fertilizer_rates)
+    ? (data.fertilizer_rates as Row[]).map(r => ({ type: String(r.type ?? ''), rate: Number(r.rate) })).filter(r => r.type && r.rate > 0)
+    : [];
+  const options = (request?.fertilizer_list ?? []).filter(f => f.selected).map(f => ({
+    type: String(f.fertilizer_type), name: String(f.name), key: String(f.key), bagWeightKg: Number(f.weight), pricePerBag: Number(f.price) > 0 ? Number(f.price) : null,
+  }));
+  if (rates.length === 0 || options.length === 0) return null;
+  const plan = planBags(rates, options);
+  if (plan.lines.length === 0) return null;
+  return (
+    <div className="card mb-2"><div className="card-body">
+      <h3 className="h6">What to buy</h3>
+      <table className="table table-sm small mb-1">
+        <thead><tr><th>Fertilizer</th><th className="text-end">Amount (kg)</th><th className="text-end">Bags</th><th className="text-end">Cost</th></tr></thead>
+        <tbody>
+          {plan.lines.map(l => (
+            <tr key={l.type}><td>{l.name ?? l.type}</td><td className="text-end">{money(l.rate_kg)}</td><td className="text-end">{l.bags}</td><td className="text-end">{l.cost !== null ? money(Math.round(l.cost)) : '–'}</td></tr>
+          ))}
+        </tbody>
+        {plan.total_cost !== null && <tfoot><tr className="fw-semibold"><td colSpan={3}>Total</td><td className="text-end">{money(Math.round(plan.total_cost))}</td></tr></tfoot>}
+      </table>
+      <div className="form-text">Bags are rounded to the nearest half bag; the cost uses the exact amount at your prices.</div>
+    </div></div>
+  );
+};
 const AREA_UNITS = ['acre', 'ha', 'm2', 'are'];
+
+interface InvestmentData { currency: string | null; options: { amount_per_unit: number; max_investment_for_field?: number }[] }
 
 const RecommendScreen: React.FC<{ country: Country; call: Call; record: Record_ }> = ({ country, call, record }) => {
   const options = useLoad(async () => {
@@ -284,6 +354,20 @@ const RecommendScreen: React.FC<{ country: Country; call: Call; record: Record_ 
     setSelected({});
   }, [loaded]);
 
+  // The budget choices, as totals for the whole field (maxInvestment is for the field; 0 means no limit).
+  // Older servers lack the tool: then the question is simply not asked.
+  const [budgetOptions, setBudgetOptions] = useState<InvestmentData | null>(null);
+  const [budget, setBudget] = useState('0');
+  useEffect(() => {
+    if (!(Number(size) > 0)) return;
+    let live = true;
+    const timer = setTimeout(() => {
+      call<InvestmentData>('get_investment_options', { countryCode: country.code, fieldSize: Number(size), areaUnit: unit })
+        .then(d => { if (live) { setBudgetOptions(d); setBudget('0'); } }, () => live && setBudgetOptions(null));
+    }, 500);
+    return () => { live = false; clearTimeout(timer); };
+  }, [country.code, size, unit]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const chosen = loaded?.fertilizers.fertilizers.filter(f => selected[f.key]) ?? [];
   const problem =
     pos.lat === undefined ? 'Click your field on the map' :
@@ -307,6 +391,7 @@ const RecommendScreen: React.FC<{ country: Country; call: Call; record: Record_ 
           planting: { planting_date: planting, harvest_date: harvest, planting_date_window: plantingWindow, harvest_date_window: harvestWindow },
           cassava: { unit_price: Number(rootPrice), unit_weight: 1000 },
           yieldInfo: { current_field_yield: yieldClass },
+          ...(Number(budget) > 0 ? { maxInvestment: Number(budget) } : {}),
           recommendations: { lang: 'en' },
         },
         fertilizer_list: loaded.fertilizers.fertilizers.map(f => ({
@@ -389,8 +474,24 @@ const RecommendScreen: React.FC<{ country: Country; call: Call; record: Record_ 
               <input type="number" min="0" step="any" className="form-control" aria-label="Cassava root price per tonne" value={rootPrice} onChange={e => setRootPrice(e.target.value)} />
               <span className="input-group-text">{currency} per tonne</span>
             </div>
+            <PriceHint call={call} country={country.code} item="cassava" value={rootPrice} />
             <div className="form-text">We filled in the typical price for {country.name}; change it if yours is different.</div>
           </section>
+
+          {budgetOptions && budgetOptions.options.length > 0 && (
+            <section>
+              <h3 className="h6">How much can you spend on fertilizer for the whole field?</h3>
+              <select className="form-select" style={{ maxWidth: '24rem' }} aria-label="Fertilizer budget for the whole field" value={budget} onChange={e => setBudget(e.target.value)}>
+                <option value="0">No limit</option>
+                {budgetOptions.options.map(o => o.max_investment_for_field !== undefined && (
+                  <option key={o.amount_per_unit} value={o.max_investment_for_field}>
+                    Up to {money(o.max_investment_for_field)} {budgetOptions.currency ?? ''}
+                  </option>
+                ))}
+              </select>
+              <div className="form-text">The recommendation will stay within this budget for the {size} {unit}.</div>
+            </section>
+          )}
 
           <section>
             <h3 className="h6">5. Which fertilizers can you buy?</h3>
@@ -405,10 +506,13 @@ const RecommendScreen: React.FC<{ country: Country; call: Call; record: Record_ 
                       <span className="fw-semibold">{f.name}</span> <span className="small text-body-secondary">{f.fertilizer_type} · {f.bag_weight_kg} kg bag</span>
                     </label>
                   </div>
-                  <div className="input-group input-group-sm" style={{ maxWidth: '11rem' }}>
-                    <input type="number" min="0" step="any" className="form-control" aria-label={`${f.name} price per bag`} value={prices[f.key] ?? ''}
-                      onChange={e => setPrices(prev => ({ ...prev, [f.key]: e.target.value }))} />
-                    <span className="input-group-text">{currency}</span>
+                  <div>
+                    <div className="input-group input-group-sm" style={{ maxWidth: '11rem' }}>
+                      <input type="number" min="0" step="any" className="form-control" aria-label={`${f.name} price per bag`} value={prices[f.key] ?? ''}
+                        onChange={e => setPrices(prev => ({ ...prev, [f.key]: e.target.value }))} />
+                      <span className="input-group-text">{currency}</span>
+                    </div>
+                    {selected[f.key] && <PriceHint call={call} country={country.code} item="fertilizer" fertilizerKey={f.key} value={prices[f.key] ?? ''} />}
                   </div>
                 </div>
               ))}

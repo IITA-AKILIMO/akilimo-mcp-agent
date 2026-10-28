@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { Bot, CalendarDays, Compass, History, MessageSquare, Loader2, MapPin, RotateCcw, Send, Settings2, Square, Trash2, User, Wrench, X } from 'lucide-react';
 import {
   appendMessages, createConversation, deleteConversation, getConversation, listConversations,
@@ -470,7 +471,7 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
                 {mine ? <User size={18} color="white" /> : <Bot size={18} color="white" />}
               </div>
               <div className={`chat-bubble px-3 py-2 rounded-3 ${mine ? 'bg-akilimo text-white' : 'bg-body-tertiary border'}`}>
-                {mine ? item.text : <div className="markdown"><ReactMarkdown>{item.text}</ReactMarkdown></div>}
+                {mine ? item.text : <div className="markdown"><ReactMarkdown remarkPlugins={[remarkGfm]} components={{ table: ({ children }) => <div className="table-responsive"><table className="table table-sm table-striped">{children}</table></div> }}>{item.text}</ReactMarkdown></div>}
               </div>
             </div>
           );

@@ -25,6 +25,36 @@ export const addMonths = (base: Date | string, months: number, days = 0) => {
 };
 export const monthsFromNow = (months: number) => addMonths(new Date(), months);
 
+// ── price sanity check (check_price) ───────────────────────────────────────────────────────────
+
+export type PriceItem = 'cassava' | 'maize_cob' | 'maize_grain' | 'sweet_potato' | 'fertilizer';
+
+interface PriceCheck { ok: boolean | null; message: string }
+
+// Asks the check_price tool whether a typed price is believable, a moment after typing stops. An
+// answer of false is a warning, never a block: the farmer may know better. Errors mean no warning.
+export function usePriceCheck(call: Call, country: string, item: PriceItem, value: string, fertilizerKey?: string): PriceCheck | null {
+  const [result, setResult] = useState<PriceCheck | null>(null);
+  useEffect(() => {
+    const price = Number(value);
+    if (!(price > 0)) { setResult(null); return; }
+    let live = true;
+    const timer = setTimeout(() => {
+      call<PriceCheck>('check_price', { countryCode: country, item, value: price, ...(fertilizerKey ? { fertilizerKey } : {}) })
+        .then(r => live && setResult(r), () => live && setResult(null));
+    }, 600);
+    return () => { live = false; clearTimeout(timer); };
+  }, [value, country, item, fertilizerKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  return result;
+}
+
+// The warning under a price field; nothing while the price is fine or cannot be checked
+export const PriceHint: React.FC<{ call: Call; country: string; item: PriceItem; value: string; fertilizerKey?: string }> = ({ call, country, item, value, fertilizerKey }) => {
+  const check = usePriceCheck(call, country, item, value, fertilizerKey);
+  if (!check || check.ok !== false) return null;
+  return <div className="small text-warning-emphasis mt-1">{check.message}</div>;
+};
+
 // The cassava yield classes of the AKILIMO app, in t/ha of fresh roots; the value sent as
 // yieldInfo.current_field_yield. The compute service treats 15 or more as a high yield: for planting
 // practices tillage only pays on high-yield fields, so a low class always ends in "do not plough".

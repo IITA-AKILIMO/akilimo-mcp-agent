@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { CalendarDays, Loader2, Shovel, Wheat } from 'lucide-react';
 import type { Country } from '@akilimo/shared';
 import type { GuidedEntry } from '../mcp/guided';
-import { Loading, Value, WINDOWS, YieldSelect, dateProblem, harvestRange, message, monthsFromNow, plantingMin, useLoad, windowLabel, type Call, type PriceData, type Record_, type Row } from './GuidedParts';
+import { Loading, PriceHint, WINDOWS, YieldSelect, dateProblem, harvestRange, label, message, monthsFromNow, plantingMin, useLoad, windowLabel, type Call, type PriceData, type PriceItem, type Record_, type Row } from './GuidedParts';
 import { MapPicker } from './MapPicker';
 
 // The three recommendation types besides fertilizer advice, which share one short form:
@@ -67,6 +67,10 @@ const AREA_UNITS = ['acre', 'ha', 'm2', 'are'];
 
 // get_operation_costs: typical costs per the field's area unit; a value is null when AKILIMO has none
 interface CostValue { value: number | null; source: string | null }
+// get_crop_prices: the second crop of intercropping advice
+interface CropOption { produce_type: string; unit: string; unit_weight: number; typical_price: number | null }
+interface CropPrices { maize: CropOption[] | null; sweet_potato: CropOption | null }
+
 interface OperationCosts {
   country: string;
   available: boolean;
@@ -135,6 +139,28 @@ export const AdviceScreen: React.FC<{ kind: AdviceKind; country: Country; call: 
     });
   }, [defaultCosts.data]);
 
+  // Intercropping: the second crop's produce type and price, prefilled with the country's typical ones.
+  // An older server without the tool, or a country without prices, just leaves the fields to the farmer.
+  const cropPrices = useLoad(
+    () => (kind === 'intercrop' && second
+      ? call<CropPrices>('get_crop_prices', { countryCode: country.code }).catch(() => null)
+      : Promise.resolve(null)),
+    [country.code, kind],
+  );
+  const cropOptions: CropOption[] = second?.key === 'maize' ? cropPrices.data?.maize ?? [] : cropPrices.data?.sweet_potato ? [cropPrices.data.sweet_potato] : [];
+  const [cropType, setCropType] = useState('');
+  const [cropPrice, setCropPrice] = useState('');
+  const pickCrop = (type: string, options = cropOptions) => {
+    setCropType(type);
+    const o = options.find(c => c.produce_type === type);
+    setCropPrice(o?.typical_price != null ? String(o.typical_price) : '');
+  };
+  useEffect(() => {
+    if (cropOptions.length > 0) pickCrop(cropOptions[0].produce_type, cropOptions);
+  }, [cropPrices.data]); // eslint-disable-line react-hooks/exhaustive-deps
+  const cropOption = cropOptions.find(c => c.produce_type === cropType);
+  const cropItem: PriceItem = cropType === 'fresh_cob' ? 'maize_cob' : cropType === 'grain' ? 'maize_grain' : 'sweet_potato';
+
   const harvestLimits = harvestRange(planting);
   const methodOf = (key: string): Method => (done[key] ? method[key] ?? 'manual' : 'manual');
   const cost = (key: string) => Math.max(0, Number(costValues[key]) || 0);
@@ -161,6 +187,9 @@ export const AdviceScreen: React.FC<{ kind: AdviceKind; country: Country; call: 
           recommendations: { lang: 'en', ...info.flags },
           ...(kind === 'intercrop' && second ? {
             interCropping: { inter_cropped_crop: second.key, inter_cropping_maize_rec: second.key === 'maize', inter_cropping_potato_rec: second.key === 'potato' },
+          } : {}),
+          ...(kind === 'intercrop' && cropOption && Number(cropPrice) > 0 ? {
+            [second?.key === 'maize' ? 'maize' : 'sweetPotato']: { produce_type: cropOption.produce_type, unit_weight: cropOption.unit_weight, unit_price: Number(cropPrice) },
           } : {}),
           ...(kind === 'practices' ? {
             // What is done now, how (the API takes "manual" or "tractor"), and which operations use a tractor
@@ -269,8 +298,26 @@ export const AdviceScreen: React.FC<{ kind: AdviceKind; country: Country; call: 
               <input type="number" min="0" step="any" className="form-control" aria-label="Cassava root price per tonne" value={rootPrice} onChange={e => setRootPrice(e.target.value)} />
               <span className="input-group-text">{price.data?.currency ?? ''} per tonne</span>
             </div>
+            <PriceHint call={call} country={country.code} item="cassava" value={rootPrice} />
             <div className="form-text">The typical price for {country.name} is filled in when there is one; change it if yours is different.</div>
           </section>
+
+          {kind === 'intercrop' && second && cropOptions.length > 0 && (
+            <section>
+              <h3 className="h6">What do you get for your {second.crop}?</h3>
+              {cropOptions.length > 1 && (
+                <select className="form-select mb-2" style={{ maxWidth: '20rem' }} aria-label={`How you sell ${second.crop}`} value={cropType} onChange={e => pickCrop(e.target.value)}>
+                  {cropOptions.map(o => <option key={o.produce_type} value={o.produce_type}>{o.produce_type === 'fresh_cob' ? 'Fresh cobs' : 'Dry grain'}</option>)}
+                </select>
+              )}
+              <div className="input-group" style={{ maxWidth: '24rem' }}>
+                <input type="number" min="0" step="any" className="form-control" aria-label={`${second.crop} price`} value={cropPrice} onChange={e => setCropPrice(e.target.value)} />
+                <span className="input-group-text">{price.data?.currency ?? ''} per {cropOption?.unit ?? 'unit'}</span>
+              </div>
+              <PriceHint call={call} country={country.code} item={cropItem} value={cropPrice} />
+              <div className="form-text">The typical price is filled in; change it if yours is different.</div>
+            </section>
+          )}
 
           {kind === 'practices' && (
             <section>
@@ -350,6 +397,48 @@ export const AdviceScreen: React.FC<{ kind: AdviceKind; country: Country; call: 
 
 interface Answer { data?: { rec_type?: string; recommendation?: string; data?: unknown } }
 
+// Why fertilizer is not advised, in words (reason_F of the intercropping answer)
+const REASONS: Record<string, string> = {
+  fert_profitable: 'It pays off',
+  fert_not_profitable: 'It would not pay for itself',
+  fert_unavailable: 'No fertilizer was available',
+  soil_poor: 'The soil is too poor for it to pay',
+  soil_fertile: 'The soil is already fertile',
+};
+
+// The intercropping answer as plain figures: whether to intercrop, fertilizer, planting density, money
+const IntercropTable: React.FC<{ row: Row; rates?: Row[] | undefined }> = ({ row, rates }) => {
+  const yes = (v: unknown) => (v === true ? 'Yes' : v === false ? 'No' : null);
+  const amount = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? Math.round(v).toLocaleString() : null);
+  const figures: [string, string | null][] = [
+    ['Intercropping recommended', yes(row.rec_IC)],
+    ['Fertilizer recommended', yes(row.rec_F)],
+    ['Why', typeof row.reason_F === 'string' ? REASONS[row.reason_F] ?? label(row.reason_F) : null],
+    ['Plant the maize at high density', yes(row.rec_D)],
+    ['Extra maize expected (cobs)', amount(row.dMP)],
+    ['Fertilizer cost', amount(row.dTC)],
+    ['Extra income after fertilizer cost', amount(row.dNR)],
+  ];
+  const shown = figures.filter((f): f is [string, string] => f[1] !== null);
+  const kg = (rates ?? []).filter(r => Number(r.rate) > 0);
+  return (
+    <>
+      {shown.length > 0 && (
+        <table className="table table-sm table-striped small mb-3">
+          <thead><tr><th>What</th><th className="text-end">Answer</th></tr></thead>
+          <tbody>{shown.map(([k, v]) => <tr key={k}><td>{k}</td><td className="text-end fw-semibold">{v}</td></tr>)}</tbody>
+        </table>
+      )}
+      {kg.length > 0 && (
+        <table className="table table-sm table-striped small mb-3">
+          <thead><tr><th>Fertilizer</th><th className="text-end">Amount for the field (kg)</th></tr></thead>
+          <tbody>{kg.map((r, i) => <tr key={i}><td>{String(r.type)}</td><td className="text-end">{Math.round(Number(r.rate)).toLocaleString()}</td></tr>)}</tbody>
+        </table>
+      )}
+    </>
+  );
+};
+
 export const AdviceResult: React.FC<{ entry: GuidedEntry }> = ({ entry }) => {
   const answer = (entry.result ?? {}) as Answer;
   const rows = Array.isArray(answer.data?.data) ? (answer.data!.data as Row[]) : [];
@@ -376,8 +465,10 @@ export const AdviceResult: React.FC<{ entry: GuidedEntry }> = ({ entry }) => {
       )}
       {entry.action === 'practices' && rows.length > 0 && <PracticesTable rows={rows} country={entry.country} />}
       {entry.action === 'schedule' && rows.length > 0 && <ScheduleTable rows={rows} country={entry.country} />}
-      {entry.action === 'intercrop' && rows.length > 0 && <div className="card"><div className="card-body"><Value value={rows} /></div></div>}
-      {!text && !notice && <div className="card"><div className="card-body"><Value value={entry.result} /></div></div>}
+      {entry.action === 'intercrop' && rows.length > 0 && (
+        <IntercropTable row={rows[0]} rates={(answer.data as { fertilizer_rates?: Row[] } | undefined)?.fertilizer_rates} />
+      )}
+      {!text && !notice && rows.length === 0 && <div className="alert alert-info small">The service returned no advice for these answers. Check the location and dates and try again.</div>}
     </>
   );
 };
