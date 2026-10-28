@@ -155,7 +155,7 @@ export class ChatSettings {
     const db = this.requireDb();
     const values: Partial<typeof webSearchSettings.$inferInsert> = { updatedAt: new Date() };
     if (change.provider !== undefined) {
-      if (change.provider !== "" && !isSearchProvider(change.provider)) throw new SettingsError(400, "Choose brave, tavily or searxng");
+      if (change.provider !== "" && !isSearchProvider(change.provider)) throw new SettingsError(400, "Choose brave, tavily, serper or searxng");
       values.provider = change.provider || null;
     }
     if (change.baseUrl !== undefined) values.baseUrl = change.baseUrl || null;

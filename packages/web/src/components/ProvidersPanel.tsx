@@ -240,7 +240,7 @@ const ServerKeys: React.FC = () => {
   );
 };
 
-const SEARCH_LABELS: Record<SearchProviderId, string> = { brave: 'Brave Search', tavily: 'Tavily', searxng: 'SearXNG (your own instance)' };
+const SEARCH_LABELS: Record<SearchProviderId, string> = { brave: 'Brave Search', tavily: 'Tavily', serper: 'Serper (Google results)', searxng: 'SearXNG (your own instance)' };
 
 // The optional web search of the chat: a search service, its key (encrypted, never shown again) or, for
 // SearXNG, its address. Users still decide per conversation whether to use it; it is off until they do.
@@ -279,7 +279,7 @@ const WebSearchCard: React.FC = () => {
   };
 
   if (!status && !error) return <div className="small text-body-secondary d-flex align-items-center gap-1"><Loader2 size={14} className="spin" /> Loading…</div>;
-  const needsKey = provider === 'brave' || provider === 'tavily';
+  const needsKey = provider === 'brave' || provider === 'tavily' || provider === 'serper';
   const changed = !!status && (provider !== (status.provider ?? '') || baseUrl !== (status.baseUrl ?? ''));
   const pill = !status ? null
     : !status.enabled ? <span className="badge rounded-pill text-bg-secondary">Off</span>

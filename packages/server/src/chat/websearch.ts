@@ -4,17 +4,17 @@ import type { AgentTool } from "./mcp.js";
 // Optional web search for the chat. It is off unless the user switches it on for a conversation, and it
 // only exists when a search service is set up, by an admin (Manage > AI providers > Web search, stored in
 // the database with an encrypted key) or, when no admin setting exists, by the environment:
-//   SEARCH_PROVIDER = brave | tavily | searxng
-//   SEARCH_API_KEY  = the key for brave or tavily
+//   SEARCH_PROVIDER = brave | tavily | serper | searxng
+//   SEARCH_API_KEY  = the key for brave, tavily or serper
 //   SEARCH_URL      = the base URL of a SearXNG instance (its JSON format must be enabled)
 // The model's search text is sent to that service, which is why nothing is searched without the user's choice.
 
-export const SEARCH_PROVIDERS = ["brave", "tavily", "searxng"] as const;
+export const SEARCH_PROVIDERS = ["brave", "tavily", "serper", "searxng"] as const;
 export type SearchProviderId = (typeof SEARCH_PROVIDERS)[number];
 
 export const isSearchProvider = (value: unknown): value is SearchProviderId => SEARCH_PROVIDERS.includes(value as SearchProviderId);
 
-// What a search needs: brave and tavily a key, searxng a base URL
+// What a search needs: brave, tavily and serper a key, searxng a base URL
 export interface SearchConfig { provider: SearchProviderId; apiKey: string; url: string }
 
 // A config only when it has what its provider needs
@@ -63,6 +63,14 @@ export async function searchWeb(config: SearchConfig, query: string, signal?: Ab
       body: JSON.stringify({ query: q, max_results: MAX_HITS, search_depth: "basic" }),
     }, signal);
     hits = (data?.results ?? []).flatMap((r: any) => hit(r.title, r.url, r.content));
+  } else if (provider === "serper") {
+    // Serper.dev: Google results as JSON
+    const data = await getJson("https://google.serper.dev/search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-API-KEY": config.apiKey },
+      body: JSON.stringify({ q, num: MAX_HITS }),
+    }, signal);
+    hits = (data?.organic ?? []).flatMap((r: any) => hit(r.title, r.link, r.snippet));
   } else {
     const base = config.url.replace(/\/+$/, "");
     const data = await getJson(`${base}/search?q=${encodeURIComponent(q)}&format=json`, { headers: { Accept: "application/json" } }, signal);

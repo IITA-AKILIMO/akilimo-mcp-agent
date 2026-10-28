@@ -60,7 +60,7 @@ export interface ProviderChange { apiKey?: string; clearKey?: boolean; baseUrl?:
 export const updateProvider = (id: ProviderId, change: ProviderChange) =>
   request<{ providers: ProviderStatus[] }>('PUT', `/admin/providers/${id}`, change);
 // Web search service, set by admins (the key is stored encrypted and never returned)
-export type SearchProviderId = 'brave' | 'tavily' | 'searxng';
+export type SearchProviderId = 'brave' | 'tavily' | 'serper' | 'searxng';
 export interface WebSearchStatus {
   provider: SearchProviderId | null;
   baseUrl: string | null;
