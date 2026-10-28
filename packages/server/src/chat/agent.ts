@@ -2,6 +2,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { ChatMessage, Country, ToolSpec } from "@akilimo/shared";
 import type { AgentTool } from "./mcp.js";
 import { localizeNote } from "../currency/localize.js";
+import { extractTextToolCalls } from "./textcalls.js";
 import { webSearchTool } from "./websearch.js";
 
 // The crop the user picked (from the API's crop list); advice_available false means no recommendations exist for it yet
@@ -31,6 +32,7 @@ Example. User: "Is it a good week to plant cassava in Ibadan?" Good answer: "Rig
 
 Rules:
 - Use the tools for every fact. Only state prices, fertilizer names, rates and dates that appear in tool results. Never invent them, and do not expand fertilizer abbreviations (SSP, MOP, CAN, ...) unless a tool result spells them out.
+- Keep every answer compact: a few short sentences, bullets or a small table. Do not use Markdown headings, "Step 1/2/3" outlines or long explanations of what you are about to do, and do not write tool calls as text (never print JSON like {"tool": ...}: call the tool, or say what you need). Do not call the same tool again with the same arguments.
 - Give prices with the currency from the tool result. Whenever you report figures found on the web (prices, market data), finish with a short Markdown summary table (Item, Price in local currency, Original price, Source url, As of); figures that AKILIMO could not find or the web did not give are left out of the table, not guessed. Always show money in the country's local currency: when a price or cost is in another currency (US dollars or euros found on the web, or typed by the user), call convert_currency (with the countryCode) and show the local amount together with the original amount and the rate date; never convert with a rate you remember or guess.
 - Never answer a question about one crop with the numbers of another. If the user asks about a crop that AKILIMO does not list (get_crops), or a country or item the tools have no data for, say that AKILIMO has no data for it; never fill the gap with a different crop's price or an invented figure (a price that is missing or null in a tool result is missing, not zero and not a guess). If web search is available, use it for that question as described below; if not, say it is not available and offer what AKILIMO can do.
 - Ask for missing information one or two questions at a time, in plain, friendly language. Suggest typical values when the user is unsure (for example planting next month and harvesting 10 to 12 months later, a 1 acre field).
@@ -176,8 +178,18 @@ export async function runAgent({ chat, history, tools, callTool, onMessage, onSt
   let computed = false; // a recommendation was computed in this turn
   let enriched = false; // the web enrichment step was requested
 
+  // Results of the calls already made in this turn: a small model that repeats a call gets the earlier result
+  const seen = new Map<string, string>();
+  const toolNames = specs.map((s) => s.function.name);
+
   for (let round = 0; round < 8; round++) {
     let reply = await chat(conversation, specs, signal);
+    // A call the model wrote as JSON text instead of making it properly is run as a real call, and the JSON
+    // (with the "Step 1, 2, 3" talk around it) is not shown: the user sees the tool step, which opens to the details
+    if (!reply.tool_calls?.length) {
+      const written = extractTextToolCalls(reply.content, toolNames);
+      if (written) reply = { ...reply, content: "", tool_calls: written.calls };
+    }
     // The enrichment found nothing worth adding: say nothing instead of a placeholder
     if (enriched && !reply.tool_calls?.length && NO_EXTRA.test(reply.content.trim())) return;
     if (webSearch && !searched && !searchNudged && !reply.tool_calls?.length && NOT_FOUND.test(reply.content)) {
@@ -217,8 +229,12 @@ export async function runAgent({ chat, history, tools, callTool, onMessage, onSt
       const tool = tools.find((t) => t.spec.function.name === call.function.name);
       const args = (call.function.arguments ?? {}) as Record<string, unknown>;
       let content: string;
+      const callKey = `${call.function.name}:${JSON.stringify(args)}`;
       if (!tool) {
         content = `Error: unknown tool ${call.function.name}`;
+      } else if (seen.has(callKey)) {
+        // The same call again: not run twice, and the model is told to answer from the first result
+        content = `${seen.get(callKey)}\n(This result was already returned above. Answer the user from it now; do not call this tool again with the same arguments.)`;
       } else {
         onStep({ type: "tool_call", server: tool.server, tool: tool.name, args });
         try {
@@ -231,6 +247,7 @@ export async function runAgent({ chat, history, tools, callTool, onMessage, onSt
           content = `Error: ${error instanceof Error ? error.message : String(error)}`;
           onStep({ type: "tool_result", server: tool.server, tool: tool.name, result: content, isError: true });
         }
+        seen.set(callKey, content);
       }
       const toolMessage: ChatMessage = { role: "tool", content, tool_name: call.function.name };
       conversation.push(toolMessage);
