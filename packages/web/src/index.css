@@ -47,9 +47,15 @@
   height: 75vh;
 }
 
+/* The assistant (first panel) gets most of the screen when stacked: its header and footer take space too */
+.panel-col:first-child {
+  height: calc(100vh - 9rem); /* the navbar and the page padding take the rest, so the message box stays in view */
+}
+
 @media (min-width: 992px) {
   .panel-row,
-  .panel-col {
+  .panel-col,
+  .panel-col:first-child {
     height: 100%;
   }
 }

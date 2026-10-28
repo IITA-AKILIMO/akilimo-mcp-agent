@@ -405,8 +405,8 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
     <div className="card h-100 shadow-sm">
       <div className="card-header d-flex flex-wrap align-items-center gap-2 position-relative">
         <Bot size={16} className="text-akilimo" />
-        <span className="small fw-semibold">AKILIMO assistant</span>
-        <div className="btn-group btn-group-sm ms-2" role="group" aria-label="Mode">
+        <span className="small fw-semibold d-none d-lg-inline">AKILIMO assistant</span>
+        <div className="btn-group btn-group-sm" role="group" aria-label="Mode">
           <button type="button" className={`btn d-inline-flex align-items-center gap-1 ${view === 'guided' ? 'btn-akilimo' : 'btn-outline-secondary'}`}
             aria-pressed={view === 'guided'} onClick={() => chooseView('guided')} title="Answers from AKILIMO with buttons and a form; no AI needed">
             <Compass size={14} /> Guided
@@ -416,24 +416,24 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
             <MessageSquare size={14} /> Ask AI
           </button>
         </div>
-        <select className="form-select form-select-sm w-auto ms-auto" aria-label="Country" title="Your country: prices, fertilizers and advice are for this country" value={countryCode}
+        <select className="form-select form-select-sm w-auto ms-auto" style={{ maxWidth: '7rem' }} aria-label="Country" title="Your country: prices, fertilizers and advice are for this country" value={countryCode}
           onChange={e => chooseCountry(e.target.value)}>
           {!country && <option value="">Choose country…</option>}
           {countries.map(c => <option key={c.code} value={c.code}>{c.name}</option>)}
         </select>
-        <select className="form-select form-select-sm w-auto" aria-label="Crop" value={crop?.key ?? ''} disabled={busy}
+        <select className="form-select form-select-sm w-auto" style={{ maxWidth: '7rem' }} aria-label="Crop" value={crop?.key ?? ''} disabled={busy}
           title={crop?.advice_available === false ? `${crop.name}: prices and information only, recommendations are not available yet` : 'The crop you want advice on'}
           onChange={e => { setCropKey(e.target.value); saveCropKey(e.target.value); }}>
           {crops.map(c => <option key={c.key} value={c.key}>{c.name}{c.advice_available ? '' : ' (no advice yet)'}</option>)}
         </select>
         {view === 'ai' && (
           <>
-            <select className="form-select form-select-sm w-auto" aria-label="LLM provider" title="The AI provider that answers in Ask AI" value={llm.provider}
+            <select className="form-select form-select-sm w-auto" style={{ maxWidth: '9rem' }} aria-label="LLM provider" title="The AI provider that answers in Ask AI" value={llm.provider}
               onChange={e => llm.setProvider(e.target.value as ProviderId)} disabled={busy || llm.providers.length === 0}>
               {llm.providers.length === 0 && <option value="">No provider</option>}
               {llm.providers.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
             </select>
-            <select className="form-select form-select-sm w-auto" aria-label="Model" title="The AI model; it must support tool calling" value={model} style={{ maxWidth: '14rem' }}
+            <select className="form-select form-select-sm w-auto" aria-label="Model" title="The AI model; it must support tool calling" value={model} style={{ maxWidth: '7.5rem' }}
               onChange={e => llm.setModel(e.target.value)} disabled={llm.models.length === 0 || busy}>
               {llm.models.length === 0 && <option value="">{llm.loading ? 'Loading models…' : 'No model'}</option>}
               {llm.models.map(m => <option key={m} value={m}>{m}</option>)}
@@ -447,19 +447,19 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
         {user && (
           <button type="button" className={`btn btn-sm d-inline-flex align-items-center gap-1 ${showHistory ? 'btn-secondary' : 'btn-outline-secondary'}`}
             onClick={toggleHistory} aria-expanded={showHistory} disabled={view === 'ai' && busy}
-            title={view === 'guided' ? 'Your saved guided sessions' : 'Your saved conversations'}>
-            <History size={14} /> History
+            title={view === 'guided' ? 'Your saved guided sessions' : 'Your saved conversations'} aria-label="History">
+            <History size={14} /> <span className="d-none d-sm-inline">History</span>
           </button>
         )}
         {view === 'ai' ? (
           <button type="button" className="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1"
-            onClick={reset} disabled={items.length === 0} title="Start a new conversation">
-            <RotateCcw size={14} /> New
+            onClick={reset} disabled={items.length === 0} title="Start a new conversation" aria-label="New conversation">
+            <RotateCcw size={14} /> <span className="d-none d-sm-inline">New</span>
           </button>
         ) : (
           <button type="button" className="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1"
-            onClick={resetGuided} title="Start a new guided session (the next step is saved as a new session)">
-            <RotateCcw size={14} /> New
+            onClick={resetGuided} title="Start a new guided session (the next step is saved as a new session)" aria-label="New guided session">
+            <RotateCcw size={14} /> <span className="d-none d-sm-inline">New</span>
           </button>
         )}
 
@@ -610,23 +610,24 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
 
       <div className="card-footer">
         {showMap && (
-          <Shell title="Where is the field?" onClose={() => setShowMap(false)}>
-            <MapPicker lat={picked.lat} lon={picked.lon} country={picked.country}
-              onChange={(lat, lon) => setPicked(p => ({ ...p, lat, lon }))}
-              onCountry={(country) => setPicked(p => ({ ...p, country }))}
-              onCoverage={setPickedInArea} />
-            <button type="button" className="btn btn-sm btn-akilimo mt-2" onClick={sendLocation}
+          <Shell title="Where is the field?" onClose={() => setShowMap(false)} footer={
+            <button type="button" className="btn btn-sm btn-akilimo" onClick={sendLocation}
               disabled={picked.lat === undefined || pickedInArea === false}
               title={pickedInArea === false ? 'This spot is outside the supported area' : 'Send this spot to the assistant'}>
               Send this location
             </button>
+          }>
+            <MapPicker lat={picked.lat} lon={picked.lon} country={picked.country}
+              onChange={(lat, lon) => setPicked(p => ({ ...p, lat, lon }))}
+              onCountry={(country) => setPicked(p => ({ ...p, country }))}
+              onCoverage={setPickedInArea} />
           </Shell>
         )}
         {country && canChat && (
-          <div className="d-flex flex-wrap align-items-center gap-1 mb-2">
-            <span className="small text-body-secondary me-1">Details:</span>
+          <div className="d-flex flex-nowrap align-items-center gap-1 mb-2 overflow-auto pb-1" style={{ scrollbarWidth: 'thin' }}>
+            <span className="small text-body-secondary me-1 flex-shrink-0">Details:</span>
             {detailChips.map(c => (
-              <button key={c.id} type="button" className={`btn btn-sm py-0 d-inline-flex align-items-center gap-1 ${c.done ? 'btn-success' : 'btn-outline-secondary'}`} title={`${CHIP_HINTS[c.id] ?? c.label}${c.done ? " (sent; click to change it)" : ""}`}
+              <button key={c.id} type="button" className={`btn btn-sm py-0 d-inline-flex align-items-center gap-1 text-nowrap flex-shrink-0 ${c.done ? 'btn-success' : 'btn-outline-secondary'}`} title={`${CHIP_HINTS[c.id] ?? c.label}${c.done ? " (sent; click to change it)" : ""}`}
                 onClick={() => { setShowMap(c.id === 'location' ? !showMap : false); setShowDates(c.id === 'dates' ? !showDates : false); setShowFertilizers(c.id === 'fertilizers' ? !showFertilizers : false); setPicker(c.picker ? (picker === c.picker ? null : c.picker) : null); }}>
                 {DETAIL_ICONS[c.id]}{c.label}{c.done && <Check size={13} />}
               </button>
@@ -634,7 +635,12 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
           </div>
         )}
         {showDates && (
-          <Shell title="When will you plant and harvest?" onClose={() => setShowDates(false)}>
+          <Shell title="When will you plant and harvest?" onClose={() => setShowDates(false)} footer={
+            <>
+              <button type="button" className="btn btn-sm btn-akilimo" onClick={sendDates} disabled={!!datesProblem} title={datesProblem ?? 'Send these dates to the assistant'}>Send these dates</button>
+              {datesProblem && <span className="small text-body-secondary">{datesProblem}</span>}
+            </>
+          }>
             <div className="row g-2">
               <div className="col-sm-6">
                 <label className="form-label small mb-1" htmlFor="chat-plant">Planting date</label>
@@ -663,10 +669,6 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
               </div>
             </div>
             <div className="form-text">Planting up to 6 months back; harvest 8 to 12 months after planting (cassava is usually harvested 10 to 12).</div>
-            <div className="d-flex align-items-center gap-2 mt-2">
-              <button type="button" className="btn btn-sm btn-akilimo" onClick={sendDates} disabled={!!datesProblem} title={datesProblem ?? 'Send these dates to the assistant'}>Send these dates</button>
-              {datesProblem && <span className="small text-body-secondary">{datesProblem}</span>}
-            </div>
           </Shell>
         )}
         {picker && country && (() => {
@@ -692,7 +694,7 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
         )}
         {view === 'ai' && webSearch && (
           <div className="small text-success-emphasis d-flex align-items-center gap-1 mb-2">
-            <Globe size={13} /> Web search is on. Parts of what you ask can be sent to a search service. Turn it off with the globe button.
+            <Globe size={13} /> Web search is on: questions may go to a search service.
           </div>
         )}
         <form className="input-group" onSubmit={e => { e.preventDefault(); send(input); }}>
