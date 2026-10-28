@@ -42,6 +42,7 @@ type Item =
   | { id: string; kind: 'step'; step: AgentStep };
 
 const COUNTRY_KEY = 'chat-country';
+const WEB_SEARCH_KEY = 'chat-web-search'; // the choice of a user without an account
 const VIEW_KEY = 'chat-view';
 
 const hasContextTools = (servers: Record<string, ServerState>) =>
@@ -98,13 +99,13 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
   const [showAdvice, setShowAdvice] = useState(false);
   // Web search: only offered when the server has a search service, and always off until the user turns it on
   const [webSearchAvailable, setWebSearchAvailable] = useState(false);
-  // Signed in: the choice is part of the profile (saved to the account). Without accounts there is no profile,
-  // so it is only remembered until the page is closed or a new conversation starts.
-  const [guestWebSearch, setGuestWebSearch] = useState(false);
+  // Signed in: the choice is part of the profile (saved to the account, so it follows the user to every
+  // session and device). Without accounts there is no profile, so it is remembered in this browser instead.
+  const [guestWebSearch, setGuestWebSearch] = useState<boolean>(() => read<boolean>(WEB_SEARCH_KEY, false) === true);
   const webSearch = user ? user.web_search : guestWebSearch;
   const toggleWebSearch = () => {
     if (user && onWebSearchChange) onWebSearchChange(!user.web_search).catch(e => setError(e instanceof Error ? e.message : String(e)));
-    else setGuestWebSearch(v => !v);
+    else { const next = !guestWebSearch; setGuestWebSearch(next); write(WEB_SEARCH_KEY, next); }
   };
   useEffect(() => {
     if (!canChat) { setWebSearchAvailable(false); return; }
@@ -274,7 +275,6 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
     setQueue([]);
     abort.current?.abort();
     history.current = [];
-    setGuestWebSearch(false); // without a profile, a new conversation starts with web search off again
     conversationId.current = null;
     setItems([]);
     setError(null);
