@@ -1,17 +1,17 @@
 import express from "express";
 import { z } from "zod/v4";
-import { DEFAULT_CROPS, parseCrops, type Crop } from "@akilimo/shared";
 import type { AkilimoApiClient } from "../api/client.js";
+import { fetchCrops, type CropList } from "./list.js";
 
-// The crops for the web UI's crop selector, from the Akilimo API (GET /v1/crops, optionally per country;
-// managed in its admin area). An API without the route, or one that cannot be reached, answers with the
-// built-in list (cassava), so the selector always works. `source` says which one it was.
+// The crops for the web UI's crop selector, from the Akilimo API (managed in its admin area) with the
+// built-in list as the fallback (see list.ts). Only a real answer from the API is cached, so a crop list
+// that appears after a deployment shows up within minutes instead of staying hidden behind a cached fallback.
 const CACHE_MS = 5 * 60 * 1000;
 const COUNTRY = z.string().length(2).transform((c) => c.toUpperCase());
 
 export function cropsRouter(api: AkilimoApiClient) {
   const router = express.Router();
-  const cache = new Map<string, { at: number; body: { crops: Crop[]; source: "api" | "default" } }>();
+  const cache = new Map<string, { at: number; body: CropList }>();
 
   router.get("/", async (req, res) => {
     const country = req.query.country === undefined ? undefined : COUNTRY.safeParse(req.query.country);
@@ -28,16 +28,9 @@ export function cropsRouter(api: AkilimoApiClient) {
       return;
     }
 
-    try {
-      const { data } = await api.getAll<Record<string, unknown>>(code ? `/v1/crops/country/${code}` : "/v1/crops");
-      const crops = parseCrops(data);
-      const body = crops.length > 0 ? { crops, source: "api" as const } : { crops: DEFAULT_CROPS, source: "default" as const };
-      cache.set(cacheKey, { at: Date.now(), body });
-      res.json(body);
-    } catch {
-      // Not cached: ask the API again next time
-      res.json({ crops: DEFAULT_CROPS, source: "default" });
-    }
+    const body = await fetchCrops(api, code);
+    if (body.source === "api") cache.set(cacheKey, { at: Date.now(), body });
+    res.json(body);
   });
 
   return router;

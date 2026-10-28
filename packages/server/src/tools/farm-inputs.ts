@@ -79,7 +79,7 @@ export const checkPriceTool: ToolDefinition = {
   inputSchema: {
     type: "object" as const,
     properties: {
-      countryCode: { type: "string", description: "ISO 2-letter country code: NG, TZ, RW, GH or BI" },
+      countryCode: { type: "string", description: "ISO 2-letter code of a supported country (the list comes from get_countries)" },
       item: { type: "string", enum: [...PRICE_ITEMS], description: "What the price is for" },
       value: { type: "number", description: "The price in local currency, in the unit above" },
       fertilizerKey: { type: "string", description: "Only for item fertilizer: the fertilizer key or type, e.g. UREA_NG or UREA" },
@@ -151,7 +151,7 @@ export const investmentOptionsTool: ToolDefinition = {
   inputSchema: {
     type: "object" as const,
     properties: {
-      countryCode: { type: "string", description: "ISO 2-letter country code: NG, TZ, RW, GH or BI" },
+      countryCode: { type: "string", description: "ISO 2-letter code of a supported country (the list comes from get_countries)" },
       fieldSize: { type: "number", description: "Field size, to turn the per-area amounts into totals for the field" },
       areaUnit: { type: "string", enum: Object.keys(ACRES_PER), description: "Unit of fieldSize" },
     },
@@ -195,7 +195,7 @@ export const fertilizerPlanTool: ToolDefinition = {
   inputSchema: {
     type: "object" as const,
     properties: {
-      countryCode: { type: "string", description: "ISO 2-letter country code: NG, TZ, RW, GH or BI" },
+      countryCode: { type: "string", description: "ISO 2-letter code of a supported country (the list comes from get_countries)" },
       fertilizerRates: {
         type: "array",
         description: "data.fertilizer_rates of the recommendation",

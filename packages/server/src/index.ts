@@ -3,6 +3,7 @@ import { seedAdmin } from "./accounts/seed.js";
 import { AkilimoApiClient } from "./api/client.js";
 import { config } from "./config.js";
 import { coverageRouter } from "./coverage/routes.js";
+import { countriesRouter } from "./countries/routes.js";
 import { cropsRouter } from "./crops/routes.js";
 import { closeDb, connectDb } from "./db/index.js";
 import { DbRegistry, FileRegistry } from "./gateway/registry.js";
@@ -68,7 +69,8 @@ async function main() {
       api: apiRouter(db),
       coverage: coverageRouter(api),
       crops: cropsRouter(api),
-      chat: chatRouter(new ChatSettings(db, config.secretsKey ? new SecretBox(config.secretsKey) : null, config.ollamaBaseUrl), registry, db),
+      countries: countriesRouter(api),
+      chat: chatRouter(new ChatSettings(db, config.secretsKey ? new SecretBox(config.secretsKey) : null, config.ollamaBaseUrl), registry, db, api),
     });
   } else {
     await startStdio(createServer(api));

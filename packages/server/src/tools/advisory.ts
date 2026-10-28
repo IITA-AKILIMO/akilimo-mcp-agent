@@ -8,7 +8,7 @@ export type Row = Record<string, any>;
 export const countryInput = {
   type: "object" as const,
   properties: {
-    countryCode: { type: "string", description: "ISO 2-letter country code: NG, TZ, RW, GH or BI" },
+    countryCode: { type: "string", description: "ISO 2-letter code of a supported country (the list comes from get_countries)" },
   },
   required: ["countryCode"],
 };
@@ -66,7 +66,7 @@ export const checkLocationTool: ToolDefinition = {
   inputSchema: {
     type: "object" as const,
     properties: {
-      countryCode: { type: "string", description: "ISO 2-letter country code: NG, TZ, RW, GH or BI" },
+      countryCode: { type: "string", description: "ISO 2-letter code of a supported country (the list comes from get_countries)" },
       lat: { type: "number", description: "Latitude in decimal degrees" },
       lon: { type: "number", description: "Longitude in decimal degrees" },
     },

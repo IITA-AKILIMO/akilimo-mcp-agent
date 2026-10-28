@@ -17,10 +17,12 @@ interface HttpOptions {
   coverage?: Router;
   // Mounted at /api/crops, ahead of /api: the crop list for the selector (see crops/routes.ts)
   crops?: Router;
+  // Mounted at /api/countries, ahead of /api: the supported countries (see countries/routes.ts)
+  countries?: Router;
 }
 
 // A Server instance serves one transport at a time, so every connection gets its own
-export function startHttp(createServer: () => Server, { port, allowedOrigins, gateway, api, chat, coverage, crops }: HttpOptions): void {
+export function startHttp(createServer: () => Server, { port, allowedOrigins, gateway, api, chat, coverage, crops, countries }: HttpOptions): void {
   const app = express();
   // Behind nginx / Dokploy: trust X-Forwarded-* so req.secure (Secure cookies) and req.ip (rate limits) are right
   app.set("trust proxy", "loopback, linklocal, uniquelocal");
@@ -39,6 +41,7 @@ export function startHttp(createServer: () => Server, { port, allowedOrigins, ga
   if (gateway) app.use("/gateway", gateway);
   if (coverage) app.use("/api/coverage", coverage);
   if (crops) app.use("/api/crops", crops);
+  if (countries) app.use("/api/countries", countries);
   if (api) app.use("/api", api);
   if (chat) app.use("/chat", chat);
 
