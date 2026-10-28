@@ -2,10 +2,11 @@ import { parseCountries, type Country } from "@akilimo/shared";
 import type { AkilimoApiClient } from "../api/client.js";
 
 // The supported countries, from the Akilimo API (GET /v1/countries: the active ones, in display order),
-// kept for a while because they change rarely and every chat message and page load needs them. Each
+// kept for a minute because every chat message and page load needs them but an admin who activates a
+// country expects to see it almost at once (it used to be 30 minutes, which looked like "not listed"). Each
 // country's currency comes from its price list (the API's own currency rows are not keyed by country
 // reliably), and a failure to read it only leaves the currency empty.
-const CACHE_MS = 30 * 60 * 1000;
+const CACHE_MS = 60 * 1000;
 let cached: { at: number; countries: Country[] } | null = null;
 
 export async function fetchCountries(api: AkilimoApiClient): Promise<Country[]> {

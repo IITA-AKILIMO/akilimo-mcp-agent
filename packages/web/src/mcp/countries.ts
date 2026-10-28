@@ -3,11 +3,15 @@ import type { Country } from '@akilimo/shared';
 
 // The countries AKILIMO supports. They come from the Akilimo API through this site's server
 // (/api/countries) and are never written in the code, so adding a country there adds it here. The list is
-// fetched once per visit and shared by every component that asks for it.
+// shared by every component that asks for it, and fetched again when the tab is shown after a minute or
+// more, so a country an admin has just activated appears without reloading the page.
+const REFRESH_MS = 60 * 1000;
 let pending: Promise<Country[]> | null = null;
+let fetchedAt = 0;
 
 function loadCountries(): Promise<Country[]> {
   if (!pending) {
+    fetchedAt = Date.now();
     pending = fetch('/api/countries', { credentials: 'same-origin' })
       .then(async res => {
         const body = (await res.json().catch(() => ({}))) as { countries?: Country[]; error?: string };
@@ -35,6 +39,16 @@ export function useCountries(): { countries: Country[]; loading: boolean; error:
     );
     return () => { live = false; };
   }, [attempt]);
+
+  // Coming back to the tab: pick up countries activated meanwhile
+  useEffect(() => {
+    const onShow = () => {
+      if (document.visibilityState === 'visible' && Date.now() - fetchedAt > REFRESH_MS) { pending = null; setAttempt(a => a + 1); }
+    };
+    document.addEventListener('visibilitychange', onShow);
+    window.addEventListener('focus', onShow);
+    return () => { document.removeEventListener('visibilitychange', onShow); window.removeEventListener('focus', onShow); };
+  }, []);
 
   const reload = useCallback(() => { pending = null; setAttempt(a => a + 1); }, []);
   return { ...state, reload };
