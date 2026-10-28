@@ -265,7 +265,7 @@ export const SellSelect: React.FC<{ id: string; call: Call; country: string; val
   useEffect(() => { onChange('', ''); }, [country]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!options || options.starch_factories.length === 0) return null;
   return (
-    <div className="mt-3" style={{ maxWidth: '30rem' }}>
+    <div className="mt-3 col-12">
       <label className="form-label small mb-1" htmlFor={id}>Where will you sell your cassava?</label>
       <select id={id} className="form-select" value={value}
         onChange={e => onChange(e.target.value, options.starch_factories.find(f => f.key === e.target.value)?.name ?? '')}>
