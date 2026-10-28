@@ -25,6 +25,8 @@ const ChatRequestSchema = z.object({
   provider: z.string().max(40),
   model: z.string().min(1).max(200),
   country: z.string().length(2).optional(),
+  // The crop chosen in the selector; it only changes what the assistant is told (see CropChoice)
+  crop: z.object({ key: z.string().regex(/^[a-z0-9_]{1,50}$/), name: z.string().min(1).max(100), advice_available: z.boolean() }).optional(),
   messages: z.array(MessageSchema).min(1).max(400),
 });
 
@@ -127,6 +129,7 @@ export function chatRouter(settings: ChatSettings, registry: Registry, db: Db | 
         tools: session.tools,
         callTool: session.callTool,
         country: findCountry(body.country?.toUpperCase()),
+        crop: body.crop,
         signal: abort.signal,
         onMessage: (message) => send({ type: "message", message }),
         onStep: (step) => send({ type: "step", step }),

@@ -2,12 +2,19 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { ChatMessage, Country, ToolSpec } from "@akilimo/shared";
 import type { AgentTool } from "./mcp.js";
 
+// The crop the user picked (from the API's crop list); advice_available false means no recommendations exist for it yet
+export interface CropChoice { key: string; name: string; advice_available: boolean }
+
+const cropNote = (crop?: CropChoice) => crop && !crop.advice_available
+  ? `\nThe user chose ${crop.name}. AKILIMO has no recommendations for ${crop.name} yet, so never call compute_recommendations and never give agronomic advice for it. You can still share prices and reference data with the tools, and say that recommendations for ${crop.name} are not available yet.\n`
+  : "";
+
 const countryNote = (country?: Country) => country
   ? `\nThe user told you they farm in ${country.name} (country code ${country.code}). Use ${country.code} for every tool that takes a country and do not ask which country; if they clearly talk about another country, follow that instead. Treat questions about prices, fertilizers, places and weather as being about ${country.name} unless they say otherwise.\n`
   : "";
 
-export const systemPrompt = (country?: Country) => `You are the AKILIMO assistant from IITA. You help cassava farmers and extension agents in Nigeria, Tanzania, Rwanda, Ghana and Burundi get fertilizer advice.
-${countryNote(country)}
+export const systemPrompt = (country?: Country, crop?: CropChoice) => `You are the AKILIMO assistant from IITA. You help cassava farmers and extension agents in Nigeria, Tanzania, Rwanda, Ghana and Burundi get fertilizer advice.
+${countryNote(country)}${cropNote(crop)}
 Most important rule: you are not an agronomist. Never say yourself whether it is a good time to plant, how much fertilizer to use or what yield to expect. That advice may only come from AKILIMO tool results (compute_recommendations). Weather and other tools are context only.
 Example. User: "Is it a good week to plant cassava in Ibadan?" Good answer: "Right now in Ibadan it is 25°C and clear, with a 22% chance of rain (from the weather service). I can't judge planting timing from the weather alone. If you tell me your field size and planned planting and harvest dates, I can get an AKILIMO recommendation for your field." Bad answer: "Yes, it is a good week to plant."
 
@@ -18,6 +25,12 @@ Rules:
 - As soon as you have a field location, call check_location with the country and the coordinates. If covered is false, tell the user the spot is outside the area AKILIMO supports and ask them to pick another one (the map shows the supported area); do not call compute_recommendations for it. If covered is true or null, carry on.
 - The user can share the field location with the location button; it arrives as "My field is at <latitude>, <longitude> (<country code>)".
 - The user can also pick the dates on a calendar; they arrive as "I plan to plant on <YYYY-MM-DD> and harvest on <YYYY-MM-DD>. Planting window: <0-2>, harvest window: <0-2> (...)". Use those dates exactly, and pass the two windows (how many months the date can shift, 0, 1 or 2) as planting.planting_date_window and planting.harvest_date_window.
+- The user can also choose fertilizers on a list; they arrive as "These are the fertilizers I can buy in <country> and their prices: <name> (key <key>, type <type>, <n> kg bag): <price> <currency> per bag; ...". Use exactly those fertilizers and prices: one fertilizer_list entry per item (key, name, fertilizer_type = type, weight = the kg, price), selected true. Do not call get_fertilizer_options again for them.
+- Forms in the chat send fixed messages; read them exactly and do not ask again for what they contain:
+  "My field is <size> <unit>. My cassava yield now is in the class "<label>" (current_field_yield <n>). I sell cassava roots at <price> <currency> per tonne. <budget sentence> My risk attitude is <word> (risk_attitude <0-2>)." → farmInformation.field_size and area_unit, yieldInfo.current_field_yield, cassava.unit_price (unit_weight 1000), compute_request.maxInvestment when a budget is given (none otherwise), and user_info {risk_attitude} (a top-level argument of compute_recommendations, next to compute_request).
+  "On this field I do now: ... (ploughing_done ..., methods ...) My costs per the field's area unit: ..." → operationsDone, methods, tractorCosts, manualCosts and weedingCosts as described below, using those costs.
+  "For intercropping I grow <crop> ... (compute_request.maize or sweetPotato: produce_type, unit_weight, unit_price)" → send that object as written.
+- Risk attitude (user_info.risk_attitude): 0 careful (fertilizer advised only when the extra income is at least 1.8 times its cost), 1 balanced (at least the cost), 2 willing to take a risk (even a small gain). If the farmer has not said, ask once in plain words; use 1 if they do not know. A careful farmer is told "not recommended" much more often, so mention it when the advice is not to use fertilizer.
 - Answer in the language the user writes in. Keep answers short and practical. Today is ${new Date().toISOString().slice(0, 10)}.
 
 To compute fertilizer recommendations (compute_recommendations) you need:
@@ -84,6 +97,7 @@ export interface RunOptions {
   onStep: (step: AgentStep) => void;
   signal?: AbortSignal | undefined;
   country?: Country | undefined;
+  crop?: CropChoice | undefined;
 }
 
 // What the model is given: the system prompt followed by a short list of everything the farmer has said
@@ -96,13 +110,13 @@ const FACT_CHARS = 400;
 // CHAT_CONTEXT_TOKENS to the provider's real limit minus about 6000 for the tools and the answer
 const CONTEXT_BUDGET = Number(process.env.CHAT_CONTEXT_TOKENS) || 10000;
 
-export function buildConversation(history: ChatMessage[], country: Country | undefined): ChatMessage[] {
+export function buildConversation(history: ChatMessage[], country: Country | undefined, crop?: CropChoice): ChatMessage[] {
   const lastUser = history.map((m) => m.role).lastIndexOf("user");
   const said = history.filter((m) => m.role === "user" && m.content.trim()).map((m) => `- ${m.content.trim().slice(0, FACT_CHARS)}`);
   const memory = said.length > 1
     ? `\n\nEverything the farmer has told you so far in this conversation, oldest first. Remember it: use these details (country, location, field size, dates, prices, fertilizers, budget, answers to your questions) and never ask for something already given here unless they change it:\n${said.join("\n")}`
     : "";
-  const system: ChatMessage = { role: "system", content: systemPrompt(country) + memory };
+  const system: ChatMessage = { role: "system", content: systemPrompt(country, crop) + memory };
   const shorten = (limit: number) => history.map((m, i) =>
     m.role === "tool" && i < lastUser && m.content.length > limit ? { ...m, content: `${m.content.slice(0, limit)}… [shortened]` } : m);
 
@@ -122,8 +136,8 @@ const estimateTokens = (messages: ChatMessage[]) =>
   Math.ceil(messages.reduce((n, m) => n + m.content.length + JSON.stringify(m.tool_calls ?? "").length, 0) / 3.5);
 
 // One user turn: let the model call tools until it answers in text (bounded to avoid loops)
-export async function runAgent({ chat, history, tools, callTool, onMessage, onStep, signal, country }: RunOptions): Promise<void> {
-  const conversation = buildConversation(history, country);
+export async function runAgent({ chat, history, tools, callTool, onMessage, onStep, signal, country, crop }: RunOptions): Promise<void> {
+  const conversation = buildConversation(history, country, crop);
   const specs = tools.map((t) => t.spec);
 
   // Small models sometimes answer with nothing (or only hidden reasoning) after a tool result, which

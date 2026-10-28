@@ -12,7 +12,7 @@ import { errorResult, jsonResult, type ToolDefinition } from "./types.js";
 // The API requires user_info; the agent sends an anonymous profile unless the caller overrides it
 export const DEFAULT_USER_INFO = {
   device_token: config.deviceToken || randomUUID(),
-  risk_attitude: 0,
+  risk_attitude: 1, // balanced; 0 (careful) needs the extra income to be 1.8 times the cost, so fertilizer is rarely advised
   user_name: "akilimo-mcp",
   first_name: "Akilimo",
   last_name: "MCP",

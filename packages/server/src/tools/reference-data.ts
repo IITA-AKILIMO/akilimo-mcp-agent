@@ -4,11 +4,11 @@ import { jsonResult, type ToolDefinition } from "./types.js";
 export const REFERENCE_CATEGORIES = [
   'countries', 'currencies', 'fertilizers', 'fertilizer-prices', 'investment-amounts',
   'operation-costs', 'starch-factories', 'starch-prices', 'default-prices', 'cassava-units',
-  'cassava-prices', 'potato-prices', 'maize-prices',
+  'cassava-prices', 'potato-prices', 'maize-prices', 'crops',
 ];
 export const COUNTRY_FILTERABLE = [
   'fertilizers', 'fertilizer-prices', 'investment-amounts', 'operation-costs',
-  'starch-factories', 'cassava-prices', 'potato-prices', 'maize-prices',
+  'starch-factories', 'cassava-prices', 'potato-prices', 'maize-prices', 'crops',
 ];
 
 export const referenceDataTool: ToolDefinition = {
