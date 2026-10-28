@@ -1,7 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { CircleMarker, MapContainer, TileLayer, useMap, useMapEvents } from 'react-leaflet';
+import { CircleMarker, GeoJSON, MapContainer, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
-import { MapPin } from 'lucide-react';
+import { MapPin, TriangleAlert } from 'lucide-react';
+import { findCountry, geoJsonContains } from '@akilimo/shared';
+import { useCoverage } from '../mcp/coverage';
 
 // Map view per Akilimo country (GET /v1/countries); anything else starts on sub-Saharan Africa
 const COUNTRY_VIEWS: Record<string, { center: [number, number]; zoom: number }> = {
@@ -23,6 +25,9 @@ interface Props {
   onChange: (lat: number, lon: number) => void;
   // Called with the ISO 2-letter code of the picked point's country, when one is found
   onCountry?: (code: string) => void;
+  // Called whenever the picked point's standing changes: true inside AKILIMO's supported area, false
+  // outside it, null when there is no point or no area is known for the country
+  onCoverage?: (covered: boolean | null) => void;
 }
 
 type Lookup =
@@ -72,8 +77,15 @@ const FollowCountry: React.FC<{ country?: string; hasPoint: boolean }> = ({ coun
   return null;
 };
 
-export const MapPicker: React.FC<Props> = ({ lat, lon, country, onChange, onCountry }) => {
+export const MapPicker: React.FC<Props> = ({ lat, lon, country, onChange, onCountry, onCoverage }) => {
   const hasPoint = typeof lat === 'number' && typeof lon === 'number';
+
+  // Where AKILIMO can give advice in this country: drawn on the map and used to warn at once when the
+  // picked point lies outside it (the compute service would only answer with an empty result later)
+  const { geojson: area } = useCoverage(country);
+  const covered = hasPoint && area ? geoJsonContains(area, lat, lon) : null;
+  const countryName = findCountry(country?.toUpperCase())?.name ?? country;
+  useEffect(() => { onCoverage?.(covered); }, [covered]); // eslint-disable-line react-hooks/exhaustive-deps
   const view = hasPoint
     ? { center: [lat, lon] as [number, number], zoom: 10 }
     : COUNTRY_VIEWS[country?.toUpperCase() ?? ''] ?? DEFAULT_VIEW;
@@ -119,16 +131,31 @@ export const MapPicker: React.FC<Props> = ({ lat, lon, country, onChange, onCoun
         {lookup.state === 'none' && <span className="text-warning-emphasis">· no country at this point</span>}
         {lookup.state === 'error' && <span className="text-warning-emphasis">· country lookup failed, enter it manually</span>}
       </div>
+      {covered === false && (
+        <div className="alert alert-warning small py-1 px-2 mb-1 d-flex align-items-start gap-1" role="alert">
+          <TriangleAlert size={14} className="flex-shrink-0 mt-1" />
+          <span>This spot is outside the area AKILIMO supports in {countryName}. Pick a point inside the green area.</span>
+        </div>
+      )}
+      {covered === true && <div className="small text-success-emphasis mb-1">Inside the area AKILIMO supports.</div>}
       <MapContainer center={view.center} zoom={view.zoom} className="map-picker rounded border" scrollWheelZoom>
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
+        {area && (
+          <GeoJSON key={country} data={area as never} interactive={false}
+            style={{ color: '#2d5a27', weight: 1, fillColor: '#6aa84f', fillOpacity: 0.3 }} />
+        )}
         <TrackSize />
         <ClickToPick onPick={pick} />
         <FollowCountry country={country} hasPoint={hasPoint} />
-        {hasPoint && <CircleMarker center={[lat, lon]} radius={8} pathOptions={{ color: '#2d5a27', fillColor: '#a3c585', fillOpacity: 0.9 }} />}
+        {hasPoint && (
+          <CircleMarker center={[lat, lon]} radius={8}
+            pathOptions={covered === false ? { color: '#b02a37', fillColor: '#dc3545', fillOpacity: 0.9 } : { color: '#2d5a27', fillColor: '#a3c585', fillOpacity: 0.9 }} />
+        )}
       </MapContainer>
+      {area && <div className="form-text mt-1">Green: where AKILIMO can give advice in {countryName}.</div>}
     </div>
   );
 };
