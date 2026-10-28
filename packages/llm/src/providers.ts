@@ -3,7 +3,7 @@ import * as anthropic from "./anthropic.js";
 import * as ollama from "./ollama.js";
 import * as openai from "./openai.js";
 
-export type ProviderId = "ollama" | "ollama-cloud" | "openai" | "anthropic" | "gemini" | "deepseek" | "groq" | "mistral" | "openrouter" | "custom";
+export type ProviderId = "ollama" | "ollama-cloud" | "openai" | "anthropic" | "gemini" | "deepseek" | "groq" | "mistral" | "openrouter" | "opencode" | "custom";
 
 export interface ProviderInfo {
   id: ProviderId;
@@ -28,6 +28,9 @@ export const PROVIDERS: ProviderInfo[] = [
   { id: "groq", label: "Groq", api: "openai", base: "https://api.groq.com/openai/v1", key: "required", keyUrl: "https://console.groq.com/keys", preferred: [/^llama-3\.3-70b/] },
   { id: "mistral", label: "Mistral", api: "openai", base: "https://api.mistral.ai/v1", key: "required", keyUrl: "https://console.mistral.ai/api-keys", preferred: [/^mistral-small-latest$/, /^mistral-large-latest$/] },
   { id: "openrouter", label: "OpenRouter", api: "openai", base: "https://openrouter.ai/api/v1", key: "required", keyUrl: "https://openrouter.ai/keys", preferred: [/^openai\/gpt-4\.1-mini$/, /^openai\/gpt-4o-mini$/] },
+  // OpenCode (pay-as-you-go console and Go subscription): one OpenAI-compatible endpoint for models from
+  // several vendors; /v1/models lists them and /v1/chat/completions answers (the docs' /openai/v1 path has no model list)
+  { id: "opencode", label: "OpenCode", api: "openai", base: "https://opencode.ai/inference/v1", key: "required", keyUrl: "https://opencode.ai/console", preferred: [/^glm-/, /^kimi-/, /^qwen3/, /^deepseek-v/] },
   { id: "custom", label: "Custom (OpenAI-compatible)", api: "openai", key: "optional", preferred: [] },
 ];
 

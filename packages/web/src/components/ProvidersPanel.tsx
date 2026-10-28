@@ -19,6 +19,7 @@ const META: Record<ProviderId, { tagline: string; color: string }> = {
   groq: { tagline: 'Fast hosted open models', color: '#f55036' },
   mistral: { tagline: 'Mistral models', color: '#fa520f' },
   openrouter: { tagline: 'One key for many hosted models', color: '#6467f2' },
+  opencode: { tagline: 'GLM, Kimi, Qwen, DeepSeek and more through one OpenCode key', color: '#211e1e' },
   custom: { tagline: 'Any OpenAI-compatible server (LM Studio, vLLM, llama.cpp, ...)', color: '#6c757d' },
 };
 
