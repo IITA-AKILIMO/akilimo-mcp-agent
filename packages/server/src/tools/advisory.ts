@@ -1,3 +1,6 @@
+import { fetchCountries } from "../countries/list.js";
+import { getRates } from "../currency/rates.js";
+import type { AkilimoApiClient } from "../api/client.js";
 import { jsonResult, type ToolDefinition } from "./types.js";
 
 // Compact, model-friendly views of the reference data needed for fertilizer advice. The raw
@@ -94,17 +97,25 @@ export const checkLocationTool: ToolDefinition = {
 // default-prices rows use the legacy code BU for Burundi
 const DEFAULT_PRICE_COUNTRY: Record<string, string> = { BI: "BU" };
 
-// Approximate local currency per US dollar. Only a sanity check on prices (is this cost per acre
-// believable in dollars?), never used to convert anything shown to farmers; refresh it when it drifts.
-// Tanzanian prices look huge (the shilling is weak) but are fine in dollars.
-const USD_RATE: Record<string, number> = { NG: 1500, TZ: 2600, RW: 1450, GH: 12, BI: 2900 };
+// The sanity check on prices (is this cost per acre believable in dollars?) uses the prevailing exchange
+// rate of the country's currency (currency/rates.ts); only when that cannot be read are these approximate
+// rates used, so refresh them when they drift. Tanzanian prices look huge (the shilling is weak) but are fine
+// in dollars.
+const USD_RATE_FALLBACK: Record<string, number> = { NG: 1500, TZ: 2600, RW: 1450, GH: 12, BI: 2900 };
 const PLAUSIBLE_USD_PER_ACRE = { min: 0.5, max: 150 };
-const usdOf = (country: string, value: number) => {
-  const rate = USD_RATE[country];
-  return rate ? Math.round((value / rate) * 100) / 100 : null;
+
+// Local currency per US dollar for a country: live, else the approximate fallback, else null
+const usdRate = async (country: string, api: AkilimoApiClient): Promise<number | null> => {
+  try {
+    const currency = (await fetchCountries(api)).find((c) => c.code === country)?.currency;
+    const live = currency ? (await getRates()).perUsd[currency] : undefined;
+    if (live) return live;
+  } catch { /* use the fallback */ }
+  return USD_RATE_FALLBACK[country] ?? null;
 };
-const plausible = (country: string, value: number) => {
-  const usd = usdOf(country, value);
+const usdOf = (rate: number | null, value: number) => (rate ? Math.round((value / rate) * 100) / 100 : null);
+const plausible = (rate: number | null, value: number) => {
+  const usd = usdOf(rate, value);
   return usd === null || (usd >= PLAUSIBLE_USD_PER_ACRE.min && usd <= PLAUSIBLE_USD_PER_ACRE.max);
 };
 
@@ -123,6 +134,7 @@ export const operationCostsTool: ToolDefinition = {
 
   async handler(args, api) {
     const country = countryFrom(args);
+    const rate = await usdRate(country, api);
     const [defaults, bands] = await Promise.all([
       api.getAll<Row>("/v1/default-prices"),
       api.getAll<Row>(`/v1/operation-costs/country/${country}`),
@@ -140,13 +152,13 @@ export const operationCostsTool: ToolDefinition = {
     // The API's default price if believable in dollars, else the compute service's own default, else
     // the middle operation-cost band; each with an approximate dollar value for a quick sanity read
     const pick = (item: string, name: string | null, type: string | null) => {
-      const result = (value: number | null, source: string | null) => ({ value, source, approx_usd: value === null ? null : usdOf(country, value) });
+      const result = (value: number | null, source: string | null) => ({ value, source, approx_usd: value === null ? null : usdOf(rate, value) });
       const fromDefault = defaultPrice(item);
-      if (fromDefault !== null && plausible(country, fromDefault)) return result(fromDefault, "default_price");
+      if (fromDefault !== null && plausible(rate, fromDefault)) return result(fromDefault, "default_price");
       const baseline = BASELINE_COSTS[country]?.[item];
       if (baseline !== undefined) return result(baseline, "service_default");
       const fromBand = (name && type ? typicalBand(name, type) : null) ?? null;
-      return fromBand !== null && plausible(country, fromBand) ? result(fromBand, "typical_band") : result(null, null);
+      return fromBand !== null && plausible(rate, fromBand) ? result(fromBand, "typical_band") : result(null, null);
     };
 
     const costs = {
