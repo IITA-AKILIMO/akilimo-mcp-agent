@@ -74,6 +74,34 @@
   font-size: 0.875rem;
 }
 
+/* A model sometimes answers with Markdown headings; inside a chat bubble they stay the size of the text
+   instead of the page's h1 to h6 sizes */
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4,
+.markdown h5,
+.markdown h6 {
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 0.75rem 0 0.25rem;
+}
+
+.markdown h1 {
+  font-size: 1.1rem;
+}
+
+.markdown > :first-child {
+  margin-top: 0;
+}
+
+.markdown pre {
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .avatar {
   width: 2rem;
   height: 2rem;
