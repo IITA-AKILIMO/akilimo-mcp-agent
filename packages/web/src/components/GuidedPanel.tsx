@@ -7,7 +7,7 @@ import { COUNTRIES } from '@akilimo/shared';
 import type { GuidedEntry } from '../mcp/guided';
 import { ADVICE, ADVICE_ICONS, AdviceResult, AdviceScreen, intercropCrop, type AdviceKind } from './AdviceScreens';
 import {
-  Loading, Value, message, money, monthsFromNow, useLoad,
+  Loading, Value, WINDOWS, YieldSelect, dateProblem, harvestRange, message, money, monthsFromNow, plantingMin, useLoad, windowLabel,
   type Call, type FertilizerData, type PriceData, type Record_, type Row,
 } from './GuidedParts';
 import { MapPicker } from './MapPicker';
@@ -49,9 +49,12 @@ export const GuidedPanel: React.FC<Props> = ({ country, servers, callTool, onRec
     [servers],
   );
 
+  // Several servers can offer the AKILIMO tools (for example a hosted copy of an older version), and a
+  // newer tool exists on only some of them: call the tool on a server that really lists it
   const call = async <T,>(name: string, args: Record<string, unknown>): Promise<T> => {
-    if (!serverId) throw new Error('The AKILIMO server is not connected yet');
-    const result = await callTool(serverId, name, args);
+    const target = Object.entries(servers).find(([, s]) => s.status === 'connected' && s.tools.some(t => t.name === name))?.[0];
+    if (!target) throw new Error(serverId ? `No connected AKILIMO server offers the tool ${name}` : 'The AKILIMO server is not connected yet');
+    const result = await callTool(target, name, args);
     const text = result.content.find(c => c.type === 'text')?.text ?? '';
     if (result.isError) throw new Error(text || `${name} failed`);
     return JSON.parse(text) as T;
@@ -257,11 +260,15 @@ const RecommendScreen: React.FC<{ country: Country; call: Call; record: Record_ 
   }, [country.code]);
 
   const [pos, setPos] = useState<{ lat?: number; lon?: number }>({});
+  const [inArea, setInArea] = useState<boolean | null>(null); // is the picked spot inside the supported area
   const [size, setSize] = useState('1');
   const [unit, setUnit] = useState('acre');
   const [planting, setPlanting] = useState(monthsFromNow(1));
   const [harvest, setHarvest] = useState(monthsFromNow(11));
   const [rootPrice, setRootPrice] = useState('');
+  const [yieldClass, setYieldClass] = useState(11.25); // t/ha class sent as yieldInfo.current_field_yield
+  const [plantingWindow, setPlantingWindow] = useState(1);
+  const [harvestWindow, setHarvestWindow] = useState(1);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [prices, setPrices] = useState<Record<string, string>>({});
   const [running, setRunning] = useState(false);
@@ -280,11 +287,13 @@ const RecommendScreen: React.FC<{ country: Country; call: Call; record: Record_ 
   const chosen = loaded?.fertilizers.fertilizers.filter(f => selected[f.key]) ?? [];
   const problem =
     pos.lat === undefined ? 'Click your field on the map' :
+    inArea === false ? 'The chosen spot is outside the supported area; pick a point inside the green area' :
     !(Number(size) > 0) ? 'Enter the field size' :
-    !planting || !harvest || harvest <= planting ? 'The harvest date must be after the planting date' :
-    !(Number(rootPrice) > 0) ? 'Enter the cassava root price per tonne' :
+    dateProblem(planting, harvest) ??
+    (!(Number(rootPrice) > 0) ? 'Enter the cassava root price per tonne' :
     chosen.length === 0 ? 'Select at least one fertilizer you can buy' :
-    chosen.some(f => !(Number(prices[f.key]) > 0)) ? 'Enter a price for each selected fertilizer' : null;
+    chosen.some(f => !(Number(prices[f.key]) > 0)) ? 'Enter a price for each selected fertilizer' : null);
+  const harvestLimits = harvestRange(planting);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -295,8 +304,9 @@ const RecommendScreen: React.FC<{ country: Country; call: Call; record: Record_ 
       const request = {
         compute_request: {
           farmInformation: { country_code: country.code, use_case: 'FR', map_lat: pos.lat, map_long: pos.lon, field_size: Number(size), area_unit: unit },
-          planting: { planting_date: planting, harvest_date: harvest },
+          planting: { planting_date: planting, harvest_date: harvest, planting_date_window: plantingWindow, harvest_date_window: harvestWindow },
           cassava: { unit_price: Number(rootPrice), unit_weight: 1000 },
+          yieldInfo: { current_field_yield: yieldClass },
           recommendations: { lang: 'en' },
         },
         fertilizer_list: loaded.fertilizers.fertilizers.map(f => ({
@@ -337,28 +347,40 @@ const RecommendScreen: React.FC<{ country: Country; call: Call; record: Record_ 
         <div className="d-flex flex-column gap-4">
           <section>
             <h3 className="h6">1. Where is your field?</h3>
-            <MapPicker lat={pos.lat} lon={pos.lon} country={country.code} onChange={(lat, lon) => setPos({ lat, lon })} />
+            <MapPicker lat={pos.lat} lon={pos.lon} country={country.code} onChange={(lat, lon) => setPos({ lat, lon })} onCoverage={setInArea} />
           </section>
 
           <section>
-            <h3 className="h6">2. How big is it?</h3>
-            <div className="input-group" style={{ maxWidth: '16rem' }}>
+            <h3 className="h6">2. How big is it, and what yield do you get?</h3>
+            <div className="input-group mb-3" style={{ maxWidth: '16rem' }}>
               <input type="number" min="0" step="any" className="form-control" aria-label="Field size" value={size} onChange={e => setSize(e.target.value)} />
               <select className="form-select" aria-label="Unit" value={unit} onChange={e => setUnit(e.target.value)}>
                 {AREA_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
               </select>
             </div>
+            <div style={{ maxWidth: '24rem' }}><YieldSelect id="g-yield" value={yieldClass} onChange={setYieldClass} /></div>
           </section>
 
           <section>
             <h3 className="h6">3. When will you plant and harvest?</h3>
             <div className="row g-2">
               <div className="col-sm-6"><label className="form-label small mb-1" htmlFor="g-plant">Planting date</label>
-                <input id="g-plant" type="date" className="form-control" value={planting} onChange={e => setPlanting(e.target.value)} /></div>
+                <input id="g-plant" type="date" className="form-control" value={planting} min={plantingMin()} onChange={e => setPlanting(e.target.value)} /></div>
               <div className="col-sm-6"><label className="form-label small mb-1" htmlFor="g-harvest">Harvest date</label>
-                <input id="g-harvest" type="date" className="form-control" value={harvest} onChange={e => setHarvest(e.target.value)} /></div>
+                <input id="g-harvest" type="date" className="form-control" value={harvest} min={harvestLimits.min} max={harvestLimits.max}
+                  onChange={e => setHarvest(e.target.value)} /></div>
             </div>
-            <div className="form-text">Not sure? Cassava is usually harvested 10 to 12 months after planting.</div>
+            <div className="row g-2 mt-1">
+              <div className="col-sm-6"><label className="form-label small mb-1" htmlFor="g-pw">Could you plant earlier or later by up to</label>
+                <select id="g-pw" className="form-select" value={plantingWindow} onChange={e => setPlantingWindow(Number(e.target.value))}>
+                  {WINDOWS.map(w => <option key={w} value={w}>{windowLabel(w)}</option>)}
+                </select></div>
+              <div className="col-sm-6"><label className="form-label small mb-1" htmlFor="g-hw">Could you harvest earlier or later by up to</label>
+                <select id="g-hw" className="form-select" value={harvestWindow} onChange={e => setHarvestWindow(Number(e.target.value))}>
+                  {WINDOWS.map(w => <option key={w} value={w}>{windowLabel(w)}</option>)}
+                </select></div>
+            </div>
+            <div className="form-text">Planting up to 6 months back; harvest 8 to 12 months after planting (cassava is usually harvested 10 to 12).</div>
           </section>
 
           <section>

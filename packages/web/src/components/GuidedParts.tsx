@@ -25,6 +25,49 @@ export const addMonths = (base: Date | string, months: number, days = 0) => {
 };
 export const monthsFromNow = (months: number) => addMonths(new Date(), months);
 
+// The cassava yield classes of the AKILIMO app, in t/ha of fresh roots; the value sent as
+// yieldInfo.current_field_yield. The compute service treats 15 or more as a high yield: for planting
+// practices tillage only pays on high-yield fields, so a low class always ends in "do not plough".
+export const YIELD_CLASSES = [
+  { value: 3.75, label: 'Very low: under 7.5 t/ha' },
+  { value: 11.25, label: 'Low: 7.5 to 15 t/ha' },
+  { value: 18.75, label: 'Medium: 15 to 22.5 t/ha' },
+  { value: 26.25, label: 'High: 22.5 to 30 t/ha' },
+  { value: 33.75, label: 'Very high: over 30 t/ha' },
+];
+
+export const YieldSelect: React.FC<{ id: string; value: number; onChange: (value: number) => void }> = ({ id, value, onChange }) => (
+  <>
+    <label className="form-label small mb-1" htmlFor={id}>What cassava yield do you get now (fresh roots per hectare)?</label>
+    <select id={id} className="form-select" value={value} onChange={e => onChange(Number(e.target.value))}>
+      {YIELD_CLASSES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+    </select>
+    <div className="form-text">In a normal season; 1 acre is about 0.4 ha. The advice depends on it: ploughing and ridging only pay on fields yielding 15 t/ha or more.</div>
+  </>
+);
+
+// Date limits for every planting and harvest picker: planting no more than 6 months in the past from
+// today, and the harvest from about 8 months up to 1 year after the chosen planting date
+export const plantingMin = () => monthsFromNow(-6);
+export const harvestRange = (planting: string) => ({
+  min: addMonths(planting || new Date(), 7, 24),
+  max: addMonths(planting || new Date(), 12),
+});
+
+// How far the planting or harvest date can shift (0, 1 or 2 months): planting_date_window and harvest_date_window
+export const WINDOWS = [0, 1, 2];
+export const windowLabel = (months: number) => (months === 0 ? 'No change' : `${months} month${months > 1 ? 's' : ''}`);
+
+// What is wrong with the chosen dates, or null when they are fine
+export function dateProblem(planting: string, harvest: string): string | null {
+  if (!planting) return 'Choose the planting date';
+  if (planting < plantingMin()) return 'The planting date cannot be more than 6 months in the past';
+  const { min, max } = harvestRange(planting);
+  if (!harvest || harvest < min) return 'The harvest must be at least 8 months after planting';
+  if (harvest > max) return 'The harvest must be within 1 year of planting';
+  return null;
+}
+
 // Generic result view: the compute answers have many fields; show them all, readably
 export const Value: React.FC<{ value: unknown; depth?: number }> = ({ value, depth = 0 }) => {
   if (value === null || value === undefined || value === '') return <span className="text-body-secondary">–</span>;

@@ -1,20 +1,21 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import ReactMarkdown from 'react-markdown';
-import { Bot, Compass, History, MessageSquare, Loader2, MapPin, RotateCcw, Send, Settings2, Square, Trash2, User, Wrench, X } from 'lucide-react';
+import { Bot, CalendarDays, Compass, History, MessageSquare, Loader2, MapPin, RotateCcw, Send, Settings2, Square, Trash2, User, Wrench, X } from 'lucide-react';
 import {
   appendMessages, createConversation, deleteConversation, getConversation, listConversations,
   type ConversationSummary, type User as Account,
 } from '../account/api';
 import { streamChat, type AgentStep, type ProviderId } from '../llm/api';
 import type { ChatMessage } from '../llm/types';
-import { COUNTRIES, akilimoExamples, contextExamples, findCountry } from '@akilimo/shared';
+import { COUNTRIES, adviceTypes, akilimoExamples, contextExamples, findCountry } from '@akilimo/shared';
 import { useLlm } from '../llm/useLlm';
 import { read, write } from '../mcp/keys';
 import type { McpServerConfig } from '../mcp/servers';
 import type { ServerState } from '../mcp/useMcpServers';
 import { isGuidedEntry, type GuidedEntry } from '../mcp/guided';
 import { GuidedPanel } from './GuidedPanel';
+import { WINDOWS, dateProblem, harvestRange, monthsFromNow, plantingMin, windowLabel } from './GuidedParts';
 import { LlmSettings } from './LlmSettings';
 import { MapPicker } from './MapPicker';
 
@@ -76,6 +77,9 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
   const country = findCountry(countryCode);
 
   const [showMap, setShowMap] = useState(false);
+  const [showDates, setShowDates] = useState(false);
+  const [pickedInArea, setPickedInArea] = useState<boolean | null>(null); // is the picked spot inside the supported area
+  const [dates, setDates] = useState({ planting: monthsFromNow(1), harvest: monthsFromNow(11), plantingWindow: 1, harvestWindow: 1 });
   const [picked, setPicked] = useState<{ lat?: number; lon?: number; country?: string }>(() => ({ country: countryCode || undefined }));
 
   // Saved conversation of a signed-in user; writes are chained so messages keep their order
@@ -290,6 +294,17 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
     }
   };
 
+  // Planting and harvest dates picked on a calendar, sent as one message the assistant can read exactly
+  const harvestLimits = harvestRange(dates.planting);
+  const datesProblem = dateProblem(dates.planting, dates.harvest);
+
+  const sendDates = () => {
+    if (datesProblem) return;
+    setShowDates(false);
+    const shift = (what: string, months: number) => (months === 0 ? `${what} cannot shift` : `${what} can shift by up to ${months} month${months > 1 ? 's' : ''}`);
+    send(`I plan to plant on ${dates.planting} and harvest on ${dates.harvest}. Planting window: ${dates.plantingWindow}, harvest window: ${dates.harvestWindow} (${shift('planting', dates.plantingWindow)}, ${shift('harvest', dates.harvestWindow)}).`);
+  };
+
   const sendLocation = () => {
     if (picked.lat === undefined || picked.lon === undefined) return;
     setShowMap(false);
@@ -498,17 +513,76 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
             </div>
             <MapPicker lat={picked.lat} lon={picked.lon} country={picked.country}
               onChange={(lat, lon) => setPicked(p => ({ ...p, lat, lon }))}
-              onCountry={(country) => setPicked(p => ({ ...p, country }))} />
+              onCountry={(country) => setPicked(p => ({ ...p, country }))}
+              onCoverage={setPickedInArea} />
             <button type="button" className="btn btn-sm btn-akilimo mt-2" onClick={sendLocation}
-              disabled={picked.lat === undefined}>
+              disabled={picked.lat === undefined || pickedInArea === false}
+              title={pickedInArea === false ? 'This spot is outside the supported area' : undefined}>
               Send this location
             </button>
           </div>
         )}
+        {country && canChat && (
+          <div className="d-flex flex-wrap align-items-center gap-1 mb-2">
+            <span className="small text-body-secondary me-1">Advice:</span>
+            {adviceTypes(country).map(a => (
+              <button key={a.id} type="button" className="btn btn-sm btn-outline-success py-0" onClick={() => send(a.prompt)} disabled={!model}
+                title={a.prompt}>
+                {a.label}
+              </button>
+            ))}
+          </div>
+        )}
+        {showDates && (
+          <div className="border rounded p-2 mb-2 bg-body">
+            <div className="d-flex align-items-center mb-2">
+              <span className="small fw-semibold">When will you plant and harvest?</span>
+              <button type="button" className="btn btn-sm btn-link ms-auto p-0" onClick={() => setShowDates(false)} aria-label="Close dates">
+                <X size={16} />
+              </button>
+            </div>
+            <div className="row g-2">
+              <div className="col-sm-6">
+                <label className="form-label small mb-1" htmlFor="chat-plant">Planting date</label>
+                <input id="chat-plant" type="date" className="form-control form-control-sm" value={dates.planting} min={plantingMin()}
+                  onChange={e => setDates(d => ({ ...d, planting: e.target.value }))} />
+              </div>
+              <div className="col-sm-6">
+                <label className="form-label small mb-1" htmlFor="chat-harvest">Harvest date</label>
+                <input id="chat-harvest" type="date" className="form-control form-control-sm" value={dates.harvest}
+                  min={harvestLimits.min} max={harvestLimits.max}
+                  onChange={e => setDates(d => ({ ...d, harvest: e.target.value }))} />
+              </div>
+              <div className="col-sm-6">
+                <label className="form-label small mb-1" htmlFor="chat-plant-window">Planting can shift by up to</label>
+                <select id="chat-plant-window" className="form-select form-select-sm" value={dates.plantingWindow}
+                  onChange={e => setDates(d => ({ ...d, plantingWindow: Number(e.target.value) }))}>
+                  {WINDOWS.map(w => <option key={w} value={w}>{windowLabel(w)}</option>)}
+                </select>
+              </div>
+              <div className="col-sm-6">
+                <label className="form-label small mb-1" htmlFor="chat-harvest-window">Harvest can shift by up to</label>
+                <select id="chat-harvest-window" className="form-select form-select-sm" value={dates.harvestWindow}
+                  onChange={e => setDates(d => ({ ...d, harvestWindow: Number(e.target.value) }))}>
+                  {WINDOWS.map(w => <option key={w} value={w}>{windowLabel(w)}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="form-text">Planting up to 6 months back; harvest 8 to 12 months after planting (cassava is usually harvested 10 to 12).</div>
+            <div className="d-flex align-items-center gap-2 mt-2">
+              <button type="button" className="btn btn-sm btn-akilimo" onClick={sendDates} disabled={!!datesProblem}>Send these dates</button>
+              {datesProblem && <span className="small text-body-secondary">{datesProblem}</span>}
+            </div>
+          </div>
+        )}
         <form className="input-group" onSubmit={e => { e.preventDefault(); send(input); }}>
-          <button type="button" className="btn btn-outline-secondary" onClick={() => setShowMap(v => !v)}
+          <button type="button" className="btn btn-outline-secondary" onClick={() => { setShowMap(v => !v); setShowDates(false); }}
             title="Share the field location on a map" aria-label="Share field location" disabled={!country}>
             <MapPin size={16} />
+          </button>
+          <button type="button" className="btn btn-outline-secondary" onClick={() => { setShowDates(v => !v); setShowMap(false); }}
+            title="Choose the planting and harvest dates" aria-label="Choose planting and harvest dates" disabled={!country}>
+            <CalendarDays size={16} />
           </button>
           <input className="form-control" placeholder={!canChat ? 'Sign in to chat…' : !country ? 'Choose your country first…' : model ? 'Type your question…' : 'Waiting for a model…'}
             value={input} onChange={e => setInput(e.target.value)} aria-label="Message" disabled={!model || !country || !canChat} />
