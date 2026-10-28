@@ -13,10 +13,12 @@ export interface User {
   username: string;
   name: string;
   role: Role;
+  // The user's choice to let the AI chat search the internet, for every conversation
+  web_search: boolean;
 }
 
 // The fields every API response and req.user carry
-export const USER_SELECT = { id: users.id, email: users.email, username: users.username, name: users.name, role: users.role };
+export const USER_SELECT = { id: users.id, email: users.email, username: users.username, name: users.name, role: users.role, web_search: users.webSearch };
 
 // Usernames never contain "@", so sign-in can tell them apart from emails
 export const UsernameSchema = z.string({ error: "Choose a username" }).trim().toLowerCase()

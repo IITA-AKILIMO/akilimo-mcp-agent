@@ -2,8 +2,11 @@ import express, { type NextFunction, type Request, type Response } from "express
 import { z } from "zod/v4";
 import { findCountry, type ChatMessage } from "@akilimo/shared";
 import { loadUser, rateLimit, requireAdmin, requireJson, requireUser } from "../accounts/auth.js";
+import type { AkilimoApiClient } from "../api/client.js";
+import { fetchCountries } from "../countries/list.js";
 import type { Db } from "../db/index.js";
 import type { Registry } from "../gateway/registry.js";
+import { WEB_SERVER, runWebSearch, searchWeb, webSearchTool } from "./websearch.js";
 import { runAgent } from "./agent.js";
 import { openTools } from "./mcp.js";
 import { chat, listModels, pickDefaultModel, testProvider } from "@akilimo/llm";
@@ -26,8 +29,18 @@ const ChatRequestSchema = z.object({
   model: z.string().min(1).max(200),
   country: z.string().length(2).optional(),
   // The crop chosen in the selector; it only changes what the assistant is told (see CropChoice)
+  // Only used without accounts: with accounts the user's profile setting (users.web_search) decides
+  webSearch: z.boolean().optional(),
   crop: z.object({ key: z.string().regex(/^[a-z0-9_]{1,50}$/), name: z.string().min(1).max(100), advice_available: z.boolean() }).optional(),
   messages: z.array(MessageSchema).min(1).max(400),
+});
+
+const WebSearchChangeSchema = z.object({
+  provider: z.string().max(20).optional(),
+  baseUrl: z.union([z.literal(""), z.url({ protocol: /^https?$/, error: "Use an http(s) URL" })]).optional(),
+  apiKey: z.string().trim().min(1).max(500).optional(),
+  clearKey: z.boolean().optional(),
+  enabled: z.boolean().optional(),
 });
 
 const ProviderChangeSchema = z.object({
@@ -46,7 +59,7 @@ const sendError = (res: Response, error: unknown) => {
 // The chat's server side: it holds the provider settings and keys (encrypted in the database), calls
 // the model, runs the MCP tool calls and streams the conversation back as newline-delimited JSON.
 // With accounts enabled only signed-in users can chat, because the keys belong to the organisation.
-export function chatRouter(settings: ChatSettings, registry: Registry, db: Db | null) {
+export function chatRouter(settings: ChatSettings, registry: Registry, db: Db | null, api: AkilimoApiClient) {
   const router = express.Router();
   const withUser = db ? loadUser(db) : passThrough;
   const signedIn = db ? [withUser, requireUser] : [passThrough];
@@ -63,6 +76,15 @@ export function chatRouter(settings: ChatSettings, registry: Registry, db: Db | 
           ? all
           : all.filter((p) => p.enabled && p.configured).map(({ id, label }) => ({ id, label })),
       });
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  // What this server can offer beyond the models: web search exists only when a search service is configured
+  router.get("/capabilities", ...signedIn, async (_req, res) => {
+    try {
+      res.json({ webSearch: { available: (await settings.webSearchStatus()).available } });
     } catch (error) {
       sendError(res, error);
     }
@@ -117,7 +139,16 @@ export function chatRouter(settings: ChatSettings, registry: Registry, db: Db | 
     // Stop the model call and tool calls when the user presses Stop (the browser closes the request)
     const abort = new AbortController();
     res.on("close", () => { if (!res.writableEnded) abort.abort(); });
+    // The supported countries come from the API; if they cannot be read the chat still works, just without the country note
+    const countries = await fetchCountries(api).catch(() => []);
     const session = await openTools(registry, keys);
+    // The user's choice, and only if a search service is set up; otherwise the model never sees the tool
+    // A signed-in user's profile decides (their setting applies to every conversation and the request cannot
+    // override it); without accounts there is no profile, so the request's own switch is used
+    const wantsSearch = req.user ? req.user.web_search : body.webSearch === true;
+    const searchConfig = wantsSearch ? await settings.webSearchConfig().catch(() => null) : null;
+    const webSearch = searchConfig !== null;
+    if (wantsSearch && !webSearch) session.warnings.push("Web search is not set up on this server, so it was not used");
     // A slow model can take minutes without sending anything, and proxies close connections that stay
     // silent; a small line every 15 s keeps the stream open (the client ignores it)
     const heartbeat = setInterval(() => send({ type: "ping" }), 15_000);
@@ -126,9 +157,10 @@ export function chatRouter(settings: ChatSettings, registry: Registry, db: Db | 
       await runAgent({
         chat: (messages, tools, signal) => chat(provider, body.model, messages, tools, signal),
         history: body.messages as ChatMessage[],
-        tools: session.tools,
-        callTool: session.callTool,
-        country: findCountry(body.country?.toUpperCase()),
+        tools: webSearch ? [...session.tools, webSearchTool] : session.tools,
+        callTool: (server, name, args, signal) => (server === WEB_SERVER ? runWebSearch(searchConfig!, args, signal) : session.callTool(server, name, args, signal)),
+        webSearch,
+        country: findCountry(countries, body.country),
         crop: body.crop,
         signal: abort.signal,
         onMessage: (message) => send({ type: "message", message }),
@@ -149,6 +181,40 @@ export function chatRouter(settings: ChatSettings, registry: Registry, db: Db | 
   });
 
   // ── admin: provider settings and the keys of upstream MCP servers ───────────
+
+  // Web search service: set by an admin (key encrypted), the SEARCH_* variables are the fallback
+  router.get("/admin/web-search", ...admin, async (_req, res) => {
+    try {
+      res.json(await settings.webSearchStatus());
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  router.put("/admin/web-search", express.json(), ...admin, async (req, res) => {
+    try {
+      await settings.updateWebSearch(WebSearchChangeSchema.parse(req.body));
+      res.json(await settings.webSearchStatus());
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  // One real search with the saved setup, so an admin sees whether it works before anyone relies on it
+  router.post("/admin/web-search/test", express.json(), ...admin, async (_req, res) => {
+    const started = Date.now();
+    try {
+      const config = await settings.webSearchConfig();
+      if (!config) {
+        res.json({ ok: false, ms: 0, error: "Web search is not set up, is incomplete or is turned off" });
+        return;
+      }
+      const hits = await searchWeb(config, "cassava price");
+      res.json({ ok: true, ms: Date.now() - started, hits: hits.length, first: hits[0]?.title ?? null });
+    } catch (error) {
+      res.json({ ok: false, ms: Date.now() - started, error: error instanceof Error ? error.message : String(error) });
+    }
+  });
 
   router.put("/admin/providers/:id", express.json(), ...admin, async (req, res) => {
     try {

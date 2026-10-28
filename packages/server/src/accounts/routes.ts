@@ -40,6 +40,8 @@ const ConversationSchema = z.object({
 
 const RoleSchema = z.object({ role: z.enum(["user", "admin"]) });
 
+const PreferencesSchema = z.object({ web_search: z.boolean({ error: "web_search must be true or false" }) });
+
 const ActivitySchema = z.object({
   type: z.string().max(40),
   server: z.string().max(100),
@@ -141,6 +143,13 @@ export function apiRouter(db: Db | null) {
 
   // Everything below belongs to the signed-in user only
   router.use(requireUser);
+
+  // The user's own settings; today only whether the AI chat may search the internet (off until they turn it on)
+  router.patch("/auth/preferences", handle(async (req, res) => {
+    const { web_search } = PreferencesSchema.parse(req.body);
+    const [user] = await db.update(users).set({ webSearch: web_search }).where(eq(users.id, req.user!.id)).returning(USER_SELECT);
+    res.json({ user });
+  }));
 
   // ── Conversations ─────────────────────────────────────────────────────────
   router.get("/conversations", handle(async (req, res) => {

@@ -20,6 +20,8 @@ export const users = pgTable("users", {
   name: text("name").notNull(),
   passwordHash: text("password_hash").notNull(),
   role: roleEnum("role").notNull().default("user"),
+  // The user's own choice to let the AI chat search the internet, for every conversation (off by default)
+  webSearch: boolean("web_search").notNull().default(false),
   createdAt: timestamptz("created_at").notNull().defaultNow(),
 }, (t) => [
   uniqueIndex("users_email_key").on(t.email),
@@ -113,6 +115,19 @@ export const mcpServerKeys = pgTable("mcp_server_keys", {
   serverId: text("server_id").primaryKey(),
   keyEnc: text("key_enc").notNull(),
   keyHint: text("key_hint").notNull(),
+  updatedAt: timestamptz("updated_at").notNull().defaultNow(),
+});
+
+// The chat's web search service, set by an admin (one row, id "default"). The key is encrypted like the
+// provider keys; without a row the SEARCH_* environment variables are used, and enabled false turns
+// search off whatever the environment says.
+export const webSearchSettings = pgTable("web_search_settings", {
+  id: text("id").primaryKey(),
+  provider: text("provider"),
+  baseUrl: text("base_url"),
+  apiKeyEnc: text("api_key_enc"),
+  keyHint: text("key_hint"),
+  enabled: boolean("enabled").notNull().default(true),
   updatedAt: timestamptz("updated_at").notNull().defaultNow(),
 });
 

@@ -1,8 +1,9 @@
 import { eq } from "drizzle-orm";
 import type { Db } from "../db/index.js";
-import { llmProviders, mcpServerKeys } from "../db/schema.js";
+import { llmProviders, mcpServerKeys, webSearchSettings } from "../db/schema.js";
 import { keyHint, SecretBox } from "../secrets/crypto.js";
 import { PROVIDERS, providerInfo, type ProviderId, type ProviderInfo, type ResolvedProvider } from "@akilimo/llm";
+import { envSearchConfig, isSearchProvider, validConfig, type SearchConfig, type SearchProviderId } from "./websearch.js";
 
 export class SettingsError extends Error {
   constructor(readonly status: number, message: string) {
@@ -21,6 +22,18 @@ export interface ProviderStatus {
   keyHint: string | null; // last characters of the saved key, never the key
   editableBase: boolean;
 }
+
+export interface WebSearchStatus {
+  provider: SearchProviderId | null;
+  baseUrl: string | null; // searxng only
+  keyHint: string | null; // last characters of the saved key, never the key
+  enabled: boolean;
+  // admin: saved in the database; env: from the SEARCH_* variables; none: nothing set up
+  source: "admin" | "env" | "none";
+  available: boolean; // usable now: set up, complete and not turned off
+}
+
+const WEB_SEARCH_ID = "default";
 
 // Provider settings and MCP server keys: plain settings and encrypted secrets in the accounts
 // database. Without a database only Ollama (from OLLAMA_BASE_URL) is usable; without SECRETS_KEY
@@ -100,6 +113,61 @@ export class ChatSettings {
     }
     if (change.enabled !== undefined) values.enabled = change.enabled;
     await db.insert(llmProviders).values({ id: info.id, ...values }).onConflictDoUpdate({ target: llmProviders.id, set: values });
+  }
+
+  // ── web search ────────────────────────────────────────────────────────────
+
+  private async webSearchRow() {
+    if (!this.db) return undefined;
+    return (await this.db.select().from(webSearchSettings).where(eq(webSearchSettings.id, WEB_SEARCH_ID)))[0];
+  }
+
+  // The service to search with, or null when search is off or incomplete. An admin setting wins over the
+  // environment; turning it off there also turns off an environment setup.
+  async webSearchConfig(): Promise<SearchConfig | null> {
+    const row = await this.webSearchRow();
+    if (row && !row.enabled) return null;
+    if (row?.provider) {
+      const key = row.apiKeyEnc ? this.requireBox().decrypt(row.apiKeyEnc) : "";
+      return validConfig(row.provider, key, row.baseUrl ?? "");
+    }
+    return envSearchConfig();
+  }
+
+  async webSearchStatus(): Promise<WebSearchStatus> {
+    const row = await this.webSearchRow();
+    const env = envSearchConfig();
+    const source = row?.provider ? "admin" : env ? "env" : "none";
+    const provider = row?.provider ? (isSearchProvider(row.provider) ? row.provider : null) : env?.provider ?? null;
+    let available = false;
+    try { available = (await this.webSearchConfig()) !== null; } catch { /* a saved key that cannot be read (SECRETS_KEY changed) is not usable */ }
+    return {
+      provider,
+      baseUrl: row?.provider ? row.baseUrl ?? null : env?.provider === "searxng" ? env.url : null,
+      keyHint: row?.provider ? row.keyHint ?? null : env?.apiKey ? keyHint(env.apiKey) : null,
+      enabled: row?.enabled ?? true,
+      source,
+      available,
+    };
+  }
+
+  async updateWebSearch(change: { provider?: string | undefined; baseUrl?: string | undefined; apiKey?: string | undefined; clearKey?: boolean | undefined; enabled?: boolean | undefined }): Promise<void> {
+    const db = this.requireDb();
+    const values: Partial<typeof webSearchSettings.$inferInsert> = { updatedAt: new Date() };
+    if (change.provider !== undefined) {
+      if (change.provider !== "" && !isSearchProvider(change.provider)) throw new SettingsError(400, "Choose brave, tavily or searxng");
+      values.provider = change.provider || null;
+    }
+    if (change.baseUrl !== undefined) values.baseUrl = change.baseUrl || null;
+    if (change.apiKey !== undefined) {
+      values.apiKeyEnc = this.requireBox().encrypt(change.apiKey);
+      values.keyHint = keyHint(change.apiKey);
+    } else if (change.clearKey) {
+      values.apiKeyEnc = null;
+      values.keyHint = null;
+    }
+    if (change.enabled !== undefined) values.enabled = change.enabled;
+    await db.insert(webSearchSettings).values({ id: WEB_SEARCH_ID, ...values }).onConflictDoUpdate({ target: webSearchSettings.id, set: values });
   }
 
   // ── keys for upstream MCP servers ──────────────────────────────────────────

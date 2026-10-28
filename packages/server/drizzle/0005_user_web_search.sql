@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD COLUMN "web_search" boolean DEFAULT false NOT NULL;
