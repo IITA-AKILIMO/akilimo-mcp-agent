@@ -1,6 +1,7 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { ChatMessage, Country, ToolSpec } from "@akilimo/shared";
 import type { AgentTool } from "./mcp.js";
+import { localizeNote } from "../currency/localize.js";
 import { webSearchTool } from "./websearch.js";
 
 // The crop the user picked (from the API's crop list); advice_available false means no recommendations exist for it yet
@@ -30,7 +31,7 @@ Example. User: "Is it a good week to plant cassava in Ibadan?" Good answer: "Rig
 
 Rules:
 - Use the tools for every fact. Only state prices, fertilizer names, rates and dates that appear in tool results. Never invent them, and do not expand fertilizer abbreviations (SSP, MOP, CAN, ...) unless a tool result spells them out.
-- Give prices with the currency from the tool result. Always show money in the country's local currency: when a price or cost is in another currency (US dollars or euros found on the web, or typed by the user), call convert_currency (with the countryCode) and show the local amount together with the original amount and the rate date; never convert with a rate you remember or guess.
+- Give prices with the currency from the tool result. Whenever you report figures found on the web (prices, market data), finish with a short Markdown summary table (Item, Price in local currency, Original price, Source url, As of); figures that AKILIMO could not find or the web did not give are left out of the table, not guessed. Always show money in the country's local currency: when a price or cost is in another currency (US dollars or euros found on the web, or typed by the user), call convert_currency (with the countryCode) and show the local amount together with the original amount and the rate date; never convert with a rate you remember or guess.
 - Never answer a question about one crop with the numbers of another. If the user asks about a crop that AKILIMO does not list (get_crops), or a country or item the tools have no data for, say that AKILIMO has no data for it; never fill the gap with a different crop's price or an invented figure (a price that is missing or null in a tool result is missing, not zero and not a guess). If web search is available, use it for that question as described below; if not, say it is not available and offer what AKILIMO can do.
 - Ask for missing information one or two questions at a time, in plain, friendly language. Suggest typical values when the user is unsure (for example planting next month and harvesting 10 to 12 months later, a 1 acre field).
 - As soon as you have a field location, call check_location with the country and the coordinates. If covered is false, tell the user the spot is outside the area AKILIMO supports and ask them to pick another one (the map shows the supported area); do not call compute_recommendations for it. If covered is true or null, carry on.
@@ -157,7 +158,7 @@ const NOT_FOUND = /\b(?:does\s?n[o']t|do\s?n[o']t|did\s?n[o']t|cannot|can['’]?
 
 // The step added after a recommendation when web search is on
 const NO_EXTRA = /^no extra web information found\.?$/i;
-const ENRICH = "Now add context from the web for the farmer, as a separate short section headed 'From the web'. Call web__web_search once (a short query without personal details: the country, the crop and the market or input prices that matter for this recommendation, for example current fertilizer or cassava prices). Then reply with ONLY that section: up to 3 bullets, each with its url; convert any price that is not in the local currency with convert_currency and show the original amount, the rate and the rate date. Do not repeat or change the AKILIMO recommendation and give no agronomic advice from the web. If nothing useful is found, reply with exactly: No extra web information found.";
+const ENRICH = "Now add context from the web for the farmer, as a separate short section headed 'From the web'. Call web__web_search once (a short query without personal details: the country, the crop and the market or input prices that matter for this recommendation, for example current fertilizer or cassava prices). Then reply with ONLY that section: up to 3 short bullets, each with its url, followed by a Markdown summary table (| Item | Price in local currency | Original price | Source url | As of |); convert any price that is not in the local currency with convert_currency and show the original amount, the rate and the rate date. Do not repeat or change the AKILIMO recommendation and give no agronomic advice from the web. If nothing useful is found, reply with exactly: No extra web information found.";
 
 // One user turn: let the model call tools until it answers in text (bounded to avoid loops)
 export async function runAgent({ chat, history, tools, callTool, onMessage, onStep, signal, country, crop, webSearch, countries }: RunOptions): Promise<void> {
@@ -181,7 +182,7 @@ export async function runAgent({ chat, history, tools, callTool, onMessage, onSt
     if (enriched && !reply.tool_calls?.length && NO_EXTRA.test(reply.content.trim())) return;
     if (webSearch && !searched && !searchNudged && !reply.tool_calls?.length && NOT_FOUND.test(reply.content)) {
       searchNudged = true;
-      conversation.push({ role: "user", content: "AKILIMO has no answer to the user's question. Call web__web_search now (a short query without personal details), then answer from the results as web information with the url, saying AKILIMO had no data. Do not use another crop's numbers." });
+      conversation.push({ role: "user", content: "AKILIMO has no answer to the user's question. Call web__web_search now (a short query without personal details), then answer from the results as web information with the urls, saying AKILIMO had no data, and end with a short Markdown summary table (| Item | Price in local currency | Original price | Source url | As of |) of the figures you found. Do not use another crop's numbers." });
       continue;
     }
     if (!reply.tool_calls?.length && !reply.content.trim()) {
@@ -191,6 +192,12 @@ export async function runAgent({ chat, history, tools, callTool, onMessage, onSt
         continue;
       }
       reply = { role: "assistant", content: "I could not put an answer together this time. Please try again, or ask in a different way." };
+    }
+    // Money in another currency is converted by the server, whatever the model did: a note with the local
+    // amounts (live rates, dated) is added to the final answer
+    if (!reply.tool_calls?.length && country?.currency) {
+      const note = await localizeNote(reply.content, country.currency).catch(() => null);
+      if (note) reply = { ...reply, content: reply.content + note };
     }
     conversation.push(reply);
     onMessage(reply);
