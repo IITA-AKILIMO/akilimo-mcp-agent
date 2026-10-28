@@ -65,6 +65,7 @@ interface StreamOptions {
   provider: ProviderId;
   model: string;
   country?: string;
+  crop?: { key: string; name: string; advice_available: boolean };
   messages: ChatMessage[]; // user/assistant/tool messages so far, without the system prompt
   signal?: AbortSignal;
   onMessage: (message: ChatMessage) => void; // every message the server adds to the conversation
@@ -81,12 +82,12 @@ type StreamEvent =
   | { type: 'done' };
 
 // One user turn: the server runs the agent loop and streams events as newline-delimited JSON
-export async function streamChat({ provider, model, country, messages, signal, onMessage, onStep, onWarning }: StreamOptions): Promise<void> {
+export async function streamChat({ provider, model, country, crop, messages, signal, onMessage, onStep, onWarning }: StreamOptions): Promise<void> {
   const res = await fetch('/chat', {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ provider, model, country, messages }),
+    body: JSON.stringify({ provider, model, country, crop, messages }),
     signal,
   });
   if (!res.ok) await fail(res);

@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Bot, CalendarDays, Compass, History, MessageSquare, Loader2, MapPin, RotateCcw, Send, Settings2, Square, Trash2, User, Wrench, X } from 'lucide-react';
+import { Bot, CalendarDays, Check, ChevronRight, Sparkles, Compass, History, Leaf, MessageSquare, Ruler, Shovel, Sprout, Wheat, Loader2, MapPin, RotateCcw, Send, Settings2, Square, Trash2, User, Wrench, X } from 'lucide-react';
 import {
   appendMessages, createConversation, deleteConversation, getConversation, listConversations,
   type ConversationSummary, type User as Account,
@@ -15,6 +15,10 @@ import { read, write } from '../mcp/keys';
 import type { McpServerConfig } from '../mcp/servers';
 import type { ServerState } from '../mcp/useMcpServers';
 import { isGuidedEntry, type GuidedEntry } from '../mcp/guided';
+import { ADVICE, ADVICE_ICONS, intercropCrop } from './AdviceScreens';
+import { useCrops, savedCropKey, saveCropKey } from '../mcp/crops';
+import { FertilizerPicker } from './FertilizerPicker';
+import { FieldPicker, IntercropPicker, PracticesPicker, Shell } from './ChatPickers';
 import { GuidedPanel } from './GuidedPanel';
 import { WINDOWS, dateProblem, harvestRange, monthsFromNow, plantingMin, windowLabel } from './GuidedParts';
 import { LlmSettings } from './LlmSettings';
@@ -76,9 +80,18 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
   // The chat starts by asking where the user farms; the answer is remembered in this browser
   const [countryCode, setCountryCode] = useState<string>(() => read<string>(COUNTRY_KEY, ''));
   const country = findCountry(countryCode);
+  // The crop selector: the list comes from the Akilimo API; a crop without recommendations only gets prices and information
+  const crops = useCrops(countryCode || undefined);
+  const [cropKey, setCropKey] = useState(savedCropKey);
+  const crop = crops.find(c => c.key === cropKey) ?? crops[0];
+  const adviceReady = crop?.advice_available !== false;
+  const cropName = (crop?.name ?? 'cassava').toLowerCase();
 
   const [showMap, setShowMap] = useState(false);
   const [showDates, setShowDates] = useState(false);
+  const [showFertilizers, setShowFertilizers] = useState(false);
+  const [showAdvice, setShowAdvice] = useState(false);
+  const [picker, setPicker] = useState<'field' | 'practices' | 'intercrop' | null>(null);
   const [pickedInArea, setPickedInArea] = useState<boolean | null>(null); // is the picked spot inside the supported area
   const [dates, setDates] = useState({ planting: monthsFromNow(1), harvest: monthsFromNow(11), plantingWindow: 1, harvestWindow: 1 });
   const [picked, setPicked] = useState<{ lat?: number; lon?: number; country?: string }>(() => ({ country: countryCode || undefined }));
@@ -209,6 +222,7 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
         provider: llm.provider as ProviderId,
         model,
         country: country?.code,
+        ...(crop ? { crop: { key: crop.key, name: crop.name, advice_available: crop.advice_available } } : {}),
         messages: history.current,
         signal: controller.signal,
         onWarning: (text) => setNotices(prev => [...prev, text]),
@@ -317,6 +331,33 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
     send(`I plan to plant on ${dates.planting} and harvest on ${dates.harvest}. Planting window: ${dates.plantingWindow}, harvest window: ${dates.harvestWindow} (${shift('planting', dates.plantingWindow)}, ${shift('harvest', dates.harvestWindow)}).`);
   };
 
+  // What the farmer has already sent through the forms, read back from the conversation so it also works
+  // for a conversation opened from the history; the chips reopen the matching form
+  const sentTexts = items.flatMap(i => (i.kind === 'user' ? [i.text] : []));
+  const sentBefore = (re: RegExp) => sentTexts.some(t => re.test(t));
+  const DETAIL_ICONS: Record<string, React.ReactNode> = {
+    location: <MapPin size={13} />, field: <Ruler size={13} />, dates: <CalendarDays size={13} />,
+    fertilizers: <Leaf size={13} />, practices: <Shovel size={13} />, intercrop: <Wheat size={13} />,
+  };
+  const ADVICE_ICON_SM: Record<string, React.ReactNode> = {
+    fertilizer: <Sprout size={13} />, practices: <Shovel size={13} />, schedule: <CalendarDays size={13} />, intercrop: <Wheat size={13} />,
+  };
+  const CHIP_HINTS: Record<string, string> = {
+    location: 'Pick your field on the map',
+    field: 'Field size, current yield, cassava price, budget and risk attitude',
+    dates: 'Planting and harvest dates',
+    fertilizers: 'The fertilizers you can buy and their prices',
+    practices: 'What you do now (ploughing, harrowing, ridging) and the costs',
+    intercrop: 'How you sell the second crop grown between the cassava, and its price',
+  };
+  const detailChips = [
+    { id: 'location', label: 'Location', done: sentBefore(/^My field is at /) },
+    { id: 'field', label: 'Field', done: sentBefore(/^My field is \d/), picker: 'field' as const },
+    { id: 'dates', label: 'Dates', done: sentBefore(/^I plan to plant on /) },
+    { id: 'fertilizers', label: 'Fertilizers', done: sentBefore(/^These are the fertilizers I can buy/) },
+    { id: 'practices', label: 'Practices', done: sentBefore(/^On this field I do now/), picker: 'practices' as const },
+    ...(country && intercropCrop(country.code) ? [{ id: 'intercrop', label: intercropCrop(country.code)!.crop === 'maize' ? 'Maize' : 'Sweet potato', done: sentBefore(/^For intercropping I grow /), picker: 'intercrop' as const }] : []),
+  ] as { id: string; label: string; done: boolean; picker?: 'field' | 'practices' | 'intercrop' }[];
   const sendLocation = () => {
     if (picked.lat === undefined || picked.lon === undefined) return;
     setShowMap(false);
@@ -352,19 +393,24 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
             <MessageSquare size={14} /> Ask AI
           </button>
         </div>
-        <select className="form-select form-select-sm w-auto ms-auto" aria-label="Country" value={countryCode}
+        <select className="form-select form-select-sm w-auto ms-auto" aria-label="Country" title="Your country: prices, fertilizers and advice are for this country" value={countryCode}
           onChange={e => chooseCountry(e.target.value)}>
           {!country && <option value="">Choose country…</option>}
           {COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.name}</option>)}
         </select>
+        <select className="form-select form-select-sm w-auto" aria-label="Crop" value={crop?.key ?? ''} disabled={busy}
+          title={crop?.advice_available === false ? `${crop.name}: prices and information only, recommendations are not available yet` : 'The crop you want advice on'}
+          onChange={e => { setCropKey(e.target.value); saveCropKey(e.target.value); }}>
+          {crops.map(c => <option key={c.key} value={c.key}>{c.name}{c.advice_available ? '' : ' (no advice yet)'}</option>)}
+        </select>
         {view === 'ai' && (
           <>
-            <select className="form-select form-select-sm w-auto" aria-label="LLM provider" value={llm.provider}
+            <select className="form-select form-select-sm w-auto" aria-label="LLM provider" title="The AI provider that answers in Ask AI" value={llm.provider}
               onChange={e => llm.setProvider(e.target.value as ProviderId)} disabled={busy || llm.providers.length === 0}>
               {llm.providers.length === 0 && <option value="">No provider</option>}
               {llm.providers.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
             </select>
-            <select className="form-select form-select-sm w-auto" aria-label="Model" value={model} style={{ maxWidth: '14rem' }}
+            <select className="form-select form-select-sm w-auto" aria-label="Model" title="The AI model; it must support tool calling" value={model} style={{ maxWidth: '14rem' }}
               onChange={e => llm.setModel(e.target.value)} disabled={llm.models.length === 0 || busy}>
               {llm.models.length === 0 && <option value="">{llm.loading ? 'Loading models…' : 'No model'}</option>}
               {llm.models.map(m => <option key={m} value={m}>{m}</option>)}
@@ -404,7 +450,7 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
                   <div className="text-truncate">{c.title}</div>
                   <div className="small text-body-secondary">{new Date(c.updated_at).toLocaleString()}</div>
                 </button>
-                <button type="button" className="btn btn-sm btn-link text-danger flex-shrink-0" aria-label={`Delete ${c.title}`}
+                <button type="button" className="btn btn-sm btn-link text-danger flex-shrink-0" aria-label={`Delete ${c.title}`} title="Delete this saved conversation"
                   onClick={() => removeConversation(c.id)}>
                   <Trash2 size={14} />
                 </button>
@@ -413,7 +459,7 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
           </div>
         )}
       </div>
-      {view === 'guided' ? <GuidedPanel country={country} servers={servers} callTool={callTool} onRecord={recordGuided} replay={replay} onLeaveReplay={() => setReplay(null)} /> : (
+      {view === 'guided' ? <GuidedPanel country={country} crop={crop} servers={servers} callTool={callTool} onRecord={recordGuided} replay={replay} onLeaveReplay={() => setReplay(null)} /> : (
       <>
       {showSettings && <LlmSettings llm={llm} />}
 
@@ -432,7 +478,7 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
             <p className="small text-body-secondary">Choose your country first. I will use it for prices, fertilizers and the examples I suggest.</p>
             <div className="d-flex flex-wrap justify-content-center gap-2 mt-3">
               {COUNTRIES.map(c => (
-                <button key={c.code} type="button" className="btn btn-outline-success" onClick={() => chooseCountry(c.code)}>{c.name}</button>
+                <button key={c.code} type="button" className="btn btn-outline-success" onClick={() => chooseCountry(c.code)} title={`Use ${c.name}`}>{c.name}</button>
               ))}
             </div>
           </div>
@@ -441,9 +487,23 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
         {items.length === 0 && country && (
           <div className="m-auto text-center" style={{ maxWidth: '36rem' }}>
             <Bot size={40} className="text-akilimo mb-2" />
-            <p className="mb-1">Ask about fertilizer for your cassava field in {country.name}.</p>
+            <p className="mb-1">{adviceReady ? `Ask about fertilizer for your ${cropName} field in ${country.name}.` : `Ask about ${cropName} prices and information in ${country.name}.`}</p>
             <p className="small text-body-secondary">I will ask for the details I need, such as where the field is and when you plan to plant. Pick an example to start, or type your own question. You can change the country at the top.</p>
             <div className="text-start mt-3">
+              {!adviceReady && <div className="alert alert-info small">Recommendations for {crop?.name} are not available yet; you can still ask about prices and reference data.</div>}
+              {adviceReady && <div className="small fw-semibold text-body-secondary mb-1">What would you like advice on?</div>}
+              <div className="d-flex flex-column gap-2 mb-3">
+                {adviceReady && adviceTypes(country).map(a => (
+                  <button key={a.id} type="button" className="btn btn-outline-success text-start d-flex align-items-center gap-3 p-2" onClick={() => send(a.prompt)} disabled={!model || !canChat} title={a.prompt}>
+                    <span className="flex-shrink-0">{a.id === 'fertilizer' ? <Sprout size={22} /> : ADVICE_ICONS[a.id]}</span>
+                    <span className="flex-grow-1">
+                      <span className="d-block fw-semibold">{a.id === 'fertilizer' ? 'Fertilizer recommendation' : ADVICE[a.id].title}</span>
+                      <span className="d-block small text-body-secondary">{a.id === 'fertilizer' ? `Which fertilizer to use in ${country.name}, and how much.` : ADVICE[a.id].text}</span>
+                    </span>
+                    <ChevronRight size={18} className="flex-shrink-0" />
+                  </button>
+                ))}
+              </div>
               {exampleGroups.map(group => (
                 <div key={group.title} className="mb-3">
                   <div className="small fw-semibold text-body-secondary mb-1">{group.title}</div>
@@ -509,7 +569,7 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
         {error && (
           <div className="alert alert-danger small mb-0 d-flex align-items-center gap-2">
             <span className="flex-grow-1">{error}</span>
-            <button type="button" className="btn btn-sm btn-outline-danger flex-shrink-0" disabled={busy} onClick={() => void run('', true)}>Try again</button>
+            <button type="button" className="btn btn-sm btn-outline-danger flex-shrink-0" disabled={busy} title="Ask for the answer again" onClick={() => void run('', true)}>Try again</button>
           </div>
         )}
         {saveError && <div className="small text-warning-emphasis">{saveError}</div>}
@@ -521,43 +581,31 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
 
       <div className="card-footer">
         {showMap && (
-          <div className="border rounded p-2 mb-2 bg-body">
-            <div className="d-flex align-items-center mb-1">
-              <span className="small fw-semibold">Where is the field?</span>
-              <button type="button" className="btn btn-sm btn-link ms-auto p-0" onClick={() => setShowMap(false)} aria-label="Close map">
-                <X size={16} />
-              </button>
-            </div>
+          <Shell title="Where is the field?" onClose={() => setShowMap(false)}>
             <MapPicker lat={picked.lat} lon={picked.lon} country={picked.country}
               onChange={(lat, lon) => setPicked(p => ({ ...p, lat, lon }))}
               onCountry={(country) => setPicked(p => ({ ...p, country }))}
               onCoverage={setPickedInArea} />
             <button type="button" className="btn btn-sm btn-akilimo mt-2" onClick={sendLocation}
               disabled={picked.lat === undefined || pickedInArea === false}
-              title={pickedInArea === false ? 'This spot is outside the supported area' : undefined}>
+              title={pickedInArea === false ? 'This spot is outside the supported area' : 'Send this spot to the assistant'}>
               Send this location
             </button>
-          </div>
+          </Shell>
         )}
         {country && canChat && (
           <div className="d-flex flex-wrap align-items-center gap-1 mb-2">
-            <span className="small text-body-secondary me-1">Advice:</span>
-            {adviceTypes(country).map(a => (
-              <button key={a.id} type="button" className="btn btn-sm btn-outline-success py-0" onClick={() => send(a.prompt)} disabled={!model}
-                title={a.prompt}>
-                {a.label}
+            <span className="small text-body-secondary me-1">Details:</span>
+            {detailChips.map(c => (
+              <button key={c.id} type="button" className={`btn btn-sm py-0 d-inline-flex align-items-center gap-1 ${c.done ? 'btn-success' : 'btn-outline-secondary'}`} title={`${CHIP_HINTS[c.id] ?? c.label}${c.done ? " (sent; click to change it)" : ""}`}
+                onClick={() => { setShowMap(c.id === 'location' ? !showMap : false); setShowDates(c.id === 'dates' ? !showDates : false); setShowFertilizers(c.id === 'fertilizers' ? !showFertilizers : false); setPicker(c.picker ? (picker === c.picker ? null : c.picker) : null); }}>
+                {DETAIL_ICONS[c.id]}{c.label}{c.done && <Check size={13} />}
               </button>
             ))}
           </div>
         )}
         {showDates && (
-          <div className="border rounded p-2 mb-2 bg-body">
-            <div className="d-flex align-items-center mb-2">
-              <span className="small fw-semibold">When will you plant and harvest?</span>
-              <button type="button" className="btn btn-sm btn-link ms-auto p-0" onClick={() => setShowDates(false)} aria-label="Close dates">
-                <X size={16} />
-              </button>
-            </div>
+          <Shell title="When will you plant and harvest?" onClose={() => setShowDates(false)}>
             <div className="row g-2">
               <div className="col-sm-6">
                 <label className="form-label small mb-1" htmlFor="chat-plant">Planting date</label>
@@ -587,19 +635,48 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
             </div>
             <div className="form-text">Planting up to 6 months back; harvest 8 to 12 months after planting (cassava is usually harvested 10 to 12).</div>
             <div className="d-flex align-items-center gap-2 mt-2">
-              <button type="button" className="btn btn-sm btn-akilimo" onClick={sendDates} disabled={!!datesProblem}>Send these dates</button>
+              <button type="button" className="btn btn-sm btn-akilimo" onClick={sendDates} disabled={!!datesProblem} title={datesProblem ?? 'Send these dates to the assistant'}>Send these dates</button>
               {datesProblem && <span className="small text-body-secondary">{datesProblem}</span>}
             </div>
-          </div>
+          </Shell>
+        )}
+        {picker && country && (() => {
+          const props = { country, servers, callTool, onClose: () => setPicker(null), onSend: (text: string) => { setPicker(null); send(text); } };
+          return picker === 'field' ? <FieldPicker {...props} /> : picker === 'practices' ? <PracticesPicker {...props} /> : <IntercropPicker {...props} />;
+        })()}
+        {showFertilizers && country && (
+          <FertilizerPicker country={country} servers={servers} callTool={callTool} onClose={() => setShowFertilizers(false)}
+            onSend={text => { setShowFertilizers(false); send(text); }} />
+        )}
+        {showAdvice && country && (
+          <>
+            <div className="position-fixed top-0 start-0 w-100 h-100" style={{ zIndex: 1040 }} onClick={() => setShowAdvice(false)} />
+            <div className="dropdown-menu show shadow" style={{ position: 'absolute', bottom: '3.75rem', left: '0.75rem', zIndex: 1050, maxWidth: 'calc(100% - 1.5rem)' }}>
+              {adviceTypes(country).map(a => (
+                <button key={a.id} type="button" className="dropdown-item d-flex align-items-center gap-2 py-2" disabled={!model}
+                  onClick={() => { setShowAdvice(false); send(a.prompt); }} title={a.prompt}>
+                  {ADVICE_ICON_SM[a.id]}{a.label}
+                </button>
+              ))}
+            </div>
+          </>
         )}
         <form className="input-group" onSubmit={e => { e.preventDefault(); send(input); }}>
-          <button type="button" className="btn btn-outline-secondary" onClick={() => { setShowMap(v => !v); setShowDates(false); }}
+          <button type="button" className="btn btn-outline-secondary" onClick={() => { setShowAdvice(v => !v); setShowMap(false); setShowDates(false); setShowFertilizers(false); setPicker(null); }}
+            title="Get advice: fertilizer, planting practices, dates, intercropping" aria-label="Get advice" aria-expanded={showAdvice} disabled={!country || !canChat || !adviceReady}>
+            <Sparkles size={16} />
+          </button>
+          <button type="button" className="btn btn-outline-secondary" onClick={() => { setShowMap(v => !v); setShowDates(false); setShowFertilizers(false); setPicker(null); }}
             title="Share the field location on a map" aria-label="Share field location" disabled={!country}>
             <MapPin size={16} />
           </button>
-          <button type="button" className="btn btn-outline-secondary" onClick={() => { setShowDates(v => !v); setShowMap(false); }}
+          <button type="button" className="btn btn-outline-secondary" onClick={() => { setShowDates(v => !v); setShowMap(false); setShowFertilizers(false); setPicker(null); }}
             title="Choose the planting and harvest dates" aria-label="Choose planting and harvest dates" disabled={!country}>
             <CalendarDays size={16} />
+          </button>
+          <button type="button" className="btn btn-outline-secondary" onClick={() => { setShowFertilizers(v => !v); setShowMap(false); setShowDates(false); setPicker(null); }}
+            title="Choose the fertilizers you can buy and their prices" aria-label="Choose fertilizers and prices" disabled={!country}>
+            <Leaf size={16} />
           </button>
           <input className="form-control" placeholder={!canChat ? 'Sign in to chat…' : !country ? 'Choose your country first…' : model ? 'Type your question…' : 'Waiting for a model…'}
             value={input} onChange={e => setInput(e.target.value)} aria-label="Message" disabled={!model || !country || !canChat} />
@@ -610,7 +687,7 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
             </button>
           )}
           <button type="submit" className="btn btn-akilimo d-inline-flex align-items-center gap-1" disabled={!input.trim() || !model || !country || !canChat}
-            title={busy ? 'Queue this message; it is sent when the current answer is done' : undefined}>
+            title={busy ? 'Queue this message; it is sent when the current answer is done' : 'Send your message'}>
             <Send size={16} /> <span className="d-none d-sm-inline">{busy ? 'Queue' : 'Send'}</span>
           </button>
         </form>

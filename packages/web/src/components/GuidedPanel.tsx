@@ -1,14 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { ArrowLeft, Banknote, ChevronRight, Leaf, Loader2, Sprout } from 'lucide-react';
-import type { Country } from '@akilimo/shared';
+import type { Country, Crop } from '@akilimo/shared';
 import { planBags } from '@akilimo/shared';
 import type { ServerState } from '../mcp/useMcpServers';
 import { COUNTRIES } from '@akilimo/shared';
 import type { GuidedEntry } from '../mcp/guided';
 import { ADVICE, ADVICE_ICONS, AdviceResult, AdviceScreen, intercropCrop, type AdviceKind } from './AdviceScreens';
 import {
-  Loading, PriceHint, WINDOWS, YieldSelect, dateProblem, harvestRange, message, money, monthsFromNow, plantingMin, useLoad, windowLabel,
+  Loading, PriceHint, RiskSelect, WINDOWS, YieldSelect, dateProblem, harvestRange, message, money, monthsFromNow, plantingMin, useLoad, windowLabel,
   type Call, type FertilizerData, type PriceData, type Record_, type Row,
 } from './GuidedParts';
 import { MapPicker } from './MapPicker';
@@ -17,6 +17,8 @@ import { MapPicker } from './MapPicker';
 // answered straight from the AKILIMO tools, so it works with no AI provider at all.
 interface Props {
   country: Country | undefined;
+  // The crop chosen in the selector; one without recommendations only gets the price screens
+  crop?: Crop | undefined;
   servers: Record<string, ServerState>;
   callTool: (server: string, name: string, args: Record<string, unknown>) => Promise<CallToolResult>;
   // Called once for every finished step, so the session can be saved to the history
@@ -40,7 +42,7 @@ function useRecordOnce<T>(data: T | undefined, record: Record_, build: (data: T)
   }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
-export const GuidedPanel: React.FC<Props> = ({ country, servers, callTool, onRecord, replay, onLeaveReplay }) => {
+export const GuidedPanel: React.FC<Props> = ({ country, crop, servers, callTool, onRecord, replay, onLeaveReplay }) => {
   const [screen, setScreen] = useState<Screen>('menu');
   const record: Record_ = entry => onRecord?.(entry);
 
@@ -84,7 +86,7 @@ export const GuidedPanel: React.FC<Props> = ({ country, servers, callTool, onRec
           <ArrowLeft size={14} /> Back
         </button>
       )}
-      {screen === 'menu' && <Menu country={country} onPick={setScreen} />}
+      {screen === 'menu' && <Menu country={country} crop={crop} onPick={setScreen} />}
       {screen === 'price' && <PriceScreen country={country} call={call} record={record} />}
       {screen === 'fertilizers' && <FertilizerScreen country={country} call={call} record={record} />}
       {screen === 'recommend' && <RecommendScreen country={country} call={call} record={record} />}
@@ -95,7 +97,8 @@ export const GuidedPanel: React.FC<Props> = ({ country, servers, callTool, onRec
   );
 };
 
-const Menu: React.FC<{ country: Country; onPick: (s: Screen) => void }> = ({ country, onPick }) => {
+const Menu: React.FC<{ country: Country; crop?: Crop | undefined; onPick: (s: Screen) => void }> = ({ country, crop, onPick }) => {
+  const adviceReady = crop?.advice_available !== false;
   type Option = { screen: Screen; icon: React.ReactNode; title: string; text: string };
   const intercrop = intercropCrop(country.code);
   const advice: Option[] = [
@@ -129,7 +132,9 @@ const Menu: React.FC<{ country: Country; onPick: (s: Screen) => void }> = ({ cou
     <div className="mx-auto" style={{ maxWidth: '40rem' }}>
       <h2 className="h5 mb-1">What would you like to do?</h2>
       <p className="small text-body-secondary mb-3">Answers come straight from AKILIMO, with no AI model needed.</p>
-      {group('Advice for your field', advice)}
+      {adviceReady
+        ? group('Advice for your field', advice)
+        : <div className="alert alert-info small">Recommendations for {crop?.name} are not available yet. The price screens below still work.</div>}
       {group('Prices', prices)}
     </div>
   );
@@ -337,6 +342,7 @@ const RecommendScreen: React.FC<{ country: Country; call: Call; record: Record_ 
   const [harvest, setHarvest] = useState(monthsFromNow(11));
   const [rootPrice, setRootPrice] = useState('');
   const [yieldClass, setYieldClass] = useState(11.25); // t/ha class sent as yieldInfo.current_field_yield
+  const [risk, setRisk] = useState(1); // user_info.risk_attitude
   const [plantingWindow, setPlantingWindow] = useState(1);
   const [harvestWindow, setHarvestWindow] = useState(1);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
@@ -394,6 +400,7 @@ const RecommendScreen: React.FC<{ country: Country; call: Call; record: Record_ 
           ...(Number(budget) > 0 ? { maxInvestment: Number(budget) } : {}),
           recommendations: { lang: 'en' },
         },
+        user_info: { risk_attitude: risk },
         fertilizer_list: loaded.fertilizers.fertilizers.map(f => ({
           key: f.key, name: f.name, fertilizer_type: f.fertilizer_type, weight: f.bag_weight_kg,
           price: Number(prices[f.key]) || 0, selected: !!selected[f.key],
@@ -443,7 +450,7 @@ const RecommendScreen: React.FC<{ country: Country; call: Call; record: Record_ 
                 {AREA_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
               </select>
             </div>
-            <div style={{ maxWidth: '24rem' }}><YieldSelect id="g-yield" value={yieldClass} onChange={setYieldClass} /></div>
+            <div style={{ maxWidth: '24rem' }}><YieldSelect id="g-yield" value={yieldClass} onChange={setYieldClass} /></div>`n            <div className="mt-3" style={{ maxWidth: '30rem' }}><RiskSelect id="g-risk" value={risk} onChange={setRisk} /></div>
           </section>
 
           <section>

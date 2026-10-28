@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
+import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { GuidedEntry } from '../mcp/guided';
+import type { ServerState } from '../mcp/useMcpServers';
 
 // Small pieces shared by the guided screens (GuidedPanel.tsx and AdviceScreens.tsx)
 
@@ -11,6 +13,20 @@ export type Row = Record<string, unknown>;
 export interface FertilizerOption { key: string; name: string; fertilizer_type: string; bag_weight_kg: number; price_bands_per_bag: number[]; typical_price_per_bag: number | null }
 export interface FertilizerData { country: string; currency: string | null; fertilizers: FertilizerOption[] }
 export interface PriceData { country: string; currency: string | null; unit: string; price_bands: { min: number; max: number; average: number }[]; typical_price_per_tonne: number | null }
+
+// A tool call on whichever connected server offers the tool (several servers can offer the AKILIMO tools,
+// and a newer tool may exist on only some of them)
+export const makeCall = (
+  servers: Record<string, ServerState>,
+  callTool: (server: string, name: string, args: Record<string, unknown>) => Promise<CallToolResult>,
+): Call => async <T,>(name: string, args: Record<string, unknown>): Promise<T> => {
+  const target = Object.entries(servers).find(([, s]) => s.status === 'connected' && s.tools.some(t => t.name === name))?.[0];
+  if (!target) throw new Error(`No connected AKILIMO server offers the tool ${name}`);
+  const result = await callTool(target, name, args);
+  const text = result.content.find(c => c.type === 'text')?.text ?? '';
+  if (result.isError) throw new Error(text || `${name} failed`);
+  return JSON.parse(text) as T;
+};
 
 export const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 export const money = (n: unknown) => (typeof n === 'number' && Number.isFinite(n) ? n.toLocaleString() : '–');
@@ -73,6 +89,25 @@ export const YieldSelect: React.FC<{ id: string; value: number; onChange: (value
       {YIELD_CLASSES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
     </select>
     <div className="form-text">In a normal season; 1 acre is about 0.4 ha. The advice depends on it: ploughing and ridging only pay on fields yielding 15 t/ha or more.</div>
+  </>
+);
+
+// The farmer's risk attitude (user_info.risk_attitude). The compute service only recommends fertilizer when
+// the extra income is at least 1.8 times the cost (0), 1.0 times (1) or 0.2 times (2), so a cautious farmer
+// is told far more often that fertilizer does not pay. The anonymous default has been 0.
+export const RISK_OPTIONS = [
+  { value: 0, label: 'Careful: only if the extra income is well above the cost' },
+  { value: 1, label: 'Balanced: if the extra income covers the cost' },
+  { value: 2, label: 'Willing to take a risk: even for a small gain' },
+];
+
+export const RiskSelect: React.FC<{ id: string; value: number; onChange: (value: number) => void }> = ({ id, value, onChange }) => (
+  <>
+    <label className="form-label small mb-1" htmlFor={id}>How much risk are you willing to take with fertilizer?</label>
+    <select id={id} className="form-select" value={value} onChange={e => onChange(Number(e.target.value))}>
+      {RISK_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+    </select>
+    <div className="form-text">A careful farmer is only advised to use fertilizer when it clearly pays, so the advice can be "do not use fertilizer" more often.</div>
   </>
 );
 

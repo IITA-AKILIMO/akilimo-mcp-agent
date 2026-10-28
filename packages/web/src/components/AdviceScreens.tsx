@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { CalendarDays, Loader2, Shovel, Wheat } from 'lucide-react';
 import type { Country } from '@akilimo/shared';
 import type { GuidedEntry } from '../mcp/guided';
-import { Loading, PriceHint, WINDOWS, YieldSelect, dateProblem, harvestRange, label, message, monthsFromNow, plantingMin, useLoad, windowLabel, type Call, type PriceData, type PriceItem, type Record_, type Row } from './GuidedParts';
+import { Loading, PriceHint, RiskSelect, WINDOWS, YieldSelect, dateProblem, harvestRange, label, message, monthsFromNow, plantingMin, useLoad, windowLabel, type Call, type PriceData, type PriceItem, type Record_, type Row } from './GuidedParts';
 import { MapPicker } from './MapPicker';
 
 // The three recommendation types besides fertilizer advice, which share one short form:
@@ -63,15 +63,15 @@ const fmtDate = (d: unknown) => {
 };
 const weeks = (w: number) => (w === 0 ? 'as you asked' : w > 0 ? `${w} wk later` : `${Math.abs(w)} wk earlier`);
 
-const AREA_UNITS = ['acre', 'ha', 'm2', 'are'];
+export const AREA_UNITS = ['acre', 'ha', 'm2', 'are'];
 
 // get_operation_costs: typical costs per the field's area unit; a value is null when AKILIMO has none
 interface CostValue { value: number | null; source: string | null }
 // get_crop_prices: the second crop of intercropping advice
-interface CropOption { produce_type: string; unit: string; unit_weight: number; typical_price: number | null }
-interface CropPrices { maize: CropOption[] | null; sweet_potato: CropOption | null }
+export interface CropOption { produce_type: string; unit: string; unit_weight: number; typical_price: number | null }
+export interface CropPrices { maize: CropOption[] | null; sweet_potato: CropOption | null }
 
-interface OperationCosts {
+export interface OperationCosts {
   country: string;
   available: boolean;
   costs: {
@@ -104,6 +104,7 @@ export const AdviceScreen: React.FC<{ kind: AdviceKind; country: Country; call: 
   const [size, setSize] = useState('1');
   const [unit, setUnit] = useState('acre');
   const [yieldClass, setYieldClass] = useState(11.25); // t/ha class sent as yieldInfo.current_field_yield
+  const [risk, setRisk] = useState(1); // user_info.risk_attitude
   const [planting, setPlanting] = useState(monthsFromNow(1));
   const [harvest, setHarvest] = useState(monthsFromNow(11));
   const [rootPrice, setRootPrice] = useState('');
@@ -216,6 +217,7 @@ export const AdviceScreen: React.FC<{ kind: AdviceKind; country: Country; call: 
             weedingCosts: { cost_weeding_one: cost('weedingOne'), cost_weeding_two: cost('weedingTwo') },
           } : {}),
         },
+        user_info: { risk_attitude: risk },
         fertilizer_list: [],
       };
       const result = await call('compute_recommendations', request);
@@ -265,7 +267,7 @@ export const AdviceScreen: React.FC<{ kind: AdviceKind; country: Country; call: 
                 {AREA_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
               </select>
             </div>
-            <div style={{ maxWidth: '24rem' }}><YieldSelect id={`a-yield-${kind}`} value={yieldClass} onChange={setYieldClass} /></div>
+            <div style={{ maxWidth: '24rem' }}><YieldSelect id={`a-yield-${kind}`} value={yieldClass} onChange={setYieldClass} /></div>`n            <div className="mt-3" style={{ maxWidth: '30rem' }}><RiskSelect id={`a-risk-${kind}`} value={risk} onChange={setRisk} /></div>
           </section>
 
           <section>

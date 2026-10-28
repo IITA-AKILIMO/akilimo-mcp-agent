@@ -37,7 +37,7 @@ export const ServerPanel: React.FC<Props> = ({ configs, servers, registryError, 
         <Server size={16} className="text-body-secondary" />
         <h2 className="h6 mb-0 text-uppercase small fw-semibold text-body-secondary">MCP servers</h2>
         {canManage && (
-          <button type="button" className="btn btn-sm btn-outline-secondary ms-auto d-inline-flex align-items-center gap-1" onClick={onManage}>
+          <button type="button" className="btn btn-sm btn-outline-secondary ms-auto d-inline-flex align-items-center gap-1" onClick={onManage} title="Manage MCP servers, AI providers and users">
             <Settings2 size={14} /> Manage
           </button>
         )}

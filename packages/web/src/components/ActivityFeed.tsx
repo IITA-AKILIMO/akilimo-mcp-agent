@@ -30,7 +30,7 @@ export const ActivityFeed: React.FC<Props> = ({ events, onClear }) => {
         <Terminal size={16} className="text-body-secondary" />
         <h2 className="h6 mb-0 text-uppercase small fw-semibold text-body-secondary">Activity</h2>
         <span className="badge text-bg-secondary ms-auto">{events.length}</span>
-        <button type="button" className="btn btn-sm btn-link p-0 small" onClick={onClear} disabled={events.length === 0}>
+        <button type="button" className="btn btn-sm btn-link p-0 small" onClick={onClear} disabled={events.length === 0} title="Clear the activity list">
           Clear
         </button>
       </div>
