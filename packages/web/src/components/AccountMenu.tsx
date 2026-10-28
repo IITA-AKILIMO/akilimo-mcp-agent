@@ -39,7 +39,7 @@ const AuthDialog: React.FC<Omit<Props, 'enabled' | 'user' | 'onLogout' | 'onWebS
 
   return (
     <div className="modal d-block" tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="auth-title"
-      style={{ background: 'rgba(0,0,0,0.5)' }} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      style={{ background: 'rgba(0,0,0,0.5)' }}>
       <div className="modal-dialog modal-dialog-centered" style={{ maxWidth: '24rem' }}>
         <form className="modal-content" onSubmit={submit}>
           <div className="modal-header">

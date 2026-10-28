@@ -336,7 +336,7 @@ export const AdminDialog: React.FC<Props> = ({ currentUser, onClose, onChanged }
 
   return (
     <div className="modal d-block" tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="admin-dialog-title"
-      style={{ background: 'rgba(0,0,0,0.5)' }} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      style={{ background: 'rgba(0,0,0,0.5)' }}>
       <div className="modal-dialog modal-lg modal-dialog-scrollable">
         <div className="modal-content">
           <div className="modal-header">

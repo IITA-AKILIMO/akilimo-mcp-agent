@@ -15,7 +15,7 @@ interface Props {
   onClose: () => void;
 }
 
-// A dialog over the chat (the footer is too small for these forms); Escape or a click outside closes it. The
+// A dialog over the chat (the footer is too small for these forms); Escape or the close button closes it; a click outside does not, so a half-filled form is never lost by accident. The
 // actions go in `footer`, which stays in view while a long form scrolls.
 export const Shell: React.FC<{ title: string; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode }> = ({ title, onClose, children, footer }) => {
   useEffect(() => {
@@ -24,8 +24,8 @@ export const Shell: React.FC<{ title: string; onClose: () => void; children: Rea
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
   return (
-    <div className="modal d-block" role="dialog" aria-modal="true" aria-label={title} style={{ background: 'rgba(0,0,0,.45)' }} onClick={onClose}>
-      <div className="modal-dialog modal-lg modal-dialog-scrollable modal-dialog-centered" onClick={e => e.stopPropagation()}>
+    <div className="modal d-block" role="dialog" aria-modal="true" aria-label={title} style={{ background: 'rgba(0,0,0,.45)' }}>
+      <div className="modal-dialog modal-lg modal-dialog-scrollable modal-dialog-centered">
         <div className="modal-content">
           <div className="modal-header py-2">
             <h2 className="modal-title h6 mb-0">{title}</h2>
@@ -127,7 +127,7 @@ export const FieldPicker: React.FC<Props> = ({ country, servers, callTool, onSen
               onChange={(value, unit) => { setPrice(value); setSellUnit(unit); }} />
           </Field>
         </div>
-        <div className="col-sm-6">
+        <div className="col-12">
           <Field id="cp-budget" label="Fertilizer budget for the whole field">
             <select id="cp-budget" className="form-select form-select-sm" value={budget} onChange={e => setBudget(e.target.value)}>
               <option value="0">No limit</option>
