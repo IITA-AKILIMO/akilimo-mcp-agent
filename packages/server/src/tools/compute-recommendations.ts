@@ -42,7 +42,13 @@ export const computeRecommendationsTool: ToolDefinition = {
       user_info: { ...DEFAULT_USER_INFO, ...(args?.user_info as object | undefined) },
     });
     if (!validation.success) {
-      return errorResult(`Invalid payload:\n${z.prettifyError(validation.error)}`);
+      // The reader is often a language model that left a section out: say what a complete call needs
+      return errorResult(
+        `Invalid payload:\n${z.prettifyError(validation.error)}\n\n`
+        + "A complete call needs compute_request.farmInformation {country_code, use_case, map_lat, map_long, field_size, area_unit}, "
+        + "compute_request.planting {planting_date, harvest_date as YYYY-MM-DD} and compute_request.cassava {unit_price}. "
+        + "If the user has not given a value yet, ask them for it; do not invent dates, prices or locations.",
+      );
     }
 
     return jsonResult(await api.post("/v1/recommendations/compute", validation.data));

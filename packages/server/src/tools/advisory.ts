@@ -60,6 +60,122 @@ export const fertilizerOptionsTool: ToolDefinition = {
   },
 };
 
+export const checkLocationTool: ToolDefinition = {
+  name: "check_location",
+  description: "Check whether a location is inside the area where AKILIMO can give recommendations for a country. Call it before compute_recommendations as soon as you have the coordinates, so a location outside the area is caught early. covered is true (inside), false (outside: tell the user and ask for another location) or null (unknown: carry on).",
+  inputSchema: {
+    type: "object" as const,
+    properties: {
+      countryCode: { type: "string", description: "ISO 2-letter country code: NG, TZ, RW, GH or BI" },
+      lat: { type: "number", description: "Latitude in decimal degrees" },
+      lon: { type: "number", description: "Longitude in decimal degrees" },
+    },
+    required: ["countryCode", "lat", "lon"],
+  },
+
+  async handler(args, api) {
+    const country = countryFrom(args);
+    const lat = Number(args?.lat);
+    const lon = Number(args?.lon);
+    if (!Number.isFinite(lat) || lat < -90 || lat > 90 || !Number.isFinite(lon) || lon < -180 || lon > 180) {
+      throw new Error("lat must be between -90 and 90 and lon between -180 and 180");
+    }
+
+    try {
+      const { data } = await api.get<{ data: Row }>("/v1/coverage/check", { country, lat, lon });
+      return jsonResult(data);
+    } catch (error) {
+      // An API without the supported-area routes (or a network hiccup) must not stop the conversation
+      return jsonResult({ country_code: country, lat, lon, covered: null, message: `The location could not be checked (${(error as Error).message})` });
+    }
+  },
+};
+
+// default-prices rows use the legacy code BU for Burundi
+const DEFAULT_PRICE_COUNTRY: Record<string, string> = { BI: "BU" };
+
+// Approximate local currency per US dollar. Only a sanity check on prices (is this cost per acre
+// believable in dollars?), never used to convert anything shown to farmers; refresh it when it drifts.
+// Tanzanian prices look huge (the shilling is weak) but are fine in dollars.
+const USD_RATE: Record<string, number> = { NG: 1500, TZ: 2600, RW: 1450, GH: 12, BI: 2900 };
+const PLAUSIBLE_USD_PER_ACRE = { min: 0.5, max: 150 };
+const usdOf = (country: string, value: number) => {
+  const rate = USD_RATE[country];
+  return rate ? Math.round((value / rate) * 100) / 100 : null;
+};
+const plausible = (country: string, value: number) => {
+  const usd = usdOf(country, value);
+  return usd === null || (usd >= PLAUSIBLE_USD_PER_ACRE.min && usd <= PLAUSIBLE_USD_PER_ACRE.max);
+};
+
+// Costs per acre the compute service itself falls back to when a cost is missing or 0
+// (default_lmo_costs in akilimo-recommendations, R/AkilimoMain.R); used when the API's default price
+// is missing or implausible in dollars. Keep in step with that file.
+const BASELINE_COSTS: Record<string, Record<string, number>> = {
+  NG: { manual_ploughing: 17000, manual_harrowing: 15000, manual_ridging: 12000, tractor_ploughing: 6000, tractor_harrowing: 6000, tractor_ridging: 6000, weeding1: 30000, weeding2: 30000 },
+  TZ: { manual_ploughing: 175000, manual_harrowing: 150000, manual_ridging: 225000, tractor_ploughing: 150000, tractor_harrowing: 100000, tractor_ridging: 115000, weeding1: 60000, weeding2: 45000 },
+};
+
+export const operationCostsTool: ToolDefinition = {
+  name: "get_operation_costs",
+  description: "Typical costs of land preparation and weeding for a country, ready to use as compute_recommendations manualCosts, tractorCosts and weedingCosts for planting practices advice. Each cost is the API's default price when it is believable in US dollars (about 0.5 to 150 per acre), otherwise the compute service's own default, otherwise the middle band of the country's operation costs; a cost is null when none exists (Rwanda, Ghana and Burundi have none). Each cost comes with its source and an approximate dollar value. Costs are per the field's area unit.",
+  inputSchema: countryInput,
+
+  async handler(args, api) {
+    const country = countryFrom(args);
+    const [defaults, bands] = await Promise.all([
+      api.getAll<Row>("/v1/default-prices"),
+      api.getAll<Row>(`/v1/operation-costs/country/${country}`),
+    ]);
+
+    const defaultPrice = (item: string) => {
+      const row = defaults.data.find((r) => r.country === (DEFAULT_PRICE_COUNTRY[country] ?? country) && r.item === item);
+      const price = Number(row?.price);
+      return Number.isFinite(price) && price > 0 ? price : null;
+    };
+    // Bands are 5 steps per operation and method; the middle one is the typical cost
+    const typicalBand = (name: string, type: string) =>
+      middle(priceBands(bands.data.filter((r) => r.operation_name === name && r.operation_type === type).map((r) => r.average_cost)));
+
+    // The API's default price if believable in dollars, else the compute service's own default, else
+    // the middle operation-cost band; each with an approximate dollar value for a quick sanity read
+    const pick = (item: string, name: string | null, type: string | null) => {
+      const result = (value: number | null, source: string | null) => ({ value, source, approx_usd: value === null ? null : usdOf(country, value) });
+      const fromDefault = defaultPrice(item);
+      if (fromDefault !== null && plausible(country, fromDefault)) return result(fromDefault, "default_price");
+      const baseline = BASELINE_COSTS[country]?.[item];
+      if (baseline !== undefined) return result(baseline, "service_default");
+      const fromBand = (name && type ? typicalBand(name, type) : null) ?? null;
+      return fromBand !== null && plausible(country, fromBand) ? result(fromBand, "typical_band") : result(null, null);
+    };
+
+    const costs = {
+      manual: {
+        ploughing: pick("manual_ploughing", "TILLAGE", "MANUAL"),
+        harrowing: pick("manual_harrowing", null, null),
+        ridging: pick("manual_ridging", "RIDGING", "MANUAL"),
+      },
+      tractor: {
+        ploughing: pick("tractor_ploughing", "TILLAGE", "TRACTOR"),
+        harrowing: pick("tractor_harrowing", null, null),
+        ridging: pick("tractor_ridging", "RIDGING", "TRACTOR"),
+      },
+      weeding: {
+        one: pick("weeding1", "WEEDING", "MANUAL"),
+        two: pick("weeding2", "WEEDING", "MANUAL"),
+      },
+    };
+    const available = Object.values(costs).some((group) => Object.values(group).some((c) => c.value !== null));
+
+    return jsonResult({
+      country,
+      available,
+      costs,
+      usage: "For compute_recommendations planting practices: manualCosts {cost_manual_ploughing, cost_manual_harrowing, cost_manual_ridging}, tractorCosts {cost_tractor_ploughing, cost_tractor_harrowing, cost_tractor_ridging, cost_lmo_area_basis 'areaUnit'} and weedingCosts {cost_weeding_one, cost_weeding_two}. Use 0 for a null cost, or ask the farmer. Let the farmer correct the values.",
+    });
+  },
+};
+
 export const cassavaPriceTool: ToolDefinition = {
   name: "get_cassava_price",
   description: "Get cassava root price bands per tonne and a typical price for a country. Use the typical price as compute_recommendations cassava.unit_price (unit_weight 1000) when the farmer does not know their price.",

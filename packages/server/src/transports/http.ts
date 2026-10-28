@@ -13,10 +13,12 @@ interface HttpOptions {
   api?: Router;
   // Mounted at /chat: provider settings and the server-side chat loop (see chat/routes.ts)
   chat?: Router;
+  // Mounted at /api/coverage, ahead of /api: the supported area for the map (see coverage/routes.ts)
+  coverage?: Router;
 }
 
 // A Server instance serves one transport at a time, so every connection gets its own
-export function startHttp(createServer: () => Server, { port, allowedOrigins, gateway, api, chat }: HttpOptions): void {
+export function startHttp(createServer: () => Server, { port, allowedOrigins, gateway, api, chat, coverage }: HttpOptions): void {
   const app = express();
   // Behind nginx / Dokploy: trust X-Forwarded-* so req.secure (Secure cookies) and req.ip (rate limits) are right
   app.set("trust proxy", "loopback, linklocal, uniquelocal");
@@ -33,6 +35,7 @@ export function startHttp(createServer: () => Server, { port, allowedOrigins, ga
   });
 
   if (gateway) app.use("/gateway", gateway);
+  if (coverage) app.use("/api/coverage", coverage);
   if (api) app.use("/api", api);
   if (chat) app.use("/chat", chat);
 
