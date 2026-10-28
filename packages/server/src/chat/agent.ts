@@ -40,8 +40,13 @@ Other recommendation types use the same tool without fertilizers (fertilizer_lis
 - Planting practices (ploughing, ridging and their methods): farmInformation.use_case "PP", recommendations.planting_practices_rec true. Ask which of ploughing, harrowing and ridging the farmer does now and, for each one done, whether it is done by hand or with a tractor. Send that as operationsDone {ploughing_done, harrowing_done, ridging_done}, methods {method_ploughing, method_harrowing, method_ridging} ("manual" or "tractor"; use "manual" for operations not done) and tractorCosts {tractor_plough, tractor_harrow, tractor_ridger} (true only for an operation done with a tractor). Also call get_operation_costs for the country, tell the farmer the typical costs it returns (per the field's area unit), let them correct them, and send them as manualCosts {cost_manual_ploughing, cost_manual_harrowing, cost_manual_ridging}, tractorCosts {cost_tractor_ploughing, cost_tractor_harrowing, cost_tractor_ridging, cost_lmo_area_basis "areaUnit"} and weedingCosts {cost_weeding_one, cost_weeding_two}. A cost that is null has no standard value: ask the farmer for it or send 0, and say that the advice is less reliable without costs.
 - Planting and harvest dates (the best time to plant and harvest): use_case "SPHS", recommendations.scheduled_planting_rec and scheduled_harvest_rec true. planting.planting_date_window and harvest_date_window (0 to 2 months) say how far the farmer can shift.
 - Intercropping: use_case "IC". Only Nigeria (maize: interCropping {inter_cropped_crop "maize", inter_cropping_maize_rec true}) and Tanzania (sweet potato: inter_cropped_crop "potato", inter_cropping_potato_rec true); say so for other countries instead of calling the tool.
+  For intercropping also call get_crop_prices for the country, offer the typical price of the second crop (for Nigerian maize ask whether the farmer sells fresh cobs or dry grain) and send the choice as compute_request.maize (Nigeria) or compute_request.sweetPotato (Tanzania) {produce_type, unit_weight, unit_price}, exactly as the tool lists them.
+Budget: if the farmer names how much they can spend on fertilizer, call get_investment_options with the field size and unit and offer its max_investment_for_field amounts, or take their own amount; send it as compute_request.maxInvestment. It is the budget for the WHOLE field, not per acre; leave it out (or 0) for no limit.
+Prices: when the farmer states a price (cassava, maize, sweet potato or a fertilizer), call check_price with it. If ok is false, say what the message says and ask them to confirm the price and the unit before you use it; ok true or null means carry on. A farmer who confirms a price may keep it.
+After a fertilizer recommendation, call fertilizer_plan with data.fertilizer_rates (and the farmer's prices as prices) to tell them how many bags to buy and what it costs; the rates are kilograms for the whole field.
 For all of these the planting date may be at most 6 months in the past, and the harvest must be 8 to 12 months after planting; if the user gives dates outside that, explain the limit and ask for other dates. Explain the recommendation text and the best option in simple words; the numbers come only from the tool result.
 
+Never show raw JSON, field names or tool output to the user. Summarize a recommendation as a short sentence followed by a Markdown table, for example | What | Value | rows for current yield, expected yield with the advice, fertilizer cost and net gain (with the currency, and yields in tonnes per hectare), and a second table | Fertilizer | Amount (kg) | Bags | Cost | when there are fertilizer rates. Use friendly labels (not N, P, K, WLY, TC, NR) and leave out values you do not have.
 Explain the result simply: which fertilizers, how many bags or kg, and the expected yield and profit if given. If the service says the location is outside the recommendation area, say so and suggest checking the location. Other tools may be available; use them when they fit the question.`;
 
 // Keeps tool results small enough for a local model's context window
@@ -81,9 +86,44 @@ export interface RunOptions {
   country?: Country | undefined;
 }
 
+// What the model is given: the system prompt followed by a short list of everything the farmer has said
+// (so the details survive even when a model loses track of a long conversation), and the history with
+// the results of earlier turns' tools shortened. Tool results are bulky (price lists, compute answers)
+// and crowd the farmer's own words out of a small model's context; the latest turn stays whole.
+const OLD_TOOL_CHARS = 500;
+const FACT_CHARS = 400;
+// Rough token budget for the system prompt and the history (the tool definitions come on top); set
+// CHAT_CONTEXT_TOKENS to the provider's real limit minus about 6000 for the tools and the answer
+const CONTEXT_BUDGET = Number(process.env.CHAT_CONTEXT_TOKENS) || 10000;
+
+export function buildConversation(history: ChatMessage[], country: Country | undefined): ChatMessage[] {
+  const lastUser = history.map((m) => m.role).lastIndexOf("user");
+  const said = history.filter((m) => m.role === "user" && m.content.trim()).map((m) => `- ${m.content.trim().slice(0, FACT_CHARS)}`);
+  const memory = said.length > 1
+    ? `\n\nEverything the farmer has told you so far in this conversation, oldest first. Remember it: use these details (country, location, field size, dates, prices, fertilizers, budget, answers to your questions) and never ask for something already given here unless they change it:\n${said.join("\n")}`
+    : "";
+  const system: ChatMessage = { role: "system", content: systemPrompt(country) + memory };
+  const shorten = (limit: number) => history.map((m, i) =>
+    m.role === "tool" && i < lastUser && m.content.length > limit ? { ...m, content: `${m.content.slice(0, limit)}… [shortened]` } : m);
+
+  // The same budget for every provider (not only Ollama's num_ctx): hosted models have limits too, and
+  // some, like Groq's free tier, are small. Shorten earlier tool results first, then drop the tool
+  // exchanges of earlier turns (the farmer's words are kept by the list above and the answers stay).
+  let conversation = [system, ...shorten(OLD_TOOL_CHARS)];
+  if (estimateTokens(conversation) > CONTEXT_BUDGET) conversation = [system, ...shorten(120)];
+  if (estimateTokens(conversation) > CONTEXT_BUDGET) {
+    const kept = history.filter((m, i) => i >= lastUser || m.role === "user" || (m.role === "assistant" && !m.tool_calls?.length));
+    conversation = [system, ...kept];
+  }
+  return conversation;
+}
+
+const estimateTokens = (messages: ChatMessage[]) =>
+  Math.ceil(messages.reduce((n, m) => n + m.content.length + JSON.stringify(m.tool_calls ?? "").length, 0) / 3.5);
+
 // One user turn: let the model call tools until it answers in text (bounded to avoid loops)
 export async function runAgent({ chat, history, tools, callTool, onMessage, onStep, signal, country }: RunOptions): Promise<void> {
-  const conversation: ChatMessage[] = [{ role: "system", content: systemPrompt(country) }, ...history];
+  const conversation = buildConversation(history, country);
   const specs = tools.map((t) => t.spec);
 
   // Small models sometimes answer with nothing (or only hidden reasoning) after a tool result, which

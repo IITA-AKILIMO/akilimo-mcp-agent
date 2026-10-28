@@ -3,8 +3,11 @@ import type { ChatMessage, ToolSpec } from "@akilimo/shared";
 // Client for Ollama's native chat API. The native API is used because it lets us raise num_ctx: tool
 // schemas plus the system prompt overflow Ollama's small default context.
 
-// Enough for the compute tool schema, instructions and a conversation; fits an 8B model on 6 GB VRAM
-const CONTEXT_TOKENS = 8192;
+// The compute tool schema, the instructions (which have grown) and several tools already take about
+// half of 8192 tokens, and Ollama silently drops the oldest messages beyond num_ctx, which made the
+// assistant forget what the farmer had said; 16384 leaves room for a conversation. Set OLLAMA_NUM_CTX
+// lower for a small GPU.
+const CONTEXT_TOKENS = Number(globalThis.process?.env?.OLLAMA_NUM_CTX) || 16384;
 
 const json = async <T>(res: Response): Promise<T> => {
   if (!res.ok) throw new Error(`Ollama ${res.status}: ${(await res.text()).slice(0, 200)}`);
