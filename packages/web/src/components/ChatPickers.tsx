@@ -15,8 +15,9 @@ interface Props {
   onClose: () => void;
 }
 
-// A dialog over the chat (the footer is too small for these forms); Escape or a click outside closes it
-export const Shell: React.FC<{ title: string; onClose: () => void; children: React.ReactNode }> = ({ title, onClose, children }) => {
+// A dialog over the chat (the footer is too small for these forms); Escape or a click outside closes it. The
+// actions go in `footer`, which stays in view while a long form scrolls.
+export const Shell: React.FC<{ title: string; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode }> = ({ title, onClose, children, footer }) => {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
@@ -24,13 +25,14 @@ export const Shell: React.FC<{ title: string; onClose: () => void; children: Rea
   }, [onClose]);
   return (
     <div className="modal d-block" role="dialog" aria-modal="true" aria-label={title} style={{ background: 'rgba(0,0,0,.45)' }} onClick={onClose}>
-      <div className="modal-dialog modal-dialog-scrollable modal-dialog-centered" onClick={e => e.stopPropagation()}>
+      <div className="modal-dialog modal-lg modal-dialog-scrollable modal-dialog-centered" onClick={e => e.stopPropagation()}>
         <div className="modal-content">
           <div className="modal-header py-2">
             <h2 className="modal-title h6 mb-0">{title}</h2>
             <button type="button" className="btn-close" onClick={onClose} aria-label="Close" title="Close (Esc)" />
           </div>
           <div className="modal-body">{children}</div>
+          {footer && <div className="modal-footer py-2 justify-content-start gap-2">{footer}</div>}
         </div>
       </div>
     </div>
@@ -95,7 +97,12 @@ export const FieldPicker: React.FC<Props> = ({ country, servers, callTool, onSen
   };
 
   return (
-    <Shell title="About your field" onClose={onClose}>
+    <Shell title="About your field" onClose={onClose} footer={(
+      <>
+        <button type="button" className="btn btn-sm btn-akilimo" onClick={send} disabled={!!problem} title="Send these details to the assistant">Send these details</button>
+        {problem && <span className="small text-body-secondary">{problem}</span>}
+      </>
+    )}>
       <div className="row g-2">
         <div className="col-sm-6">
           <Field id="cp-size" label="Field size">
@@ -114,7 +121,7 @@ export const FieldPicker: React.FC<Props> = ({ country, servers, callTool, onSen
             </select>
           </Field>
         </div>
-        <div className="col-sm-6">
+        <div className="col-12">
           <Field id="cp-price" label="Cassava root price">
             <CassavaPriceInput id="cp-price" small call={call} country={country.code} currency={currency} price={price} unit={sellUnit}
               onChange={(value, unit) => { setPrice(value); setSellUnit(unit); }} />
@@ -140,10 +147,6 @@ export const FieldPicker: React.FC<Props> = ({ country, servers, callTool, onSen
         <div className="col-12">
           <SellSelect id="cp-sell" call={call} country={country.code} value={factory.key} onChange={(key, name) => setFactory({ key, name })} />
         </div>
-      </div>
-      <div className="d-flex align-items-center gap-2">
-        <button type="button" className="btn btn-sm btn-akilimo" onClick={send} disabled={!!problem} title="Send these details to the assistant">Send these details</button>
-        {problem && <span className="small text-body-secondary">{problem}</span>}
       </div>
     </Shell>
   );
@@ -205,7 +208,9 @@ export const PracticesPicker: React.FC<Props> = ({ country, servers, callTool, o
   };
 
   return (
-    <Shell title="What do you do on this field now?" onClose={onClose}>
+    <Shell title="What do you do on this field now?" onClose={onClose} footer={
+      <button type="button" className="btn btn-sm btn-akilimo" onClick={send} title="Send these practices and costs to the assistant">Send these practices</button>
+    }>
       <div className="d-flex flex-column gap-2 mb-2">
         {OPERATIONS.map(({ key, text }) => (
           <div key={key} className={`border rounded p-2 d-flex align-items-center gap-2 ${done[key] ? 'border-success bg-success-subtle' : ''}`}>
@@ -235,7 +240,6 @@ export const PracticesPicker: React.FC<Props> = ({ country, servers, callTool, o
         {costInput('weedingTwo', 'Second weeding')}
       </div>
       <div className="form-text mb-2">Typical costs are filled in where AKILIMO has them; change them to what you pay. Leave all unticked if you do none of these.</div>
-      <button type="button" className="btn btn-sm btn-akilimo" onClick={send} title="Send these practices and costs to the assistant">Send these practices</button>
     </Shell>
   );
 };
@@ -284,7 +288,9 @@ export const IntercropPicker: React.FC<Props> = ({ country, servers, callTool, o
   };
 
   return (
-    <Shell title={`Your ${second.crop}`} onClose={onClose}>
+    <Shell title={`Your ${second.crop}`} onClose={onClose} footer={options.length > 0 ? (
+      <button type="button" className="btn btn-sm btn-akilimo" onClick={send} disabled={!(Number(price) > 0)} title="Send the price of your second crop to the assistant">Send this</button>
+    ) : undefined}>
       {loading && <div className="small text-body-secondary">Loading prices…</div>}
       {!loading && options.length === 0 && <div className="alert alert-info small mb-0">AKILIMO has no {second.crop} prices for {country.name} yet. Type the price in the chat instead.</div>}
       {options.length > 0 && (
@@ -303,7 +309,6 @@ export const IntercropPicker: React.FC<Props> = ({ country, servers, callTool, o
             </div>
             <PriceHint call={call} country={country.code} item={item} value={price} />
           </Field>
-          <button type="button" className="btn btn-sm btn-akilimo" onClick={send} disabled={!(Number(price) > 0)} title="Send the price of your second crop to the assistant">Send this</button>
         </>
       )}
     </Shell>

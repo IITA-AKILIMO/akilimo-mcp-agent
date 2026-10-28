@@ -45,23 +45,28 @@ export const FertilizerPicker: React.FC<Props> = ({ country, servers, callTool, 
   };
 
   return (
-    <Shell title="Which fertilizers can you buy?" onClose={onClose}>
+    <Shell title="Which fertilizers can you buy?" onClose={onClose} footer={data && data.fertilizers.length > 0 ? (
+      <>
+        <button type="button" className="btn btn-sm btn-akilimo" onClick={send} disabled={!!problem} title="Send the ticked fertilizers and prices to the assistant">Send these fertilizers</button>
+        {problem && <span className="small text-body-secondary">{problem}</span>}
+      </>
+    ) : undefined}>
       <Loading state={state} />
       {data && data.fertilizers.length === 0 && <div className="alert alert-info small mb-0">No fertilizers are listed for {country.name}.</div>}
       {data && data.fertilizers.length > 0 && (
         <>
           <div className="d-flex flex-column gap-2 overflow-auto">
             {data.fertilizers.map(f => (
-              <div key={f.key} className={`border rounded p-2 d-flex align-items-center gap-2 ${selected[f.key] ? 'border-success bg-success-subtle' : ''}`}>
-                <div className="form-check mb-0 flex-grow-1">
+              <div key={f.key} className={`border rounded p-2 d-flex flex-wrap align-items-center gap-2 ${selected[f.key] ? 'border-success bg-success-subtle' : ''}`}>
+                <div className="form-check mb-0 flex-grow-1" style={{ minWidth: '12rem' }}>
                   <input id={`cf-${f.key}`} className="form-check-input" type="checkbox" checked={!!selected[f.key]}
                     onChange={e => setSelected(prev => ({ ...prev, [f.key]: e.target.checked }))} />
                   <label className="form-check-label" htmlFor={`cf-${f.key}`}>
                     <span className="fw-semibold">{f.name}</span> <span className="small text-body-secondary">{f.fertilizer_type} · {f.bag_weight_kg} kg bag</span>
                   </label>
                 </div>
-                <div>
-                  <div className="input-group input-group-sm" style={{ maxWidth: '11rem' }}>
+                <div className="ms-auto flex-shrink-0">
+                  <div className="input-group input-group-sm" style={{ width: '11rem' }}>
                     <input type="number" min="0" step="any" className="form-control" aria-label={`${f.name} price per bag`} value={prices[f.key] ?? ''}
                       onChange={e => setPrices(prev => ({ ...prev, [f.key]: e.target.value }))} />
                     <span className="input-group-text">{data.currency ?? ''}</span>
@@ -72,10 +77,6 @@ export const FertilizerPicker: React.FC<Props> = ({ country, servers, callTool, 
             ))}
           </div>
           <div className="form-text">Price per bag; typical prices are filled in, change them to what you pay.</div>
-          <div className="d-flex align-items-center gap-2 mt-2">
-            <button type="button" className="btn btn-sm btn-akilimo" onClick={send} disabled={!!problem} title="Send the ticked fertilizers and prices to the assistant">Send these fertilizers</button>
-            {problem && <span className="small text-body-secondary">{problem}</span>}
-          </div>
         </>
       )}
     </Shell>
