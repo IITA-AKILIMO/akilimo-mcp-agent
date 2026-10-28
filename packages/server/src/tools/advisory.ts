@@ -3,9 +3,9 @@ import { jsonResult, type ToolDefinition } from "./types.js";
 // Compact, model-friendly views of the reference data needed for fertilizer advice. The raw
 // endpoints return tens of kilobytes per country, which overflows small local models.
 
-type Row = Record<string, any>;
+export type Row = Record<string, any>;
 
-const countryInput = {
+export const countryInput = {
   type: "object" as const,
   properties: {
     countryCode: { type: "string", description: "ISO 2-letter country code: NG, TZ, RW, GH or BI" },
@@ -13,17 +13,17 @@ const countryInput = {
   required: ["countryCode"],
 };
 
-const countryFrom = (args: Record<string, unknown> | undefined) => {
+export const countryFrom = (args: Record<string, unknown> | undefined) => {
   const code = String(args?.countryCode ?? "").trim().toUpperCase();
   if (!/^[A-Z]{2}$/.test(code)) throw new Error("countryCode must be an ISO 2-letter code, e.g. NG or TZ");
   return code;
 };
 
 // Price lists hold bands plus 0 / negative placeholder rows (no price, custom price)
-const priceBands = (values: unknown[]) =>
+export const priceBands = (values: unknown[]) =>
   [...new Set(values.map(Number).filter((v) => Number.isFinite(v) && v > 0))].sort((a, b) => a - b);
-const middle = (values: number[]) => (values.length ? values[Math.floor(values.length / 2)] : null);
-const currencyOf = (row?: Row) => row?.currency?.currency_code ?? row?.currency_code ?? null;
+export const middle = (values: number[]) => (values.length ? values[Math.floor(values.length / 2)] : null);
+export const currencyOf = (row?: Row) => row?.currency?.currency_code ?? row?.currency_code ?? null;
 
 export const fertilizerOptionsTool: ToolDefinition = {
   name: "get_fertilizer_options",

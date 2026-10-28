@@ -1,5 +1,6 @@
 import { cassavaPriceTool, checkLocationTool, fertilizerOptionsTool, operationCostsTool } from "./advisory.js";
 import { computeRecommendationsTool } from "./compute-recommendations.js";
+import { checkPriceTool, cropPricesTool, fertilizerPlanTool, investmentOptionsTool } from "./farm-inputs.js";
 import { referenceDataTool } from "./reference-data.js";
 import type { ToolDefinition } from "./types.js";
 
@@ -10,5 +11,9 @@ export const tools: ToolDefinition[] = [
   cassavaPriceTool,
   operationCostsTool,
   checkLocationTool,
+  cropPricesTool,
+  checkPriceTool,
+  investmentOptionsTool,
   computeRecommendationsTool,
+  fertilizerPlanTool,
 ];
