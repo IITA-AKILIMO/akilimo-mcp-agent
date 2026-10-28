@@ -180,14 +180,25 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
     await run(message);
   };
 
-  const run = async (message: string) => {
+  // retry: ask again for the answer to the last user message that failed, without repeating the message;
+  // whatever the failed attempt added after it (half a tool exchange, for one) is dropped first so the
+  // history stays valid for every provider
+  const run = async (text: string, retry = false) => {
+    let message = text;
     busyRef.current = true;
     setError(null);
     setNotices([]);
-    add({ id: newId(), kind: 'user', text: message });
-    const userMessage: ChatMessage = { role: 'user', content: message };
-    history.current = [...history.current, userMessage];
-    persist([userMessage], message);
+    if (retry) {
+      const lastUser = history.current.map(m => m.role).lastIndexOf('user');
+      if (lastUser < 0) { busyRef.current = false; return; }
+      message = history.current[lastUser].content;
+      history.current = history.current.slice(0, lastUser + 1);
+    } else {
+      add({ id: newId(), kind: 'user', text: message });
+      const userMessage: ChatMessage = { role: 'user', content: message };
+      history.current = [...history.current, userMessage];
+      persist([userMessage], message);
+    }
 
     const controller = new AbortController();
     abort.current = controller;
@@ -495,7 +506,12 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
             </button>
           </div>
         ))}
-        {error && <div className="alert alert-danger small mb-0">{error}</div>}
+        {error && (
+          <div className="alert alert-danger small mb-0 d-flex align-items-center gap-2">
+            <span className="flex-grow-1">{error}</span>
+            <button type="button" className="btn btn-sm btn-outline-danger flex-shrink-0" disabled={busy} onClick={() => void run('', true)}>Try again</button>
+          </div>
+        )}
         {saveError && <div className="small text-warning-emphasis">{saveError}</div>}
         {accountsEnabled && !user && items.length > 0 && (
           <div className="small text-body-secondary text-center">Sign in to keep this conversation in your history.</div>
