@@ -3,7 +3,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { Country } from '@akilimo/shared';
 import type { ServerState } from '../mcp/useMcpServers';
 import { AREA_UNITS, intercropCrop, type CropOption, type CropPrices, type OperationCosts } from './AdviceScreens';
-import { PriceHint, RISK_OPTIONS, YIELD_CLASSES, makeCall, money, type PriceData } from './GuidedParts';
+import { PriceHint, RISK_OPTIONS, SellSelect, YIELD_CLASSES, makeCall, money, type PriceData } from './GuidedParts';
 
 // Forms of the Ask AI chat that replace typing exact answers: each sends one message in a fixed wording
 // that the chat instructions (server/chat/agent.ts) tell the model how to read.
@@ -54,6 +54,7 @@ export const FieldPicker: React.FC<Props> = ({ country, servers, callTool, onSen
   const [budget, setBudget] = useState('0');
   const [budgets, setBudgets] = useState<InvestmentData | null>(null);
   const [risk, setRisk] = useState(1);
+  const [factory, setFactory] = useState({ key: '', name: '' }); // starch factory, or the open market when the key is empty
 
   useEffect(() => {
     let live = true;
@@ -83,9 +84,12 @@ export const FieldPicker: React.FC<Props> = ({ country, servers, callTool, onSen
     const budgetText = Number(budget) > 0
       ? `My fertilizer budget for the whole field is up to ${budget} ${budgets?.currency ?? currency} (maxInvestment ${budget}).`
       : 'I have no fertilizer budget limit.';
+    const sellText = factory.key
+      ? ` I plan to sell my roots to ${factory.name}, a starch factory (sell_to_starch_factory true, starch_factory_name ${factory.key}).`
+      : '';
     onSend(
       `My field is ${Number(size)} ${unit}. My cassava yield now is in the class "${yieldLabel}" (current_field_yield ${yieldClass}). `
-      + `I sell cassava roots at ${Number(price)} ${currency} per tonne. ${budgetText} My risk attitude is ${riskLabel.toLowerCase()} (risk_attitude ${risk}).`,
+      + `I sell cassava roots at ${Number(price)} ${currency} per tonne. ${budgetText} My risk attitude is ${riskLabel.toLowerCase()} (risk_attitude ${risk}).${sellText}`,
     );
   };
 
@@ -134,6 +138,9 @@ export const FieldPicker: React.FC<Props> = ({ country, servers, callTool, onSen
               {RISK_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </Field>
+        </div>
+        <div className="col-12">
+          <SellSelect id="cp-sell" call={call} country={country.code} value={factory.key} onChange={(key, name) => setFactory({ key, name })} />
         </div>
       </div>
       <div className="d-flex align-items-center gap-2">

@@ -1,15 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { ArrowLeft, Banknote, ChevronRight, Leaf, Loader2, Sprout } from 'lucide-react';
+import { ArrowLeft, Banknote, ChevronRight, Leaf, Loader2, Sprout, Store } from 'lucide-react';
 import type { Country, Crop } from '@akilimo/shared';
 import { planBags } from '@akilimo/shared';
 import type { ServerState } from '../mcp/useMcpServers';
-import { COUNTRIES } from '@akilimo/shared';
+import { findCountry } from '@akilimo/shared';
+import { useCountries } from '../mcp/countries';
 import type { GuidedEntry } from '../mcp/guided';
 import { ADVICE, ADVICE_ICONS, AdviceResult, AdviceScreen, intercropCrop, type AdviceKind } from './AdviceScreens';
 import {
-  Loading, PriceHint, RiskSelect, WINDOWS, YieldSelect, dateProblem, harvestRange, message, money, monthsFromNow, plantingMin, useLoad, windowLabel,
-  type Call, type FertilizerData, type PriceData, type Record_, type Row,
+  Loading, PriceHint, RiskSelect, SellSelect, WINDOWS, YieldSelect, dateProblem, harvestRange, message, money, monthsFromNow, plantingMin, useLoad, windowLabel,
+  type Call, type FertilizerData, type MarketOptions, type PriceData, type Record_, type Row,
 } from './GuidedParts';
 import { MapPicker } from './MapPicker';
 
@@ -30,7 +31,7 @@ interface Props {
 
 // ── the panel ───────────────────────────────────────────────────────────────────────────────────
 
-type Screen = 'menu' | 'price' | 'fertilizers' | 'recommend' | AdviceKind;
+type Screen = 'menu' | 'price' | 'fertilizers' | 'recommend' | 'market' | AdviceKind;
 
 // Records a finished step once, when its data first arrives (a ref keeps React's double effects from saving it twice)
 function useRecordOnce<T>(data: T | undefined, record: Record_, build: (data: T) => GuidedEntry) {
@@ -88,6 +89,7 @@ export const GuidedPanel: React.FC<Props> = ({ country, crop, servers, callTool,
       )}
       {screen === 'menu' && <Menu country={country} crop={crop} onPick={setScreen} />}
       {screen === 'price' && <PriceScreen country={country} call={call} record={record} />}
+      {screen === 'market' && <MarketScreen country={country} call={call} record={record} />}
       {screen === 'fertilizers' && <FertilizerScreen country={country} call={call} record={record} />}
       {screen === 'recommend' && <RecommendScreen country={country} call={call} record={record} />}
       {(screen === 'practices' || screen === 'schedule' || screen === 'intercrop') && (
@@ -112,6 +114,7 @@ const Menu: React.FC<{ country: Country; crop?: Crop | undefined; onPick: (s: Sc
   ];
   const prices: Option[] = [
     { screen: 'fertilizers', icon: <Leaf size={22} />, title: 'Fertilizers and their prices', text: `See which fertilizers are available in ${country.name} and what a bag costs.` },
+    { screen: 'market', icon: <Store size={22} />, title: 'Where to sell', text: `Compare the open market with the starch factories in ${country.name}.` },
     { screen: 'price', icon: <Banknote size={22} />, title: 'Cassava root price', text: `See typical cassava prices per tonne in ${country.name}.` },
   ];
   const group = (heading: string, options: Option[]) => (
@@ -195,6 +198,90 @@ const FertilizerView: React.FC<{ country: Country; d: FertilizerData }> = ({ cou
     )
 );
 
+// Where to sell: the open market next to each starch factory, with how old the factory prices are
+const MarketView: React.FC<{ d: MarketOptions }> = ({ d }) => {
+  const cur = d.currency ?? '';
+  const open = d.open_market.typical_price_per_tonne;
+  const asOf = d.starch_prices_as_of ? new Date(`${d.starch_prices_as_of}T00:00:00`).toLocaleDateString('en', { day: 'numeric', month: 'short', year: 'numeric' }) : null;
+  return (
+    <>
+      <div className="card mb-3"><div className="card-body">
+        <div className="small text-body-secondary">Open market, typical price</div>
+        {open !== null
+          ? <div className="fs-3 fw-semibold text-akilimo">{money(open)} <span className="fs-6 text-body-secondary">{cur} per tonne of roots</span></div>
+          : <div className="text-body-secondary">There is no published open-market price for this country; ask local buyers.</div>}
+        {d.open_market.price_bands.length > 0 && (
+          <div className="small text-body-secondary mt-1">Bands: {d.open_market.price_bands.map(b => `${money(b.min)} to ${money(b.max)}`).join('; ')}</div>
+        )}
+      </div></div>
+
+      {d.starch_factories.length === 0
+        ? <div className="alert alert-info small">No starch factories are listed for this country, so the open market is the option shown.</div>
+        : (
+          <>
+            <h3 className="h6">Starch factories</h3>
+            <div className="table-responsive">
+              <table className="table table-sm small align-middle">
+                <thead><tr><th>Factory</th><th className="text-end">Price per tonne ({cur})</th><th className="text-end">Best price vs open market</th></tr></thead>
+                <tbody>
+                  {d.starch_factories.map(f => (
+                    <tr key={f.key}>
+                      <td className="fw-semibold">{f.name}</td>
+                      <td className="text-end">{f.flat_price ? money(f.highest_price_per_tonne) : `${money(f.lowest_price_per_tonne)} to ${money(f.highest_price_per_tonne)}`}</td>
+                      <td className={`text-end ${(f.highest_vs_open_market_percent ?? 0) < 0 ? 'text-danger' : 'text-success'}`}>
+                        {f.highest_vs_open_market_percent === null ? '–' : `${f.highest_vs_open_market_percent > 0 ? '+' : ''}${f.highest_vs_open_market_percent}%`}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {d.starch_factories.some(f => !f.flat_price) && (
+              <details className="small mb-3">
+                <summary className="text-body-secondary">Price by starch content of the roots</summary>
+                <div className="d-flex flex-column gap-2 mt-2">
+                  {d.starch_factories.filter(f => !f.flat_price).map(f => (
+                    <div key={f.key}>
+                      <div className="fw-semibold">{f.name}</div>
+                      <table className="table table-sm small mb-0">
+                        <thead><tr><th>Starch content</th><th className="text-end">Price per tonne ({cur})</th></tr></thead>
+                        <tbody>{f.price_classes.map(c => <tr key={c.class}><td>{c.starch_range || `${c.min_starch_percent}%+`}</td><td className="text-end">{money(c.price_per_tonne)}</td></tr>)}</tbody>
+                      </table>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )}
+          </>
+        )}
+
+      {d.starch_prices_as_of && (
+        <div className={`alert small ${d.starch_prices_stale ? 'alert-warning' : 'alert-light border'}`}>
+          Starch factory prices as of {asOf}{d.starch_prices_age_days !== null ? ` (${d.starch_prices_age_days} days ago)` : ''}.
+          {d.starch_prices_stale ? ' They may be out of date; confirm with the factory before you decide.' : ''}
+        </div>
+      )}
+      <div className="form-text">
+        A factory pays by the starch content of your roots, so the best price needs roots with a lot of starch. These are prices as they stand, not a forecast. When you pick a factory in the advice forms, the advice assumes its highest price.
+      </div>
+    </>
+  );
+};
+
+const MarketScreen: React.FC<{ country: Country; call: Call; record: Record_ }> = ({ country, call, record }) => {
+  const request = { countryCode: country.code };
+  const state = useLoad(() => call<MarketOptions>('get_market_options', request), [country.code]);
+  useRecordOnce(state.data, record, result => ({
+    action: 'market', country: country.code, title: `Where to sell in ${country.name}`, tool: 'get_market_options', request, result,
+  }));
+  return (
+    <>
+      <h2 className="h5">Where to sell in {country.name}</h2>
+      <Loading state={state} />
+      {state.data && <MarketView d={state.data} />}
+    </>
+  );
+};
 const FertilizerScreen: React.FC<{ country: Country; call: Call; record: Record_ }> = ({ country, call, record }) => {
   const request = { countryCode: country.code };
   const state = useLoad(() => call<FertilizerData>('get_fertilizer_options', request), [country.code]);
@@ -211,7 +298,9 @@ const FertilizerScreen: React.FC<{ country: Country; call: Call; record: Record_
 };
 
 // A saved session shown again: every step in order, read-only, straight from what was saved
-const ReplayPanel: React.FC<{ entries: GuidedEntry[]; onLeave: () => void }> = ({ entries, onLeave }) => (
+const ReplayPanel: React.FC<{ entries: GuidedEntry[]; onLeave: () => void }> = ({ entries, onLeave }) => {
+  const { countries } = useCountries();
+  return (
   <div className="card-body overflow-auto min-h-0">
     <div className="d-flex align-items-center gap-2 mb-3">
       <button type="button" className="btn btn-sm btn-outline-success" onClick={onLeave}>Continue from the menu</button>
@@ -220,12 +309,13 @@ const ReplayPanel: React.FC<{ entries: GuidedEntry[]; onLeave: () => void }> = (
     {entries.length === 0 && <div className="alert alert-info small">This session has no saved steps.</div>}
     <div className="d-flex flex-column gap-4">
       {entries.map((e, i) => {
-        const country = COUNTRIES.find(c => c.code === e.country);
+        const country = findCountry(countries, e.country);
         return (
           <section key={i}>
             <h2 className="h6 mb-2">{e.title}</h2>
             {e.action === 'price' && country && <PriceView country={country} d={e.result as PriceData} />}
             {e.action === 'fertilizers' && country && <FertilizerView country={country} d={e.result as FertilizerData} />}
+            {e.action === 'market' && <MarketView d={e.result as MarketOptions} />}
             {e.action === 'recommend' && <RecommendationResult entry={e} />}
             {(e.action === 'practices' || e.action === 'schedule' || e.action === 'intercrop') && <AdviceResult entry={e} />}
           </section>
@@ -233,7 +323,8 @@ const ReplayPanel: React.FC<{ entries: GuidedEntry[]; onLeave: () => void }> = (
       })}
     </div>
   </div>
-);
+  );
+};
 
 // What the farmer entered, then the answer
 const RecommendationResult: React.FC<{ entry: GuidedEntry }> = ({ entry }) => {
@@ -343,6 +434,7 @@ const RecommendScreen: React.FC<{ country: Country; call: Call; record: Record_ 
   const [rootPrice, setRootPrice] = useState('');
   const [yieldClass, setYieldClass] = useState(11.25); // t/ha class sent as yieldInfo.current_field_yield
   const [risk, setRisk] = useState(1); // user_info.risk_attitude
+  const [factory, setFactory] = useState(''); // starch factory key, or '' for the open market
   const [plantingWindow, setPlantingWindow] = useState(1);
   const [harvestWindow, setHarvestWindow] = useState(1);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
@@ -396,7 +488,7 @@ const RecommendScreen: React.FC<{ country: Country; call: Call; record: Record_ 
           farmInformation: { country_code: country.code, use_case: 'FR', map_lat: pos.lat, map_long: pos.lon, field_size: Number(size), area_unit: unit },
           planting: { planting_date: planting, harvest_date: harvest, planting_date_window: plantingWindow, harvest_date_window: harvestWindow },
           cassava: { unit_price: Number(rootPrice), unit_weight: 1000 },
-          yieldInfo: { current_field_yield: yieldClass },
+          yieldInfo: { current_field_yield: yieldClass, ...(factory ? { sell_to_starch_factory: true, starch_factory_name: factory } : {}) },
           ...(Number(budget) > 0 ? { maxInvestment: Number(budget) } : {}),
           recommendations: { lang: 'en' },
         },
@@ -482,6 +574,7 @@ const RecommendScreen: React.FC<{ country: Country; call: Call; record: Record_ 
               <span className="input-group-text">{currency} per tonne</span>
             </div>
             <PriceHint call={call} country={country.code} item="cassava" value={rootPrice} />
+            <SellSelect id="g-sell" call={call} country={country.code} value={factory} onChange={key => setFactory(key)} />
             <div className="form-text">We filled in the typical price for {country.name}; change it if yours is different.</div>
           </section>
 

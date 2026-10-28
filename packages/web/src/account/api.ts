@@ -11,6 +11,8 @@ export interface User {
   username: string;
   name: string;
   role: Role;
+  // The user's own choice to let the AI chat search the internet, for every conversation
+  web_search: boolean;
 }
 
 export interface AdminUser extends User {
@@ -52,6 +54,8 @@ export const signUp = (name: string, email: string, username: string, password: 
   request<{ user: User }>('POST', '/auth/signup', { name, email, username, password });
 // `login` is an email or a username
 export const signIn = (login: string, password: string) => request<{ user: User }>('POST', '/auth/login', { login, password });
+// The user's settings (saved to the account): whether the AI chat may search the internet
+export const updatePreferences = (preferences: { web_search: boolean }) => request<{ user: User }>('PATCH', '/auth/preferences', preferences);
 export const signOut = () => request<void>('POST', '/auth/logout');
 
 export const listConversations = (mode?: ConversationMode) =>

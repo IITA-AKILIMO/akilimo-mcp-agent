@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { CheckCircle2, ExternalLink, KeyRound, Link2, Loader2, Plug, Save, Trash2, TriangleAlert, XCircle } from 'lucide-react';
 import {
-  deleteServerKey, fetchModels, fetchProviders, getServerKeys, setServerKey, testProvider, updateProvider,
-  type LlmTest, type ProviderChange, type ProviderId, type ProviderStatus,
+  deleteServerKey, fetchModels, fetchProviders, getServerKeys, getWebSearch, setServerKey, testProvider, testWebSearch, updateProvider, updateWebSearch,
+  type LlmTest, type ProviderChange, type ProviderId, type ProviderStatus, type SearchProviderId, type WebSearchChange, type WebSearchStatus, type WebSearchTest,
 } from '../llm/api';
 import { listServers, needsKey, type McpServerConfig } from '../mcp/servers';
 
@@ -239,6 +239,135 @@ const ServerKeys: React.FC = () => {
     </section>
   );
 };
+
+const SEARCH_LABELS: Record<SearchProviderId, string> = { brave: 'Brave Search', tavily: 'Tavily', searxng: 'SearXNG (your own instance)' };
+
+// The optional web search of the chat: a search service, its key (encrypted, never shown again) or, for
+// SearXNG, its address. Users still decide per conversation whether to use it; it is off until they do.
+const WebSearchCard: React.FC = () => {
+  const [status, setStatus] = useState<WebSearchStatus | null>(null);
+  const [provider, setProvider] = useState('');
+  const [baseUrl, setBaseUrl] = useState('');
+  const [key, setKey] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [test, setTest] = useState<WebSearchTest | { running: true } | null>(null);
+
+  const apply = (s: WebSearchStatus) => { setStatus(s); setProvider(s.provider ?? ''); setBaseUrl(s.baseUrl ?? ''); };
+
+  useEffect(() => {
+    getWebSearch().then(apply, e => setError(`Cannot load web search settings: ${message(e)}`));
+  }, []);
+
+  const save = async (change: WebSearchChange, after?: () => void) => {
+    setBusy(true);
+    setError(null);
+    try {
+      apply(await updateWebSearch(change));
+      setTest(null); // the result described the previous settings
+      after?.();
+    } catch (e) {
+      setError(message(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runTest = async () => {
+    setTest({ running: true });
+    try { setTest(await testWebSearch()); } catch (e) { setTest({ ok: false, ms: 0, error: message(e) }); }
+  };
+
+  if (!status && !error) return <div className="small text-body-secondary d-flex align-items-center gap-1"><Loader2 size={14} className="spin" /> Loading…</div>;
+  const needsKey = provider === 'brave' || provider === 'tavily';
+  const changed = !!status && (provider !== (status.provider ?? '') || baseUrl !== (status.baseUrl ?? ''));
+  const pill = !status ? null
+    : !status.enabled ? <span className="badge rounded-pill text-bg-secondary">Off</span>
+    : status.available ? <span className="badge rounded-pill text-bg-success">Ready</span>
+    : <span className="badge rounded-pill text-bg-warning">Needs setup</span>;
+
+  return (
+    <section>
+      <h3 className="h6 mb-1">Web search</h3>
+      <p className="small text-body-secondary">
+        Lets the AI chat look things up on the internet. It is off for every user until they switch it on in a conversation, and then the words the assistant searches for are sent to the service you pick here.
+      </p>
+      <div className={`card shadow-sm ${status && !status.enabled ? 'opacity-75' : ''}`}>
+        <div className="card-body">
+          <div className="d-flex align-items-center gap-2 mb-3">
+            <div className="fw-semibold">Search service</div>
+            {pill}
+            {status?.source === 'env' && <span className="small text-body-secondary">from the server's SEARCH_* settings; saving here replaces them</span>}
+            {status && (
+              <div className="form-check form-switch mb-0 ms-auto" title={status.enabled ? 'Users can turn web search on' : 'Web search is not offered to users'}>
+                <input className="form-check-input" type="checkbox" role="switch" aria-label="Web search offered to users" checked={status.enabled} disabled={busy}
+                  onChange={e => save({ enabled: e.target.checked })} />
+              </div>
+            )}
+          </div>
+          <div className="row g-3">
+            <div className="col-12">
+              <label className="form-label small fw-semibold mb-1" htmlFor="ws-provider">Service</label>
+              <select id="ws-provider" className="form-select form-select-sm" value={provider} onChange={e => setProvider(e.target.value)}>
+                <option value="">Not set up</option>
+                {(Object.keys(SEARCH_LABELS) as SearchProviderId[]).map(id => <option key={id} value={id}>{SEARCH_LABELS[id]}</option>)}
+              </select>
+            </div>
+            {provider === 'searxng' && (
+              <div className="col-12">
+                <label className="form-label small fw-semibold mb-1 d-flex align-items-center gap-1" htmlFor="ws-url"><Link2 size={14} /> Address of the instance</label>
+                <input id="ws-url" className="form-control form-control-sm font-monospace" value={baseUrl} spellCheck={false} placeholder="https://search.example.org"
+                  onChange={e => setBaseUrl(e.target.value.trim())} />
+                <div className="form-text">Its JSON output format must be enabled.</div>
+              </div>
+            )}
+            {needsKey && (
+              <div className="col-12">
+                <label className="form-label small fw-semibold mb-1 d-flex align-items-center gap-1" htmlFor="ws-key"><KeyRound size={14} /> API key</label>
+                <div className="input-group input-group-sm">
+                  <input id="ws-key" type="password" className="form-control" autoComplete="off" value={key}
+                    placeholder={status?.keyHint ? `Saved (${status.keyHint}) · type to replace` : 'Paste the key'} onChange={e => setKey(e.target.value.trim())} />
+                  <button type="button" className="btn btn-outline-success d-inline-flex align-items-center gap-1" disabled={busy || !key}
+                    onClick={() => save({ provider, apiKey: key }, () => setKey(''))}>
+                    <Save size={14} /> Save key
+                  </button>
+                  {status?.keyHint && (
+                    <button type="button" className="btn btn-outline-danger" disabled={busy} title="Remove the saved key" aria-label="Remove the saved key"
+                      onClick={() => save({ clearKey: true })}>
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+          {error && <div className="small text-danger mt-2">{error}</div>}
+        </div>
+        <div className="card-footer bg-transparent d-flex flex-column gap-2">
+          <div className="d-flex align-items-center gap-2 flex-wrap">
+            <button type="button" className="btn btn-sm btn-outline-success d-inline-flex align-items-center gap-1" disabled={busy || !changed}
+              onClick={() => save({ provider, ...(provider === 'searxng' ? { baseUrl } : {}) })}>
+              <Save size={14} /> Save service
+            </button>
+            <button type="button" className="btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-1" onClick={runTest}
+              disabled={busy || changed || !status?.available || (test !== null && 'running' in test)}
+              title={changed ? 'Save the service first' : !status?.available ? 'Finish the setup and turn it on to test' : 'Run one real search'}>
+              <Plug size={14} /> Test search
+            </button>
+          </div>
+          {test && ('running' in test
+            ? <div className="small text-body-secondary d-flex align-items-center gap-1"><Loader2 size={14} className="spin" /> Searching…</div>
+            : test.ok
+              ? <div className="small text-success-emphasis d-flex align-items-start gap-1"><CheckCircle2 size={14} className="flex-shrink-0 mt-1 text-success" /> <span>Works: {test.hits} result{test.hits === 1 ? '' : 's'} in {test.ms} ms{test.first ? `, first: ${test.first}` : ''}</span></div>
+              : <div className="small text-danger d-flex align-items-start gap-1"><XCircle size={14} className="flex-shrink-0 mt-1" /> <span>{test.error}</span></div>)}
+        </div>
+      </div>
+    </section>
+  );
+};
+
+// Its own tab in the admin dialog, so the search service is easy to find
+export const WebSearchTab: React.FC = () => <WebSearchCard />;
 
 export const ProvidersTab: React.FC = () => {
   const [providers, setProviders] = useState<ProviderStatus[]>([]);

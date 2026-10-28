@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { CheckCircle2, Loader2, Pencil, Plug, Plus, Server, Shield, Sparkles, Trash2, Users, X, XCircle } from 'lucide-react';
+import { CheckCircle2, Globe, Loader2, Pencil, Plug, Plus, Server, Shield, Sparkles, Trash2, Users, X, XCircle } from 'lucide-react';
 import { listUsers, setUserRole, type AdminUser, type Role, type User } from '../account/api';
-import { ProvidersTab } from './ProvidersPanel';
+import { ProvidersTab, WebSearchTab } from './ProvidersPanel';
 import { loadKeys } from '../mcp/keys';
 import {
   addServer, describeAuth, listServers, needsKey, removeServer, testServer, updateServer,
@@ -332,7 +332,7 @@ const UsersTab: React.FC<{ currentUser: User }> = ({ currentUser }) => {
 
 // Admin-only dialog: shared MCP servers, AI providers and user roles
 export const AdminDialog: React.FC<Props> = ({ currentUser, onClose, onChanged }) => {
-  const [tab, setTab] = useState<'servers' | 'providers' | 'users'>('servers');
+  const [tab, setTab] = useState<'servers' | 'providers' | 'search' | 'users'>('servers');
 
   return (
     <div className="modal d-block" tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="admin-dialog-title"
@@ -360,6 +360,12 @@ export const AdminDialog: React.FC<Props> = ({ currentUser, onClose, onChanged }
                 </button>
               </li>
               <li className="nav-item" role="presentation">
+                <button type="button" role="tab" aria-selected={tab === 'search'} title="The search service for the chat's optional web search"
+                  className={`nav-link d-inline-flex align-items-center gap-1 ${tab === 'search' ? 'active' : ''}`} onClick={() => setTab('search')}>
+                  <Globe size={14} /> Web search
+                </button>
+              </li>
+              <li className="nav-item" role="presentation">
                 <button type="button" role="tab" aria-selected={tab === 'users'}
                   className={`nav-link d-inline-flex align-items-center gap-1 ${tab === 'users' ? 'active' : ''}`} onClick={() => setTab('users')}>
                   <Users size={14} /> Users
@@ -368,6 +374,7 @@ export const AdminDialog: React.FC<Props> = ({ currentUser, onClose, onChanged }
             </ul>
             {tab === 'servers' && <ServersTab onChanged={onChanged} />}
             {tab === 'providers' && <ProvidersTab />}
+            {tab === 'search' && <WebSearchTab />}
             {tab === 'users' && <UsersTab currentUser={currentUser} />}
           </div>
         </div>

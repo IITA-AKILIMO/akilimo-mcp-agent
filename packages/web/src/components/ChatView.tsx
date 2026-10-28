@@ -2,14 +2,15 @@ import React, { useEffect, useRef, useState } from 'react';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Bot, CalendarDays, Check, ChevronRight, Sparkles, Compass, History, Leaf, MessageSquare, Ruler, Shovel, Sprout, Wheat, Loader2, MapPin, RotateCcw, Send, Settings2, Square, Trash2, User, Wrench, X } from 'lucide-react';
+import { Bot, CalendarDays, Check, ChevronRight, Sparkles, Compass, History, Leaf, MessageSquare, Globe, Ruler, Shovel, Sprout, Store, Wheat, Loader2, MapPin, RotateCcw, Send, Settings2, Square, Trash2, User, Wrench, X } from 'lucide-react';
 import {
   appendMessages, createConversation, deleteConversation, getConversation, listConversations,
   type ConversationSummary, type User as Account,
 } from '../account/api';
-import { streamChat, type AgentStep, type ProviderId } from '../llm/api';
+import { fetchCapabilities, streamChat, type AgentStep, type ProviderId } from '../llm/api';
 import type { ChatMessage } from '../llm/types';
-import { COUNTRIES, adviceTypes, akilimoExamples, contextExamples, findCountry } from '@akilimo/shared';
+import { adviceTypes, akilimoExamples, contextExamples, findCountry } from '@akilimo/shared';
+import { useCountries } from '../mcp/countries';
 import { useLlm } from '../llm/useLlm';
 import { read, write } from '../mcp/keys';
 import type { McpServerConfig } from '../mcp/servers';
@@ -30,6 +31,8 @@ interface Props {
   callTool: (server: string, name: string, args: Record<string, unknown>) => Promise<CallToolResult>;
   accountsEnabled: boolean;
   user: Account | null;
+  // Saves the user's web search choice to their account (it then applies to every conversation)
+  onWebSearchChange?: (on: boolean) => Promise<void>;
 }
 
 interface QueuedMessage { id: string; text: string }
@@ -54,7 +57,7 @@ const toChatMessage = (m: ChatMessage): ChatMessage => ({
   ...(m.tool_name ? { tool_name: m.tool_name } : {}),
 });
 
-export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accountsEnabled, user }) => {
+export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accountsEnabled, user, onWebSearchChange }) => {
   // The server's keys belong to the organisation, so with accounts enabled the chat needs a sign-in
   const canChat = !accountsEnabled || !!user;
   const llm = useLlm(canChat);
@@ -79,7 +82,9 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
 
   // The chat starts by asking where the user farms; the answer is remembered in this browser
   const [countryCode, setCountryCode] = useState<string>(() => read<string>(COUNTRY_KEY, ''));
-  const country = findCountry(countryCode);
+  // The supported countries come from the Akilimo API (never from the code)
+  const { countries, loading: countriesLoading, error: countriesError, reload: reloadCountries } = useCountries();
+  const country = findCountry(countries, countryCode);
   // The crop selector: the list comes from the Akilimo API; a crop without recommendations only gets prices and information
   const crops = useCrops(countryCode || undefined);
   const [cropKey, setCropKey] = useState(savedCropKey);
@@ -91,6 +96,22 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
   const [showDates, setShowDates] = useState(false);
   const [showFertilizers, setShowFertilizers] = useState(false);
   const [showAdvice, setShowAdvice] = useState(false);
+  // Web search: only offered when the server has a search service, and always off until the user turns it on
+  const [webSearchAvailable, setWebSearchAvailable] = useState(false);
+  // Signed in: the choice is part of the profile (saved to the account). Without accounts there is no profile,
+  // so it is only remembered until the page is closed or a new conversation starts.
+  const [guestWebSearch, setGuestWebSearch] = useState(false);
+  const webSearch = user ? user.web_search : guestWebSearch;
+  const toggleWebSearch = () => {
+    if (user && onWebSearchChange) onWebSearchChange(!user.web_search).catch(e => setError(e instanceof Error ? e.message : String(e)));
+    else setGuestWebSearch(v => !v);
+  };
+  useEffect(() => {
+    if (!canChat) { setWebSearchAvailable(false); return; }
+    let live = true;
+    fetchCapabilities().then(c => { if (live) { setWebSearchAvailable(c.webSearch.available); } }, () => { if (live) setWebSearchAvailable(false); });
+    return () => { live = false; };
+  }, [canChat]);
   const [picker, setPicker] = useState<'field' | 'practices' | 'intercrop' | null>(null);
   const [pickedInArea, setPickedInArea] = useState<boolean | null>(null); // is the picked spot inside the supported area
   const [dates, setDates] = useState({ planting: monthsFromNow(1), harvest: monthsFromNow(11), plantingWindow: 1, harvestWindow: 1 });
@@ -222,6 +243,7 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
         provider: llm.provider as ProviderId,
         model,
         country: country?.code,
+        webSearch,
         ...(crop ? { crop: { key: crop.key, name: crop.name, advice_available: crop.advice_available } } : {}),
         messages: history.current,
         signal: controller.signal,
@@ -252,6 +274,7 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
     setQueue([]);
     abort.current?.abort();
     history.current = [];
+    setGuestWebSearch(false); // without a profile, a new conversation starts with web search off again
     conversationId.current = null;
     setItems([]);
     setError(null);
@@ -340,7 +363,7 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
     fertilizers: <Leaf size={13} />, practices: <Shovel size={13} />, intercrop: <Wheat size={13} />,
   };
   const ADVICE_ICON_SM: Record<string, React.ReactNode> = {
-    fertilizer: <Sprout size={13} />, practices: <Shovel size={13} />, schedule: <CalendarDays size={13} />, intercrop: <Wheat size={13} />,
+    fertilizer: <Sprout size={13} />, practices: <Shovel size={13} />, schedule: <CalendarDays size={13} />, intercrop: <Wheat size={13} />, market: <Store size={13} />,
   };
   const CHIP_HINTS: Record<string, string> = {
     location: 'Pick your field on the map',
@@ -375,7 +398,7 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
   };
 
   const exampleGroups = country
-    ? [...akilimoExamples(country), ...(hasContextTools(servers) ? [contextExamples(country)] : [])]
+    ? [...akilimoExamples(country, cropName, countries).filter(g => adviceReady || g.title === 'Fertilizers and prices'), ...(hasContextTools(servers) ? [contextExamples(country, countries)] : [])]
     : [];
 
   return (
@@ -396,7 +419,7 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
         <select className="form-select form-select-sm w-auto ms-auto" aria-label="Country" title="Your country: prices, fertilizers and advice are for this country" value={countryCode}
           onChange={e => chooseCountry(e.target.value)}>
           {!country && <option value="">Choose country…</option>}
-          {COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.name}</option>)}
+          {countries.map(c => <option key={c.code} value={c.code}>{c.name}</option>)}
         </select>
         <select className="form-select form-select-sm w-auto" aria-label="Crop" value={crop?.key ?? ''} disabled={busy}
           title={crop?.advice_available === false ? `${crop.name}: prices and information only, recommendations are not available yet` : 'The crop you want advice on'}
@@ -477,7 +500,13 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
             <p className="mb-1">Where do you farm?</p>
             <p className="small text-body-secondary">Choose your country first. I will use it for prices, fertilizers and the examples I suggest.</p>
             <div className="d-flex flex-wrap justify-content-center gap-2 mt-3">
-              {COUNTRIES.map(c => (
+              {countriesLoading && <span className="small text-body-secondary">Loading countries…</span>}
+              {countriesError && (
+                <div className="alert alert-warning small mb-0">
+                  {countriesError} <button type="button" className="btn btn-sm btn-outline-secondary ms-2" onClick={reloadCountries} title="Try loading the countries again">Retry</button>
+                </div>
+              )}
+              {countries.map(c => (
                 <button key={c.code} type="button" className="btn btn-outline-success" onClick={() => chooseCountry(c.code)} title={`Use ${c.name}`}>{c.name}</button>
               ))}
             </div>
@@ -493,12 +522,12 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
               {!adviceReady && <div className="alert alert-info small">Recommendations for {crop?.name} are not available yet; you can still ask about prices and reference data.</div>}
               {adviceReady && <div className="small fw-semibold text-body-secondary mb-1">What would you like advice on?</div>}
               <div className="d-flex flex-column gap-2 mb-3">
-                {adviceReady && adviceTypes(country).map(a => (
+                {adviceReady && adviceTypes(country, cropName).map(a => (
                   <button key={a.id} type="button" className="btn btn-outline-success text-start d-flex align-items-center gap-3 p-2" onClick={() => send(a.prompt)} disabled={!model || !canChat} title={a.prompt}>
-                    <span className="flex-shrink-0">{a.id === 'fertilizer' ? <Sprout size={22} /> : ADVICE_ICONS[a.id]}</span>
+                    <span className="flex-shrink-0">{a.id === 'fertilizer' ? <Sprout size={22} /> : a.id === 'market' ? <Store size={22} /> : ADVICE_ICONS[a.id]}</span>
                     <span className="flex-grow-1">
-                      <span className="d-block fw-semibold">{a.id === 'fertilizer' ? 'Fertilizer recommendation' : ADVICE[a.id].title}</span>
-                      <span className="d-block small text-body-secondary">{a.id === 'fertilizer' ? `Which fertilizer to use in ${country.name}, and how much.` : ADVICE[a.id].text}</span>
+                      <span className="d-block fw-semibold">{a.id === 'fertilizer' ? 'Fertilizer recommendation' : a.id === 'market' ? 'Where to sell' : ADVICE[a.id].title}</span>
+                      <span className="d-block small text-body-secondary">{a.id === 'fertilizer' ? `Which fertilizer to use in ${country.name}, and how much.` : a.id === 'market' ? `The open market or a starch factory in ${country.name}: where cassava sells best.` : ADVICE[a.id].text}</span>
                     </span>
                     <ChevronRight size={18} className="flex-shrink-0" />
                   </button>
@@ -652,7 +681,7 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
           <>
             <div className="position-fixed top-0 start-0 w-100 h-100" style={{ zIndex: 1040 }} onClick={() => setShowAdvice(false)} />
             <div className="dropdown-menu show shadow" style={{ position: 'absolute', bottom: '3.75rem', left: '0.75rem', zIndex: 1050, maxWidth: 'calc(100% - 1.5rem)' }}>
-              {adviceTypes(country).map(a => (
+              {adviceTypes(country, cropName).map(a => (
                 <button key={a.id} type="button" className="dropdown-item d-flex align-items-center gap-2 py-2" disabled={!model}
                   onClick={() => { setShowAdvice(false); send(a.prompt); }} title={a.prompt}>
                   {ADVICE_ICON_SM[a.id]}{a.label}
@@ -660,6 +689,11 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
               ))}
             </div>
           </>
+        )}
+        {view === 'ai' && webSearch && (
+          <div className="small text-success-emphasis d-flex align-items-center gap-1 mb-2">
+            <Globe size={13} /> Web search is on. Parts of what you ask can be sent to a search service. Turn it off with the globe button.
+          </div>
         )}
         <form className="input-group" onSubmit={e => { e.preventDefault(); send(input); }}>
           <button type="button" className="btn btn-outline-secondary" onClick={() => { setShowAdvice(v => !v); setShowMap(false); setShowDates(false); setShowFertilizers(false); setPicker(null); }}
@@ -678,6 +712,13 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
             title="Choose the fertilizers you can buy and their prices" aria-label="Choose fertilizers and prices" disabled={!country}>
             <Leaf size={16} />
           </button>
+          {view === 'ai' && webSearchAvailable && (
+            <button type="button" className={`btn ${webSearch ? 'btn-success' : 'btn-outline-secondary'}`} aria-pressed={webSearch} onClick={toggleWebSearch} disabled={busy}
+              title={webSearch ? "Web search is on: what you ask can be sent to a search service. Click to turn it off" : "Web search is off. Click to let the assistant search the internet"}
+              aria-label="Search the web">
+              <Globe size={16} />
+            </button>
+          )}
           <input className="form-control" placeholder={!canChat ? 'Sign in to chat…' : !country ? 'Choose your country first…' : model ? 'Type your question…' : 'Waiting for a model…'}
             value={input} onChange={e => setInput(e.target.value)} aria-label="Message" disabled={!model || !country || !canChat} />
           {busy && (

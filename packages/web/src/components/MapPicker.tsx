@@ -2,17 +2,13 @@ import React, { useEffect, useRef, useState } from 'react';
 import { CircleMarker, GeoJSON, MapContainer, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { MapPin, TriangleAlert } from 'lucide-react';
-import { findCountry, geoJsonContains } from '@akilimo/shared';
+import { findCountry, geoJsonContains, type Country, type GeoJsonLike } from '@akilimo/shared';
+import { useCountries } from '../mcp/countries';
 import { useCoverage } from '../mcp/coverage';
 
-// Map view per Akilimo country (GET /v1/countries); anything else starts on sub-Saharan Africa
-const COUNTRY_VIEWS: Record<string, { center: [number, number]; zoom: number }> = {
-  NG: { center: [9.08, 8.68], zoom: 6 },
-  TZ: { center: [-6.37, 34.89], zoom: 6 },
-  RW: { center: [-1.94, 29.87], zoom: 8 },
-  GH: { center: [7.95, -1.02], zoom: 7 },
-  BI: { center: [-3.37, 29.92], zoom: 8 },
-};
+// The map starts on the country's position from the Akilimo API (fitted to its supported area or its bounds when
+// known); with no country it starts on sub-Saharan Africa
+const COUNTRY_ZOOM = 6;
 const DEFAULT_VIEW = { center: [2, 18] as [number, number], zoom: 4 };
 
 // ~11 m precision is plenty for a field and avoids storing exact farm coordinates
@@ -66,14 +62,30 @@ const TrackSize: React.FC = () => {
   return null;
 };
 
-// Recentres on the farm's country when it changes, unless a point has already been picked
-const FollowCountry: React.FC<{ country?: string; hasPoint: boolean }> = ({ country, hasPoint }) => {
+// The box around every coordinate of a GeoJSON, as [south, west, north, east], or null for an empty one
+const geoJsonBounds = (geojson: GeoJsonLike): [[number, number], [number, number]] | null => {
+  let s = 90, w = 180, n = -90, e = -180;
+  const walk = (c: unknown): void => {
+    if (!Array.isArray(c)) return;
+    if (typeof c[0] === 'number' && typeof c[1] === 'number') { w = Math.min(w, c[0]); e = Math.max(e, c[0]); s = Math.min(s, c[1]); n = Math.max(n, c[1]); return; }
+    c.forEach(walk);
+  };
+  const features = (geojson as { features?: { geometry?: { coordinates?: unknown } }[] }).features ?? [];
+  features.forEach(f => walk(f.geometry?.coordinates));
+  return s <= n && w <= e ? [[s, w], [n, e]] : null;
+};
+
+// Recentres on the farm's country when it changes (and fits its supported area once that is known), unless
+// a point has already been picked
+const FollowCountry: React.FC<{ country?: Country | undefined; area: GeoJsonLike | null; hasPoint: boolean }> = ({ country, area, hasPoint }) => {
   const map = useMap();
   useEffect(() => {
     if (hasPoint) return;
-    const view = COUNTRY_VIEWS[country?.toUpperCase() ?? ''] ?? DEFAULT_VIEW;
-    map.setView(view.center, view.zoom);
-  }, [country, hasPoint, map]);
+    const box = (area && geoJsonBounds(area)) || (country?.bounds ? [[country.bounds[0], country.bounds[1]], [country.bounds[2], country.bounds[3]]] as [[number, number], [number, number]] : null);
+    if (box) map.fitBounds(box, { padding: [8, 8] });
+    else if (country?.latitude != null && country.longitude != null) map.setView([country.latitude, country.longitude], COUNTRY_ZOOM);
+    else map.setView(DEFAULT_VIEW.center, DEFAULT_VIEW.zoom);
+  }, [country, area, hasPoint, map]);
   return null;
 };
 
@@ -84,11 +96,13 @@ export const MapPicker: React.FC<Props> = ({ lat, lon, country, onChange, onCoun
   // picked point lies outside it (the compute service would only answer with an empty result later)
   const { geojson: area } = useCoverage(country);
   const covered = hasPoint && area ? geoJsonContains(area, lat, lon) : null;
-  const countryName = findCountry(country?.toUpperCase())?.name ?? country;
+  const { countries } = useCountries();
+  const supportedCountry = findCountry(countries, country);
+  const countryName = supportedCountry?.name ?? country;
   useEffect(() => { onCoverage?.(covered); }, [covered]); // eslint-disable-line react-hooks/exhaustive-deps
   const view = hasPoint
     ? { center: [lat, lon] as [number, number], zoom: 10 }
-    : COUNTRY_VIEWS[country?.toUpperCase() ?? ''] ?? DEFAULT_VIEW;
+    : supportedCountry?.latitude != null && supportedCountry.longitude != null ? { center: [supportedCountry.latitude, supportedCountry.longitude] as [number, number], zoom: COUNTRY_ZOOM } : DEFAULT_VIEW;
 
   const [lookup, setLookup] = useState<Lookup>({ state: 'idle' });
   const pending = useRef<AbortController | null>(null);
@@ -124,7 +138,7 @@ export const MapPicker: React.FC<Props> = ({ lat, lon, country, onChange, onCoun
         {hasPoint ? <>Field location <span className="font-monospace">{lat}, {lon}</span></> : 'Click the map to set the field location'}
         {lookup.state === 'loading' && <span className="text-body-secondary">· looking up country…</span>}
         {lookup.state === 'found' && (
-          COUNTRY_VIEWS[lookup.code]
+          findCountry(countries, lookup.code)
             ? <span className="text-body-secondary">· {lookup.name} ({lookup.code})</span>
             : <span className="text-warning-emphasis">· {lookup.name} ({lookup.code}) is not an Akilimo country</span>
         )}
@@ -149,7 +163,7 @@ export const MapPicker: React.FC<Props> = ({ lat, lon, country, onChange, onCoun
         )}
         <TrackSize />
         <ClickToPick onPick={pick} />
-        <FollowCountry country={country} hasPoint={hasPoint} />
+        <FollowCountry country={supportedCountry} area={area} hasPoint={hasPoint} />
         {hasPoint && (
           <CircleMarker center={[lat, lon]} radius={8}
             pathOptions={covered === false ? { color: '#b02a37', fillColor: '#dc3545', fillOpacity: 0.9 } : { color: '#2d5a27', fillColor: '#a3c585', fillOpacity: 0.9 }} />

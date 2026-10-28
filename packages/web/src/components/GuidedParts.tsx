@@ -180,6 +180,55 @@ export function useLoad<T>(load: () => Promise<T>, deps: unknown[]) {
   return state;
 }
 
+// get_market_options: where cassava roots can be sold in a country
+export interface MarketFactory {
+  key: string;
+  name: string;
+  flat_price: boolean;
+  price_classes: { class: number; min_starch_percent: number; starch_range: string; price_per_tonne: number }[];
+  lowest_price_per_tonne: number | null;
+  highest_price_per_tonne: number | null;
+  highest_vs_open_market_percent: number | null;
+}
+export interface MarketOptions {
+  country: string;
+  currency: string | null;
+  unit: string;
+  open_market: { price_bands: { min: number; max: number; average: number }[]; typical_price_per_tonne: number | null };
+  starch_factories: MarketFactory[];
+  starch_prices_as_of: string | null;
+  starch_prices_age_days: number | null;
+  starch_prices_stale: boolean;
+  notes: string[];
+}
+
+// "Where will you sell?" for the forms: the open market, or one of the country's starch factories. It is
+// left out when the server has no get_market_options tool or the country has no factory. A factory choice
+// is sent as yieldInfo.sell_to_starch_factory and starch_factory_name (the factory's key).
+export const SellSelect: React.FC<{ id: string; call: Call; country: string; value: string; onChange: (key: string, name: string) => void }> = ({ id, call, country, value, onChange }) => {
+  const state = useLoad(() => call<MarketOptions>('get_market_options', { countryCode: country }).catch(() => null), [country]);
+  const options = state.data;
+  useEffect(() => { onChange('', ''); }, [country]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!options || options.starch_factories.length === 0) return null;
+  return (
+    <div className="mt-3" style={{ maxWidth: '30rem' }}>
+      <label className="form-label small mb-1" htmlFor={id}>Where will you sell your cassava?</label>
+      <select id={id} className="form-select" value={value}
+        onChange={e => onChange(e.target.value, options.starch_factories.find(f => f.key === e.target.value)?.name ?? '')}>
+        <option value="">On the open market (the price above)</option>
+        {options.starch_factories.map(f => (
+          <option key={f.key} value={f.key}>
+            {f.name}{f.highest_price_per_tonne !== null ? `, up to ${money(f.highest_price_per_tonne)} ${options.currency ?? ''} per tonne` : ''}
+          </option>
+        ))}
+      </select>
+      <div className="form-text">
+        A starch factory pays by the starch content of your roots. The advice uses the factory's highest price, which needs roots with a high starch content, so your real income may be lower.
+      </div>
+    </div>
+  );
+};
+
 export const Loading: React.FC<{ state: { error?: string; loading: boolean } }> = ({ state }) => (
   <>
     {state.loading && <div className="text-body-secondary d-flex align-items-center gap-2"><Loader2 size={16} className="spin" /> Loading…</div>}

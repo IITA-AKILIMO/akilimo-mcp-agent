@@ -3,8 +3,9 @@
 // returned, so the step can be displayed later without calling anything.
 // price, fertilizers and recommend (fertilizer advice) as before; practices = planting practices (PP),
 // schedule = scheduled planting and harvest (SP), intercrop = intercropping (IC)
-export type GuidedAction = 'price' | 'fertilizers' | 'recommend' | 'practices' | 'schedule' | 'intercrop';
-const ACTIONS: readonly string[] = ['price', 'fertilizers', 'recommend', 'practices', 'schedule', 'intercrop'];
+// market = where to sell (open market or starch factories)
+export type GuidedAction = 'price' | 'fertilizers' | 'recommend' | 'practices' | 'schedule' | 'intercrop' | 'market';
+const ACTIONS: readonly string[] = ['price', 'fertilizers', 'recommend', 'practices', 'schedule', 'intercrop', 'market'];
 
 export interface GuidedEntry {
   action: GuidedAction;

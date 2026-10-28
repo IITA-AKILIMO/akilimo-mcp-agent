@@ -100,7 +100,7 @@ export default function App() {
             </button>
           </div>
           <AccountMenu enabled={account.enabled} user={account.user}
-            onLogin={account.login} onRegister={account.register} onLogout={account.logout} />
+            onLogin={account.login} onRegister={account.register} onLogout={account.logout} onWebSearchChange={account.setWebSearch} />
           <ThemeToggle />
         </div>
       </nav>
@@ -109,7 +109,7 @@ export default function App() {
         <div className="row g-3 panel-row">
           <div className="col-12 col-lg-8 col-xxl-9 panel-col">
             {mode === 'chat'
-              ? <ChatView configs={configs} servers={servers} callTool={callTool} accountsEnabled={account.enabled} user={account.user} />
+              ? <ChatView configs={configs} servers={servers} callTool={callTool} accountsEnabled={account.enabled} user={account.user} onWebSearchChange={account.setWebSearch} />
               : <ToolRunner configs={configs} servers={servers} callTool={callTool} />}
           </div>
           <div className="col-12 col-lg-4 col-xxl-3 panel-col d-flex flex-column gap-3">

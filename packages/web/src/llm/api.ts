@@ -49,6 +49,8 @@ const request = async <T,>(method: string, path: string, body?: unknown): Promis
 };
 
 export const fetchProviders = () => request<{ admin: boolean; providers: (ProviderOption | ProviderStatus)[] }>('GET', '/providers');
+// What the server offers beyond the models; web search exists only when a search service is configured
+export const fetchCapabilities = () => request<{ webSearch: { available: boolean } }>('GET', '/capabilities');
 export const fetchModels = (provider: ProviderId) =>
   request<{ models: string[]; default: string | null }>('GET', `/models/${provider}`);
 export const testProvider = (provider: ProviderId, model: string) => request<LlmTest>('POST', '/test', { provider, model });
@@ -57,6 +59,21 @@ export const testProvider = (provider: ProviderId, model: string) => request<Llm
 export interface ProviderChange { apiKey?: string; clearKey?: boolean; baseUrl?: string; enabled?: boolean }
 export const updateProvider = (id: ProviderId, change: ProviderChange) =>
   request<{ providers: ProviderStatus[] }>('PUT', `/admin/providers/${id}`, change);
+// Web search service, set by admins (the key is stored encrypted and never returned)
+export type SearchProviderId = 'brave' | 'tavily' | 'searxng';
+export interface WebSearchStatus {
+  provider: SearchProviderId | null;
+  baseUrl: string | null;
+  keyHint: string | null;
+  enabled: boolean;
+  source: 'admin' | 'env' | 'none';
+  available: boolean;
+}
+export interface WebSearchChange { provider?: string; baseUrl?: string; apiKey?: string; clearKey?: boolean; enabled?: boolean }
+export interface WebSearchTest { ok: boolean; ms: number; hits?: number; first?: string | null; error?: string }
+export const getWebSearch = () => request<WebSearchStatus>('GET', '/admin/web-search');
+export const updateWebSearch = (change: WebSearchChange) => request<WebSearchStatus>('PUT', '/admin/web-search', change);
+export const testWebSearch = () => request<WebSearchTest>('POST', '/admin/web-search/test', {});
 export const getServerKeys = () => request<{ keys: Record<string, string> }>('GET', '/admin/server-keys');
 export const setServerKey = (id: string, key: string) => request<{ keys: Record<string, string> }>('PUT', `/admin/server-keys/${id}`, { key });
 export const deleteServerKey = (id: string) => request<{ keys: Record<string, string> }>('DELETE', `/admin/server-keys/${id}`);
@@ -66,6 +83,7 @@ interface StreamOptions {
   model: string;
   country?: string;
   crop?: { key: string; name: string; advice_available: boolean };
+  webSearch?: boolean; // true only when the user switched web search on
   messages: ChatMessage[]; // user/assistant/tool messages so far, without the system prompt
   signal?: AbortSignal;
   onMessage: (message: ChatMessage) => void; // every message the server adds to the conversation
@@ -82,12 +100,12 @@ type StreamEvent =
   | { type: 'done' };
 
 // One user turn: the server runs the agent loop and streams events as newline-delimited JSON
-export async function streamChat({ provider, model, country, crop, messages, signal, onMessage, onStep, onWarning }: StreamOptions): Promise<void> {
+export async function streamChat({ provider, model, country, crop, webSearch, messages, signal, onMessage, onStep, onWarning }: StreamOptions): Promise<void> {
   const res = await fetch('/chat', {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ provider, model, country, crop, messages }),
+    body: JSON.stringify({ provider, model, country, crop, webSearch: webSearch === true, messages }),
     signal,
   });
   if (!res.ok) await fail(res);

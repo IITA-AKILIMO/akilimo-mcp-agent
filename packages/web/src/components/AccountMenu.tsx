@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { LogIn, LogOut, UserCircle } from 'lucide-react';
+import { Globe, LogIn, LogOut, UserCircle } from 'lucide-react';
 import type { User } from '../account/api';
 
 interface Props {
@@ -8,9 +8,11 @@ interface Props {
   onLogin: (login: string, password: string) => Promise<void>;
   onRegister: (name: string, email: string, username: string, password: string) => Promise<void>;
   onLogout: () => Promise<void>;
+  // Saves the user's choice to let the AI chat search the internet (a setting of the account)
+  onWebSearchChange: (on: boolean) => Promise<void>;
 }
 
-const AuthDialog: React.FC<Omit<Props, 'enabled' | 'user' | 'onLogout'> & { onClose: () => void }> = ({ onLogin, onRegister, onClose }) => {
+const AuthDialog: React.FC<Omit<Props, 'enabled' | 'user' | 'onLogout' | 'onWebSearchChange'> & { onClose: () => void }> = ({ onLogin, onRegister, onClose }) => {
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -94,8 +96,10 @@ const AuthDialog: React.FC<Omit<Props, 'enabled' | 'user' | 'onLogout'> & { onCl
   );
 };
 
-export const AccountMenu: React.FC<Props> = ({ enabled, user, onLogin, onRegister, onLogout }) => {
+export const AccountMenu: React.FC<Props> = ({ enabled, user, onLogin, onRegister, onLogout, onWebSearchChange }) => {
   const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   if (!enabled) return null;
 
   if (user) {
@@ -105,6 +109,11 @@ export const AccountMenu: React.FC<Props> = ({ enabled, user, onLogin, onRegiste
           <UserCircle size={16} className="text-akilimo" /> {user.name}
           {user.role === 'admin' && <span className="badge text-bg-success">Admin</span>}
         </span>
+        <button type="button" className={`btn btn-sm d-inline-flex align-items-center gap-1 ${user.web_search ? 'btn-success' : 'btn-outline-secondary'}`} aria-pressed={user.web_search} disabled={saving}
+          title={saveError ?? (user.web_search ? 'Web search is on for your account: the AI chat can search the internet in all your conversations. Click to turn it off' : 'Web search is off for your account. Click to let the AI chat search the internet in all your conversations')}
+          onClick={() => { setSaving(true); setSaveError(null); onWebSearchChange(!user.web_search).catch(e => setSaveError(e instanceof Error ? e.message : String(e))).finally(() => setSaving(false)); }}>
+          <Globe size={14} /> <span className="d-none d-sm-inline">Web search {user.web_search ? 'on' : 'off'}</span>
+        </button>
         <button type="button" className="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1" onClick={onLogout} title="Sign out">
           <LogOut size={14} /> <span className="d-none d-sm-inline">Sign out</span>
         </button>

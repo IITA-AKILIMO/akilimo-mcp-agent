@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { findCountry, type GeoJsonLike } from '@akilimo/shared';
+import type { GeoJsonLike } from '@akilimo/shared';
 
 // The area where AKILIMO can give recommendations, per country, as GeoJSON. It comes from the Akilimo
 // API through this site's server (/api/coverage/<country>) and changes only when the yield data does,
@@ -22,7 +22,7 @@ export function loadCoverage(country: string): Promise<GeoJsonLike | null> {
 }
 
 export function useCoverage(country: string | undefined): { geojson: GeoJsonLike | null; loading: boolean } {
-  const supported = !!findCountry(country?.toUpperCase());
+  const supported = /^[A-Za-z]{2}$/.test(country ?? ''); // the server answers 404 for a country without an area
   const [state, setState] = useState<{ country?: string; geojson: GeoJsonLike | null; loading: boolean }>({ geojson: null, loading: false });
 
   useEffect(() => {

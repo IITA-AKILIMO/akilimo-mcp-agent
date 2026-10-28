@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { CalendarDays, Loader2, Shovel, Wheat } from 'lucide-react';
-import type { Country } from '@akilimo/shared';
+import { findCountry, type Country } from '@akilimo/shared';
+import { useCountries } from '../mcp/countries';
 import type { GuidedEntry } from '../mcp/guided';
-import { Loading, PriceHint, RiskSelect, WINDOWS, YieldSelect, dateProblem, harvestRange, label, message, monthsFromNow, plantingMin, useLoad, windowLabel, type Call, type PriceData, type PriceItem, type Record_, type Row } from './GuidedParts';
+import { Loading, PriceHint, RiskSelect, SellSelect, WINDOWS, YieldSelect, dateProblem, harvestRange, label, message, monthsFromNow, plantingMin, useLoad, windowLabel, type Call, type PriceData, type PriceItem, type Record_, type Row } from './GuidedParts';
 import { MapPicker } from './MapPicker';
 
 // The three recommendation types besides fertilizer advice, which share one short form:
@@ -52,10 +53,11 @@ const INTERCROP: Record<string, { crop: string; key: 'maize' | 'potato' }> = {
 };
 export const intercropCrop = (countryCode: string) => INTERCROP[countryCode];
 
-const CURRENCY: Record<string, string> = { NG: 'NGN', TZ: 'TZS', RW: 'RWF', GH: 'GHS', BI: 'BIF' };
-const fmt = (n: unknown, country: string) => {
+// The currency of a country comes from the Akilimo API's country list, never from the code
+const useCurrency = (countryCode: string) => findCountry(useCountries().countries, countryCode)?.currency ?? '';
+const fmt = (n: unknown, currency: string) => {
   if (typeof n !== 'number' || !Number.isFinite(n)) return '–';
-  return `${CURRENCY[country] ?? ''} ${Math.round(n).toLocaleString()}`.trim();
+  return `${currency} ${Math.round(n).toLocaleString()}`.trim();
 };
 const fmtDate = (d: unknown) => {
   const date = new Date(`${String(d)}T00:00:00`);
@@ -105,6 +107,7 @@ export const AdviceScreen: React.FC<{ kind: AdviceKind; country: Country; call: 
   const [unit, setUnit] = useState('acre');
   const [yieldClass, setYieldClass] = useState(11.25); // t/ha class sent as yieldInfo.current_field_yield
   const [risk, setRisk] = useState(1); // user_info.risk_attitude
+  const [factory, setFactory] = useState(''); // starch factory key, or '' for the open market
   const [planting, setPlanting] = useState(monthsFromNow(1));
   const [harvest, setHarvest] = useState(monthsFromNow(11));
   const [rootPrice, setRootPrice] = useState('');
@@ -184,7 +187,7 @@ export const AdviceScreen: React.FC<{ kind: AdviceKind; country: Country; call: 
           farmInformation: { country_code: country.code, use_case: info.useCase, map_lat: pos.lat, map_long: pos.lon, field_size: Number(size), area_unit: unit },
           planting: { planting_date: planting, harvest_date: harvest, planting_date_window: plantingWindow, harvest_date_window: harvestWindow },
           cassava: { unit_price: Number(rootPrice), unit_weight: 1000 },
-          yieldInfo: { current_field_yield: yieldClass },
+          yieldInfo: { current_field_yield: yieldClass, ...(factory ? { sell_to_starch_factory: true, starch_factory_name: factory } : {}) },
           recommendations: { lang: 'en', ...info.flags },
           ...(kind === 'intercrop' && second ? {
             interCropping: { inter_cropped_crop: second.key, inter_cropping_maize_rec: second.key === 'maize', inter_cropping_potato_rec: second.key === 'potato' },
@@ -301,6 +304,7 @@ export const AdviceScreen: React.FC<{ kind: AdviceKind; country: Country; call: 
               <span className="input-group-text">{price.data?.currency ?? ''} per tonne</span>
             </div>
             <PriceHint call={call} country={country.code} item="cassava" value={rootPrice} />
+            <SellSelect id={`a-sell-${kind}`} call={call} country={country.code} value={factory} onChange={key => setFactory(key)} />
             <div className="form-text">The typical price for {country.name} is filled in when there is one; change it if yours is different.</div>
           </section>
 
@@ -477,7 +481,9 @@ export const AdviceResult: React.FC<{ entry: GuidedEntry }> = ({ entry }) => {
 
 const method = (m: unknown) => (!m || m === 'N/A' || m === 'NA' ? '–' : String(m).charAt(0).toUpperCase() + String(m).slice(1).toLowerCase());
 
-const PracticesTable: React.FC<{ rows: Row[]; country: string }> = ({ rows, country }) => (
+const PracticesTable: React.FC<{ rows: Row[]; country: string }> = ({ rows, country: countryCode }) => {
+  const country = useCurrency(countryCode);
+  return (
   <div className="table-responsive">
     <table className="table table-sm table-striped small align-middle">
       <thead><tr><th>Operations</th><th>Method</th><th className="text-end">Cost</th><th className="text-end">Net revenue</th><th className="text-end">Change</th><th /></tr></thead>
@@ -495,9 +501,11 @@ const PracticesTable: React.FC<{ rows: Row[]; country: string }> = ({ rows, coun
       </tbody>
     </table>
   </div>
-);
+  );
+};
 
-const ScheduleTable: React.FC<{ rows: Row[]; country: string }> = ({ rows, country }) => {
+const ScheduleTable: React.FC<{ rows: Row[]; country: string }> = ({ rows, country: countryCode }) => {
+  const country = useCurrency(countryCode);
   const [all, setAll] = useState(false);
   const shown = all ? rows : rows.slice(0, 8);
   const best = rows[0]!;

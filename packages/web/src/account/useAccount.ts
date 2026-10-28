@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { getStatus, signIn, signOut, signUp, type User } from './api';
+import { getStatus, signIn, signOut, signUp, updatePreferences, type User } from './api';
 
 // Signed-in user, if any. `enabled` is false when the server has no database (guest-only)
 export function useAccount() {
@@ -27,5 +27,10 @@ export function useAccount() {
     setUser(null);
   }, []);
 
-  return { enabled, user, ready, login, register, logout };
+  // Saved to the account, so it applies to every conversation and every device the user signs in on
+  const setWebSearch = useCallback(async (on: boolean) => {
+    setUser((await updatePreferences({ web_search: on })).user);
+  }, []);
+
+  return { enabled, user, ready, login, register, logout, setWebSearch };
 }
