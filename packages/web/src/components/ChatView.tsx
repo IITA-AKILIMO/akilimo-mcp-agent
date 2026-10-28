@@ -228,6 +228,8 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
       if (lastUser < 0) { busyRef.current = false; return; }
       message = history.current[lastUser].content;
       history.current = history.current.slice(0, lastUser + 1);
+      // What was shown after that message (the earlier answer and its tool steps) is replaced by the new answer
+      setItems(prev => { const i = prev.map(p => p.kind).lastIndexOf('user'); return i < 0 ? prev : prev.slice(0, i + 1); });
     } else {
       add({ id: newId(), kind: 'user', text: message });
       const userMessage: ChatMessage = { role: 'user', content: message };
@@ -595,6 +597,14 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
             </button>
           </div>
         ))}
+        {!busy && !error && queued.length === 0 && model && canChat && items.length > 0 && items[items.length - 1]!.kind === 'assistant' && (
+          <div className="text-center">
+            <button type="button" className="btn btn-sm btn-link text-body-secondary d-inline-flex align-items-center gap-1" onClick={() => void run('', true)}
+              title="Ask again for the answer to your last message, for example with another model or after changing a setting">
+              <RotateCcw size={13} /> Resend last message
+            </button>
+          </div>
+        )}
         {error && (
           <div className="alert alert-danger small mb-0 d-flex align-items-center gap-2">
             <span className="flex-grow-1">{error}</span>
