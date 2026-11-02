@@ -4,6 +4,7 @@ import { countriesTool } from "./countries.js";
 import { cropsTool } from "./crops.js";
 import { convertCurrencyTool } from "./currency.js";
 import { checkPriceTool, cropPricesTool, fertilizerPlanTool, investmentOptionsTool } from "./farm-inputs.js";
+import { climateSummaryTool, soilProfileTool } from "./environment.js";
 import { marketOptionsTool } from "./market.js";
 import { referenceDataTool } from "./reference-data.js";
 import type { ToolDefinition } from "./types.js";
@@ -20,6 +21,8 @@ export const tools: ToolDefinition[] = [
   checkLocationTool,
   cropPricesTool,
   marketOptionsTool,
+  soilProfileTool,
+  climateSummaryTool,
   checkPriceTool,
   investmentOptionsTool,
   computeRecommendationsTool,
