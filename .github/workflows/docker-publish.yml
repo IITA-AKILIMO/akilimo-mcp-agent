@@ -1,6 +1,6 @@
 name: Publish Docker images
 
-# Builds the MCP server and web UI images and pushes them to GitHub Container Registry
+# Builds the MCP server, web UI and weather MCP images and pushes them to GitHub Container Registry
 # (ghcr.io), not Docker Hub. Pull requests only build. Base images can be pulled from a mirror
 # instead of Docker Hub by setting the repository variables NODE_IMAGE and NGINX_IMAGE.
 on:
@@ -32,6 +32,9 @@ jobs:
           - name: web
             image: ghcr.io/iita-akilimo/akilimo-mcp-agent-web
             file: packages/web/Dockerfile
+          - name: weather-mcp
+            image: ghcr.io/iita-akilimo/akilimo-weather-mcp
+            file: docker/weather-mcp/Dockerfile
     name: ${{ matrix.name }}
     steps:
       - name: Checkout

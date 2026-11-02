@@ -45,7 +45,10 @@ services:
 
   # Weather MCP server (Open-Meteo, no key). Internal network only; register it in the web UI
   # (Manage) as id "weather", URL http://weather-mcp:8080/mcp, no key.
+  # Pulled from GHCR like the other images; `docker compose build weather-mcp` builds it locally
+  # under the same name.
   weather-mcp:
+    image: ghcr.io/iita-akilimo/akilimo-weather-mcp:${AKILIMO_WEATHER_TAG:-latest}
     build:
       context: docker/weather-mcp
     container_name: weather-mcp
