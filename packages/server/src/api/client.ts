@@ -1,4 +1,5 @@
 import axios, {type AxiosInstance } from 'axios';
+import { ToolError } from '../tools/types.js';
 
 export class AkilimoApiClient {
     private client: AxiosInstance;
@@ -52,13 +53,22 @@ export class AkilimoApiClient {
 
     private handleError(error: any): Error {
         if (axios.isAxiosError(error)) {
-            const status = error.response?.status;
+            // No answer (refused, timed out, DNS): the cause names internal hosts, so it is only logged
+            if (!error.response) {
+                console.error(`Akilimo API request failed: ${error.code ?? ''} ${error.message}`);
+                return new ToolError(error.code === 'ECONNABORTED'
+                    ? '[Akilimo API] The request timed out, try again later'
+                    : '[Akilimo API] The service could not be reached, try again later');
+            }
+            const status = error.response.status;
             const data = error.response?.data;
-            const message = data?.message || error.message;
+            // An unhandled server error's message can carry internals (SQL, paths); the model only needs to know it failed
+            const message = status === 500 ? 'The service had an internal error, try again later' : String(data?.message || error.message);
+            if (status === 500) console.error(`Akilimo API 500: ${data?.message ?? error.message}`);
             // Validation (422) and compute errors carry field-level details the model can act on
-            const details = data?.errors ? `\n${JSON.stringify(data.errors, null, 2)}` : '';
+            const details = data?.errors ? `\n${JSON.stringify(data.errors, null, 2).slice(0, 4000)}` : '';
 
-            return new Error(`[Akilimo API ${status}] ${message}${details}`);
+            return new ToolError(`[Akilimo API ${status}] ${message}${details}`);
         }
         return error instanceof Error ? error : new Error(String(error));
     }

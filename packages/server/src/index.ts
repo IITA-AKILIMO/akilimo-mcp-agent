@@ -1,6 +1,7 @@
 import { apiRouter } from "./accounts/routes.js";
 import { seedAdmin } from "./accounts/seed.js";
 import { AkilimoApiClient } from "./api/client.js";
+import { akilimoKeyVerifier } from "./api/keys.js";
 import { config } from "./config.js";
 import { coverageRouter } from "./coverage/routes.js";
 import { countriesRouter } from "./countries/routes.js";
@@ -12,6 +13,7 @@ import { chatRouter } from "./chat/routes.js";
 import { ChatSettings } from "./chat/store.js";
 import { SecretBox } from "./secrets/crypto.js";
 import { createServer } from "./server.js";
+import { anyKeyVerifier, staticKeyVerifier } from "./transports/guards.js";
 import { startHttp } from "./transports/http.js";
 import { startStdio } from "./transports/stdio.js";
 
@@ -62,9 +64,26 @@ async function main() {
       ? "Secrets encryption enabled (SECRETS_KEY)"
       : "SECRETS_KEY not set: provider and MCP server keys cannot be saved; only Ollama works for the chat");
 
+    // MCP clients get in with an operator key (MCP_API_KEYS) or an MCP key users create in the
+    // Akilimo API's playground, checked by the API with this server's AKILIMO_API_KEY
+    const keyRequired = config.mcpRequireKey || config.mcpApiKeys.length > 0;
+    const verifyKey = anyKeyVerifier([
+      staticKeyVerifier(config.mcpApiKeys),
+      ...(config.apiKey ? [akilimoKeyVerifier(api)] : []),
+    ]);
+    if (!config.apiKey) console.error("AKILIMO_API_KEY not set: MCP keys created in the Akilimo API (ak_...) cannot be checked");
+    console.error(keyRequired ? "MCP endpoints need an API key" : "MCP endpoints are public (set MCP_REQUIRE_KEY or MCP_API_KEYS to require a key)");
+
     startHttp(() => createServer(api), {
       port: config.port,
       allowedOrigins: config.allowedOrigins,
+      access: { required: keyRequired, verifyKey },
+      limits: {
+        requestsPerMinute: config.mcpRateLimit,
+        computePerMinute: config.mcpComputeRateLimit,
+        sseSessions: config.sseMaxSessions,
+        sseSessionsPerIp: config.sseMaxSessionsPerIp,
+      },
       gateway: gatewayRouter(registry, db),
       api: apiRouter(db),
       coverage: coverageRouter(api),

@@ -7,9 +7,11 @@ This guide explains how to connect the Akilimo MCP Agents to various LLM clients
 There are two Akilimo MCP agents. Use the names **akilimo-1.0** and **akilimo-2.0** in client configs so they are easy to tell apart.
 
 ### Akilimo 1.0 Agent (This Repo)
-The agent built in this repository, backed by the Akilimo 1.0 API (the Laravel `new-akilimo-api`, hosted at `https://api.akilimo.org`). No key needed. In HTTP mode it serves two transports:
+The agent built in this repository, backed by the Akilimo 1.0 API (the Laravel `new-akilimo-api`, hosted at `https://api.akilimo.org`). In HTTP mode it serves two transports:
 - **Streamable HTTP** (current MCP transport): `/mcp`
 - **SSE** (older clients): `/sse`
+
+**Client key**: when the server has `MCP_REQUIRE_KEY =true` or `MCP_API_KEYS` set (comma-separated operator keys, e.g. one per partner app), `/mcp` and `/sse` need a key on every request, the same way as Akilimo 2.0: `Authorization: Bearer <key>` or `X-API-Key: <key>`. Without one the server answers `401` with a `WWW-Authenticate: Bearer` challenge; otherwise the endpoints are public. **Signed-in users create their own keys** in the web UI (account menu > **API keys**): a key starts with `akm_`, is shown once with a ready Claude Desktop configuration, and can be deleted at any time; the list shows each key's start, creation and last use. Up to 10 keys per user; deleting the account deletes its keys. Users of the **Akilimo API** can also create one there: sign in to the playground (`https://api.akilimo.org/playground`) > API keys > type **MCP key** (an `ak_…` key with only the `mcp:use` ability). This server checks such keys with the API's `POST /api/v1/mcp/verify-key`, using its own `AKILIMO_API_KEY`, which must be an API key with the `mcp:verify-keys` ability (an admin creates it in the API's admin area); answers are cached for a minute, so a revoked key stops working within a minute. stdio needs no key, and neither do this server's own web chat and gateway (they call it over `127.0.0.1`).
 
 | Where | Base URL |
 | :--- | :--- |
@@ -20,9 +22,15 @@ The agent built in this repository, backed by the Akilimo 1.0 API (the Laravel `
 | Claude Desktop and other stdio clients | `node packages/server/dist/index.cjs` |
 
 - **Tools**:
+  - `get_countries`, `get_crops` — supported countries (with currency) and crops
+  - `check_location` — whether a point is inside the area where recommendations can be computed
   - `get_fertilizer_options` — a country's available fertilizers with bag weight, price bands and a typical price (compact; best for chat models)
   - `get_cassava_price` — cassava root price bands and a typical price per tonne
-  - `compute_recommendations` — fertilizer recommendations for a farm
+  - `get_market_options` — open market and starch factory prices for cassava roots
+  - `get_crop_prices`, `check_price`, `get_investment_options`, `get_operation_costs`, `fertilizer_plan` — inputs for the compute request and bag plans
+  - `compute_recommendations` — fertilizer, planting practices, scheduled planting and intercropping advice for a farm
+  - `convert_currency` — prevailing exchange rates
+  - `get_soil_profile`, `get_climate_summary` — soil (ISRIC SoilGrids) and climate (NASA POWER) context for a point
   - `get_reference_data` — any raw reference list (all pages merged)
 
 ### Akilimo 2.0 Agent (Hosted)
@@ -46,6 +54,13 @@ Add this to your `claude_desktop_config.json` (found in `%APPDATA%\Claude\claude
         "AKILIMO_API_BASE_URL": "https://api.akilimo.org"
       }
     },
+    "akilimo-1.0-hosted": {
+      "type": "http",
+      "url": "https://akilimo-mcp.akilimo.org/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_AKILIMO_1_KEY"
+      }
+    },
     "akilimo-2.0": {
       "type": "http",
       "url": "https://mcp.akilimo.org/mcp",
@@ -59,11 +74,11 @@ Add this to your `claude_desktop_config.json` (found in `%APPDATA%\Claude\claude
 
 ### Remote Connection
 For clients that support remote MCP servers:
-- Akilimo 1.0: `https://akilimo-mcp.akilimo.org/mcp` (streamable HTTP) or `https://akilimo-mcp.akilimo.org/sse` (SSE)
+- Akilimo 1.0: `https://akilimo-mcp.akilimo.org/mcp` (streamable HTTP) or `https://akilimo-mcp.akilimo.org/sse` (SSE); key header required when the server has `MCP_REQUIRE_KEY` or `MCP_API_KEYS`
 - Akilimo 2.0: `https://mcp.akilimo.org/mcp` (streamable HTTP, partner key header required)
 
 ### This repo's web UI and MCP gateway
-`pnpm dev:web` (or the `web` compose service) reaches MCP servers through the **gateway** on the Akilimo 1.0 server, via the same-origin `/gateway/` path (see `packages/web/vite.config.ts` and `packages/web/nginx.conf`; override the dev target with `AKILIMO_1_MCP_URL`, default `http://localhost:3001`). Its chat mode reaches Ollama through `/proxy/ollama/` (dev: `OLLAMA_URL`, default `http://localhost:11434`; Docker: `OLLAMA_BASE_URL`), and hosted LLM providers through the server's `/llm/<provider>/` relay (`openai`, `anthropic`, `gemini`, `deepseek`, `groq`, `mistral`, `openrouter`; only `GET models`, `POST chat/completions` and `POST messages`; the user's key in `X-Llm-Key`).
+`pnpm dev:web` (or the `web` compose service) reaches MCP servers through the **gateway** on the Akilimo 1.0 server, via the same-origin `/gateway/` path (see `packages/web/vite.config.ts` and `packages/web/nginx.conf`; override the dev target with `AKILIMO_1_MCP_URL`, default `http://localhost:3001`). Its chat runs on the server (`POST /chat`): the server calls the model and the MCP tools, with provider keys that admins save encrypted in the database, so the browser holds no keys. `/proxy/ollama/` (dev: `OLLAMA_URL`, default `http://localhost:11434`; Docker: `OLLAMA_BASE_URL`) is only used by admins to download Ollama models.
 
 Gateway endpoints (HTTP mode only):
 
@@ -102,7 +117,7 @@ Open WebUI is the most popular interface for Ollama that supports tool integrati
 2. Connect it to your local Ollama instance.
 3. Go to **Workspace** $\rightarrow$ **Tools**.
 4. Add the Akilimo MCP servers, naming them `akilimo-1.0` and `akilimo-2.0`:
-   - Akilimo 1.0: `https://akilimo-mcp.akilimo.org/mcp`; from the bundled docker compose use `http://akilimo-mcp:3000/mcp`.
+   - Akilimo 1.0: `https://akilimo-mcp.akilimo.org/mcp`; from the bundled docker compose use `http://akilimo-mcp:3000/mcp`. If the server requires a key, give yours (an `MCP_API_KEYS` key or an MCP key from the Akilimo API playground) as the bearer token.
    - Akilimo 2.0: `https://mcp.akilimo.org/mcp` with your partner key as the bearer token.
 5. Select the Akilimo tools when chatting with your local Ollama model.
 
@@ -119,4 +134,6 @@ Open WebUI is the most popular interface for Ollama that supports tool integrati
 ## Troubleshooting
 - **Permission Denied**: Ensure `packages/server/dist/index.cjs` exists (`pnpm --filter @akilimo/server build`) and you have read access to the directory.
 - **Timeout**: The Akilimo API can take up to 120s for computations; ensure your client timeout is set high enough.
-- **API Key**: Reference data and recommendations are public on the Akilimo 1.0 API; `AKILIMO_API_KEY` is only needed for protected routes.
+- **API Key**: Reference data and recommendations are public on the Akilimo 1.0 API. `AKILIMO_API_KEY` is the server's own key for the upstream API, needed to check users' MCP keys (`ak_…`, ability `mcp:verify-keys`); `MCP_API_KEYS` and the users' MCP keys are the keys clients use to call this MCP server.
+- **401 API key required**: the server has `MCP_REQUIRE_KEY` or `MCP_API_KEYS` set; send a key as `Authorization: Bearer <key>` or `X-API-Key`. A `401` for a key you sent means it is unknown, revoked, expired or not an MCP key.
+- **503 key check unavailable**: the server could not reach the Akilimo API to check an `ak_…` key; try again later.

@@ -1,4 +1,4 @@
-import { jsonResult, type ToolDefinition } from "./types.js";
+import { jsonResult, ToolError, type ToolDefinition } from "./types.js";
 
 // Reference data endpoints of the Akilimo API, and which of them accept /country/{code}
 export const REFERENCE_CATEGORIES = [
@@ -35,10 +35,10 @@ export const referenceDataTool: ToolDefinition = {
     const countryCode = (args?.countryCode as string | undefined)?.trim().toUpperCase();
 
     if (!REFERENCE_CATEGORIES.includes(category)) {
-      throw new Error(`Unknown category '${category}'. Use one of: ${REFERENCE_CATEGORIES.join(', ')}`);
+      throw new ToolError(`Unknown category '${category}'. Use one of: ${REFERENCE_CATEGORIES.join(', ')}`);
     }
     if (countryCode && !COUNTRY_FILTERABLE.includes(category)) {
-      throw new Error(`Category '${category}' cannot be filtered by country; omit countryCode. Country filtering works for: ${COUNTRY_FILTERABLE.join(', ')}`);
+      throw new ToolError(`Category '${category}' cannot be filtered by country; omit countryCode. Country filtering works for: ${COUNTRY_FILTERABLE.join(', ')}`);
     }
 
     let url = `/v1/${category}`;

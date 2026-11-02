@@ -149,10 +149,21 @@ export const requireJson = (req: Request, res: Response, next: NextFunction) => 
   next();
 };
 
-// Fixed-window limiter for sign-up and sign-in, per client IP
-export function rateLimit(max: number, windowMs: number) {
+interface RateLimitOptions {
+  // Answer sent with the 429 (the MCP transport answers in JSON-RPC)
+  body?: object;
+  // Requests that are not counted, e.g. the server's own calls over loopback
+  skip?: (req: Request) => boolean;
+}
+
+// Fixed-window limiter per client IP (sign-up and sign-in, the chat, the MCP transport)
+export function rateLimit(max: number, windowMs: number, { body, skip }: RateLimitOptions = {}) {
   const hits = new Map<string, { count: number; reset: number }>();
   return (req: Request, res: Response, next: NextFunction) => {
+    if (skip?.(req)) {
+      next();
+      return;
+    }
     const now = Date.now();
     const key = req.ip ?? "unknown";
     const entry = hits.get(key);
@@ -164,7 +175,7 @@ export function rateLimit(max: number, windowMs: number) {
     }
     if (++entry.count > max) {
       res.setHeader("Retry-After", Math.ceil((entry.reset - now) / 1000));
-      res.status(429).json({ error: "Too many attempts, try again in a few minutes" });
+      res.status(429).json(body ?? { error: "Too many attempts, try again in a few minutes" });
       return;
     }
     next();

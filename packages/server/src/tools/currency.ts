@@ -1,6 +1,6 @@
 import { convert } from "../currency/rates.js";
 import { fetchCountries } from "../countries/list.js";
-import { jsonResult, type ToolDefinition } from "./types.js";
+import { jsonResult, ToolError, type ToolDefinition } from "./types.js";
 
 // ── convert_currency ────────────────────────────────────────────────────────
 
@@ -20,20 +20,20 @@ export const convertCurrencyTool: ToolDefinition = {
 
   async handler(args, api) {
     const amount = Number(args?.amount);
-    if (!Number.isFinite(amount)) throw new Error("amount must be a number");
+    if (!Number.isFinite(amount)) throw new ToolError("amount must be a number");
     const from = String(args?.from ?? "").trim().toUpperCase();
-    if (!/^[A-Z]{3}$/.test(from)) throw new Error("from must be a 3-letter currency code such as USD");
+    if (!/^[A-Z]{3}$/.test(from)) throw new ToolError("from must be a 3-letter currency code such as USD");
 
     let to = String(args?.to ?? "").trim().toUpperCase();
     if (!to) {
       const code = String(args?.countryCode ?? "").trim().toUpperCase();
-      if (!code) throw new Error("Give `to` (a currency code) or `countryCode`");
+      if (!code) throw new ToolError("Give `to` (a currency code) or `countryCode`");
       const country = (await fetchCountries(api)).find((c) => c.code === code);
-      if (!country) throw new Error(`${code} is not a supported country`);
-      if (!country.currency) throw new Error(`The currency of ${country.name} is not known`);
+      if (!country) throw new ToolError(`${code} is not a supported country`);
+      if (!country.currency) throw new ToolError(`The currency of ${country.name} is not known`);
       to = country.currency;
     }
-    if (!/^[A-Z]{3}$/.test(to)) throw new Error("to must be a 3-letter currency code such as NGN");
+    if (!/^[A-Z]{3}$/.test(to)) throw new ToolError("to must be a 3-letter currency code such as NGN");
 
     return jsonResult(await convert(amount, from, to));
   },

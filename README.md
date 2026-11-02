@@ -14,7 +14,7 @@ Before you start, make sure you have these installed on your computer:
 1. **Node.js (v20 or newer)**: The engine that runs our code. [Download here](https://nodejs.org/).
 2. **pnpm**: A faster version of npm. Install it by running: `npm install -g pnpm`
 3. **Docker Desktop**: Used to run the AI interface (Open WebUI) and the agent in a container. [Download here](https://www.docker.com/products/docker-desktop/).
-4. **Access to the Akilimo API** (the Laravel `new-akilimo-api`, hosted at `https://api.akilimo.org` or run locally on port 8600). Reference data and recommendations are public; an API key is only needed for protected routes.
+4. **Access to the Akilimo API** (the Laravel `new-akilimo-api`, hosted at `https://api.akilimo.org` or run locally on port 8600). Reference data and recommendations are public; the server only needs an API key to accept MCP keys users create in the API (see [the connection guide](docs/MCP_CONNECTION_GUIDE.md)).
 
 ---
 

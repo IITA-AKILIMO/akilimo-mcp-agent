@@ -1,7 +1,7 @@
 import { fetchCountries } from "../countries/list.js";
 import { getRates } from "../currency/rates.js";
 import type { AkilimoApiClient } from "../api/client.js";
-import { jsonResult, type ToolDefinition } from "./types.js";
+import { jsonResult, ToolError, type ToolDefinition } from "./types.js";
 
 // Compact, model-friendly views of the reference data needed for fertilizer advice. The raw
 // endpoints return tens of kilobytes per country, which overflows small local models.
@@ -18,7 +18,7 @@ export const countryInput = {
 
 export const countryFrom = (args: Record<string, unknown> | undefined) => {
   const code = String(args?.countryCode ?? "").trim().toUpperCase();
-  if (!/^[A-Z]{2}$/.test(code)) throw new Error("countryCode must be an ISO 2-letter code, e.g. NG or TZ");
+  if (!/^[A-Z]{2}$/.test(code)) throw new ToolError("countryCode must be an ISO 2-letter code, e.g. NG or TZ");
   return code;
 };
 
@@ -81,7 +81,7 @@ export const checkLocationTool: ToolDefinition = {
     const lat = Number(args?.lat);
     const lon = Number(args?.lon);
     if (!Number.isFinite(lat) || lat < -90 || lat > 90 || !Number.isFinite(lon) || lon < -180 || lon > 180) {
-      throw new Error("lat must be between -90 and 90 and lon between -180 and 180");
+      throw new ToolError("lat must be between -90 and 90 and lon between -180 and 180");
     }
 
     try {

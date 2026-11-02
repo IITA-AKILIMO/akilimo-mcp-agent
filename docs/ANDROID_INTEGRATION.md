@@ -6,7 +6,7 @@ This guide is for the team that maintains the AKILIMO Android app. It explains w
 
 ## 1. When MCP helps, and when it does not
 
-The MCP server wraps the Akilimo 1.0 API (`https://api.akilimo.org`) in four tools. For the app that means:
+The MCP server wraps the Akilimo 1.0 API (`https://api.akilimo.org`) in a set of tools (prices, fertilizers, recommendations, market, soil and climate). For the app that means:
 
 - **Compact reference data.** `get_fertilizer_options` and `get_cassava_price` return a country's fertilizers, price bands and a typical price in about 3 KB, instead of the 28 KB the raw endpoints return. The typical prices are what the app can pre-fill.
 - **One call for the recommendation.** `compute_recommendations` takes the same request the API takes and fills in defaults that the R compute service needs (for example `use_case` `FR`, `"NA"` instead of null).
@@ -24,7 +24,7 @@ If the app only needs to show prices and request a recommendation, calling the R
 | Required header | `Accept: application/json, text/event-stream`. Without it the server answers `406 Not Acceptable` |
 | Session / `initialize` | Not needed. A `tools/call` sent on its own works. (Sending `initialize` first is allowed and harmless.) |
 | Response framing | Even a single answer arrives as one server-sent event: `event: message` then `data: {JSON-RPC response}`. A parser has to read the `data:` line |
-| Authentication | None on the Akilimo 1.0 endpoint. Nothing in the app needs a key |
+| Authentication | None while the server runs without `MCP_REQUIRE_KEY`/`MCP_API_KEYS`. When it requires a key, send `Authorization: Bearer <key>` (or `X-API-Key`) with an operator key from `MCP_API_KEYS`, kept on the app's backend rather than in the APK; a `401` with `WWW-Authenticate: Bearer` means a key is missing or wrong |
 | CORS | Irrelevant for a native app; it only affects browsers |
 | Slow calls | `compute_recommendations` can take tens of seconds. Use a read timeout of about 120 s |
 
@@ -341,7 +341,7 @@ Never put an AI provider key, or the Akilimo 2.0 partner key, inside the APK: an
 
 ## 8. Test checklist
 
-1. `curl` the production `tools/list` (section 2) and confirm four tools come back.
+1. `curl` the production `tools/list` (section 2) and confirm `get_fertilizer_options`, `get_cassava_price`, `compute_recommendations` and `get_reference_data` are among the tools that come back.
 2. Fetch fertilizers and the cassava price for each of `NG`, `TZ`, `RW`, `GH`, `BI`; confirm the form handles a country with no cassava price.
 3. Request a recommendation for a field inside the area (for example near Ibadan, `7.38, 3.9`) and for a point outside it; confirm both screens read sensibly.
 4. Switch the phone to airplane mode: cached reference data still opens, the recommendation shows a clear "no connection" message.

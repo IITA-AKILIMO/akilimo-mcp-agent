@@ -1,6 +1,6 @@
 import { getClimateSummary } from "../geo/climate.js";
 import { getSoilProfile } from "../geo/soil.js";
-import { jsonResult, type ToolArgs, type ToolDefinition } from "./types.js";
+import { jsonResult, ToolError, type ToolArgs, type ToolDefinition } from "./types.js";
 
 const pointSchema = {
   type: "object" as const,
@@ -15,7 +15,7 @@ function point(args: ToolArgs): { lat: number; lon: number } {
   const lat = Number(args?.lat);
   const lon = Number(args?.lon);
   if (!Number.isFinite(lat) || lat < -90 || lat > 90 || !Number.isFinite(lon) || lon < -180 || lon > 180) {
-    throw new Error("lat must be between -90 and 90 and lon between -180 and 180");
+    throw new ToolError("lat must be between -90 and 90 and lon between -180 and 180");
   }
   return { lat, lon };
 }

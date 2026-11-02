@@ -1,6 +1,6 @@
 import { planBags, type FertilizerRate, type PlanFertilizer } from "@akilimo/shared";
 import { countryFrom, countryInput, middle, priceBands, type Row } from "./advisory.js";
-import { jsonResult, type ToolDefinition } from "./types.js";
+import { jsonResult, ToolError, type ToolDefinition } from "./types.js";
 
 // Tools around what a farmer is asked for and told: crop prices for intercropping, a sanity check on
 // any price they give, the budget options, and the fertilizer result turned into bags and money.
@@ -91,8 +91,8 @@ export const checkPriceTool: ToolDefinition = {
     const country = countryFrom(args);
     const item = String(args?.item ?? "") as (typeof PRICE_ITEMS)[number];
     const value = Number(args?.value);
-    if (!PRICE_ITEMS.includes(item)) throw new Error(`item must be one of: ${PRICE_ITEMS.join(", ")}`);
-    if (!Number.isFinite(value)) throw new Error("value must be a number");
+    if (!PRICE_ITEMS.includes(item)) throw new ToolError(`item must be one of: ${PRICE_ITEMS.join(", ")}`);
+    if (!Number.isFinite(value)) throw new ToolError("value must be a number");
 
     const rows = await priceRows(api, country, item, String(args?.fertilizerKey ?? ""));
     const range = allowedRange(rows);
@@ -132,7 +132,7 @@ async function priceRows(api: Parameters<ToolDefinition["handler"]>[1], country:
     case "sweet_potato":
       return (await api.getAll<Row>(`/v1/potato-prices/country/${country}`)).data;
     case "fertilizer": {
-      if (!fertilizerKey.trim()) throw new Error("fertilizerKey is required for item fertilizer");
+      if (!fertilizerKey.trim()) throw new ToolError("fertilizerKey is required for item fertilizer");
       const wanted = fertilizerKey.trim().toUpperCase();
       const rows = (await api.getAll<Row>(`/v1/fertilizer-prices/country/${country}`)).data;
       return rows.filter((r) => [String(r.fertilizer_key).toUpperCase(), `${String(r.fertilizer_key).toUpperCase().replace(/_[A-Z]{2}$/, "")}`].includes(wanted));
@@ -215,7 +215,7 @@ export const fertilizerPlanTool: ToolDefinition = {
     const rates = (Array.isArray(args?.fertilizerRates) ? args.fertilizerRates : [])
       .map((r: Row) => ({ type: String(r?.type ?? ""), rate: Number(r?.rate) }))
       .filter((r: FertilizerRate) => r.type && Number.isFinite(r.rate) && r.rate > 0);
-    if (rates.length === 0) throw new Error("fertilizerRates needs at least one {type, rate} with a rate above 0");
+    if (rates.length === 0) throw new ToolError("fertilizerRates needs at least one {type, rate} with a rate above 0");
 
     const given = new Map((Array.isArray(args?.prices) ? args.prices : []).map((p: Row) => [String(p?.type ?? "").toLowerCase(), Number(p?.pricePerBag)]));
 

@@ -20,7 +20,20 @@ export const config = {
   transport: ['http', 'sse'].includes(process.env.TRANSPORT ?? '') || process.argv.includes('--http') ? "http" : "stdio",
   // Containers set PORT=3000; the local default avoids 3000, which Dokploy and other tools often hold
   port: Number(process.env.PORT) || 3001,
-  allowedOrigins: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:5173'],
+  // Browser origins allowed by CORS and by the MCP endpoints' Origin check
+  allowedOrigins: process.env.ALLOWED_ORIGINS?.split(',').map((o) => o.trim()).filter(Boolean) || ['http://localhost:5173'],
+  // Client keys for the MCP endpoints (comma-separated); when set, /mcp and /sse need one as
+  // `Authorization: Bearer <key>` or `X-API-Key`, and a request with a valid key skips the Origin check
+  mcpApiKeys: process.env.MCP_API_KEYS?.split(',').map((k) => k.trim()).filter(Boolean) ?? [],
+  // Refuse MCP requests without a key even when MCP_API_KEYS is empty, e.g. when only the MCP keys
+  // users create in the Akilimo API's playground (checked through the API) should get in
+  mcpRequireKey: /^(1|true|yes)$/i.test(process.env.MCP_REQUIRE_KEY ?? ""),
+  // Requests per minute and client IP on the MCP endpoints, and calls of compute_recommendations among them
+  mcpRateLimit: Number(process.env.MCP_RATE_LIMIT) || 120,
+  mcpComputeRateLimit: Number(process.env.MCP_COMPUTE_RATE_LIMIT) || 10,
+  // Open legacy SSE sessions, in total and per client IP
+  sseMaxSessions: Number(process.env.SSE_MAX_SESSIONS) || 200,
+  sseMaxSessionsPerIp: Number(process.env.SSE_MAX_SESSIONS_PER_IP) || 5,
   // MCP gateway (HTTP mode) registry file; only signed-in admins can change it
   gatewayDataFile: process.env.GATEWAY_DATA_FILE || path.resolve("data/mcp-servers.json"),
   // Admin account ensured on start and by `--seed-admin` (both need ADMIN_EMAIL and ADMIN_PASSWORD;

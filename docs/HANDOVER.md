@@ -1,13 +1,13 @@
 # Handover: AKILIMO MCP agent
 
-> **IITA Internal Use.** Written 2026-10-26 (updated after committing all work) for the next agent or developer picking up this repository. Read [`AGENTS.md`](../AGENTS.md) for architecture and conventions; this file covers state, decisions and open work. It contains no credentials.
+> **IITA Internal Use.** Written 2026-10-26, updated 2026-11-02 (MCP endpoint hardening and keys) for the next agent or developer picking up this repository. Read [`AGENTS.md`](../AGENTS.md) for architecture and conventions; this file covers state, decisions and open work. It contains no credentials.
 
 ## 1. What this project is
 
 A pnpm monorepo (TypeScript) for IITA's AKILIMO cassava advisory tools:
 
 - **`packages/server`**: the **Akilimo 1.0** MCP server (MCP name `akilimo-1.0`). Wraps the Akilimo 1.0 REST API (Laravel repo `new-akilimo-api`, hosted at `https://api.akilimo.org`). Over HTTP it also hosts an **MCP gateway** (shared server registry and proxy) and an **accounts API** (PostgreSQL).
-- **`packages/web`**: a React + Bootstrap web UI that is a real MCP client. **Chat** mode (default) uses a local Ollama model, or a hosted provider/custom OpenAI-compatible server chosen in the chat header; **Advanced** mode runs tools through forms generated from their schemas.
+- **`packages/web`**: a React + Bootstrap web UI that is a real MCP client. **Chat** mode (default) has a Guided view (no AI) and an Ask AI view whose model and tool calls run on the server (`/chat`), with providers set up by admins; **Advanced** mode runs tools through forms generated from their schemas.
 - **`packages/shared`**: the Zod compute-request schema and shared types.
 - **Akilimo 2.0** is a separate hosted MCP server (`https://mcp.akilimo.org/mcp`, partner key required). It is not in this repo.
 
@@ -15,36 +15,13 @@ A pnpm monorepo (TypeScript) for IITA's AKILIMO cassava advisory tools:
 
 | Area | State |
 | :--- | :--- |
-| Branch | `main`; everything up to `7e8824d` is pushed; **all newer commits are local only** (roles, usernames, LLM providers, connection tests, GHCR publishing) |
+| Branch | `main`; everything is pushed to `origin/main` except the MCP endpoint hardening and key commit described below, which is local until pushed |
 | Builds | `pnpm build` passes; the server passes a strict `tsc` check; `pnpm install --frozen-lockfile` passes |
 | Tests | No automated test suite exists. Everything below was verified by hand (scripts and browser) |
 
-Latest commits, newest first:
+Use `git log` for the history. The latest piece of work, newest first:
 
-| Commit | Content |
-| :--- | :--- |
-| username commit | Usernames: `add_username` migration (backfilled from emails), sign-up field, sign-in by email or username, `ADMIN_USERNAME` seed, docs — not pushed |
-| `968f67d` | README, connection guide, `AGENTS.md`, this handover (roles, admin seeding) — not pushed |
-| `259c7c5` | Compose: `GATEWAY_ADMIN_TOKEN` replaced by optional `ADMIN_EMAIL`/`ADMIN_PASSWORD`/`ADMIN_NAME` — not pushed |
-| `8ef39e8` | Web: Admin dialog (MCP servers and Users tabs), Manage for admins only — not pushed |
-| `2ebc927` | Server: user roles, admin-only registry and user management, admin seeding, `add_user_roles` migration — not pushed |
-| `7e8824d` | Docs: PostgreSQL-only accounts database (pushed) |
-| `ddfc7ab` | Docker: SQLite settings removed from the image, compose and `.env.example` |
-| `c4d9770` | Server: PostgreSQL only, one Prisma schema and migration history (SQLite removed) |
-| `31f1ef8` | Docs: Prisma, `DB_*` settings, weather server |
-| `09eecc5` | Docker: migrations at start, `DB_*` in compose, `weather-mcp` service, `.env.example` |
-| `b077b11` | Server: Prisma 7 with PostgreSQL or SQLite (SQLite later removed in `c4d9770`), `DB_*` settings, `db:generate` / `db:migrate` |
-| `fdd4cdc` | Chat: no agronomic advice that is not from AKILIMO tools |
-| `f0b5e4b` | Gateway: survive clients disconnecting mid-stream (was a server crash) |
-| `7fc29f8` | Docs: chat, gateway, accounts; first version of this handover |
-| `1f0fa01` | Compose: PostgreSQL `db` service, gateway volume, Ollama for the web UI, `.env.example` |
-| `f1ebeaa` | Web: chat mode, MCP server manager, accounts UI, `/gateway` `/api` `/proxy/ollama` proxies |
-| `94aa9e3` | Server: MCP gateway (`/gateway`) and accounts API (`/api`, PostgreSQL) |
-| `545afe5` | Server: all reference pages, compact advisory tools |
-| `cf03dbc` and earlier | Map country lookup, web MCP client with prefill and map, server modules and streamable HTTP, Akilimo 1.0 API alignment, Docker images |
-
-`f1ebeaa` also contains the lockfile changes for `pg` (used from `94aa9e3`), so a frozen install at exactly `94aa9e3` fails; from `f1ebeaa` onwards it passes.
-
+- **MCP endpoint hardening and client keys** (after the scanner at mcpplaygroundonline.com scored 56/100): Origin check against `ALLOWED_ORIGINS`, per-IP rate limits (compute stricter), SSE session caps and idle timeout, security headers, JSON-RPC errors without internals, `ToolError` so only safe messages reach callers, tool annotations, real version, only the `tools` capability. Optional keys like Akilimo 2.0 (`Authorization: Bearer` or `X-API-Key`): operator keys in `MCP_API_KEYS`, and **MCP keys users create in the Akilimo API playground** (`ak_…`, ability `mcp:use`), checked by the API's `POST /v1/mcp/verify-key` with this server's `AKILIMO_API_KEY` (ability `mcp:verify-keys`), cached 60 s / 30 s. `MCP_REQUIRE_KEY=true` makes a key mandatory. The matching API side is in `new-akilimo-api` (`docs/MCP_KEYS.md` there). A first version also let users create keys in this web UI (`akm_…`, own table); the user chose the API as the only place that issues keys, so it was removed before committing.
 ## 3. Features and how they were verified
 
 | Feature | Where | Verified |
@@ -53,27 +30,29 @@ Latest commits, newest first:
 | Compact advisory tools `get_fertilizer_options`, `get_cassava_price` | `server/src/tools/advisory.ts` | About 3 KB vs 28 KB; NG lists all 10 fertilizers |
 | `compute_recommendations` matches the API and mobile app payload | `shared/src/index.ts` | One live call to production succeeded (location was outside the recommendation area, so no rates came back) |
 | Streamable HTTP `/mcp` plus multi-client SSE | `server/src/transports/http.ts` | SDK clients, two concurrent SSE sessions |
-| Chat mode (Ollama agent loop) | `web/src/llm/`, `ChatView.tsx` | `qwen3:8b`: correct NG fertilizer answer in under 30 s; asks for missing farm details |
+| Chat mode (agent loop, now on the server) | `server/src/chat/`, `ChatView.tsx` | `qwen3:8b`: correct NG fertilizer answer in under 30 s; asks for missing farm details |
 | MCP gateway: registry, admin API, proxy | `server/src/gateway/` | Add, edit, remove, validation, 401/404/409, key forwarding, Akilimo 2.0 401 passthrough |
 | Server manager UI | `ServerManager.tsx`, `ServerPanel.tsx` | Browser: unlock, add, connect, edit, remove |
 | Accounts, saved chats, activity | `server/src/accounts/`, `server/src/db/`, `web/src/account/` | API script (isolation, rate limit, CSRF guard, hashed storage) and browser round trip |
 | Drizzle ORM with PostgreSQL, migrations applied by the server at start | `server/src/db/`, `server/drizzle/`, `server/drizzle.config.ts` | Baseline applied to an empty DB gave the same tables, indexes, FKs and enum as the Prisma-created one; the existing Prisma-created DB adopted it with data intact and a repeat run is a no-op; full API, roles, seeding and sign-in scripts passed; server image built, ran against an empty DB (migrated, seeded, healthy, sign-in OK) |
 | Prefill buttons and map picker (country via Nominatim) | `web/src/mcp/presets.ts`, `MapPicker.tsx` | Browser |
 | User roles (`user`/`admin`), admin-only registry and Users tab, admin seeding | `server/src/accounts/{auth,seed,routes}.ts`, `gateway/routes.ts`, `web/src/components/AdminDialog.tsx` | Role script: guest 401, user 403, admin allowed, promote/demote takes effect, last admin protected, CSRF guard, seed on start idempotent, `--seed-admin` promotes, no-DB read-only; browser check of badge, Manage and both tabs |
+| MCP endpoint hardening and keys | `server/src/transports/guards.ts`, `http.ts`, `api/keys.ts`, `server.ts` | Probe scripts against a local server: foreign Origin 403, rate limits 429 (loopback exempt), SSE caps, headers, -32700, annotations; operator key, API-issued MCP key, ordinary API key refused, unknown key 401, revocation effective after the cache expires, API down 503 |
 | Weather MCP server (`mcp_weather_server` 0.6.1, Open-Meteo) registered as `weather` | `uvx` locally (README); `weather-mcp` compose service for Docker | Locally through the gateway: 8 tools, live Ibadan weather; chat uses it unprompted. Docker image not built |
 | Gateway survives clients disconnecting mid-stream | `server/src/gateway/routes.ts` (`pipeline`) | Regression script: old build crashed on the first disconnect, fixed build survived three |
-| Chat refuses its own agronomic judgement (weather is context only) | system prompt in `web/src/llm/agent.ts` | Ibadan planting question answered correctly after adding an explicit example; other phrasings not tested |
+| Chat refuses its own agronomic judgement (weather is context only) | system prompt in `server/src/chat/agent.ts` | Ibadan planting question answered correctly after adding an explicit example; other phrasings not tested |
 
 ## 4. Decisions made by the user (do not reverse without asking)
 
 1. **Naming**: this repo's agent is **Akilimo 1.0**; the hosted one is **Akilimo 2.0**. Use `akilimo-1.0` / `akilimo-2.0` everywhere.
 2. **No mocks** in the web UI: only real MCP servers; the user enters all information.
-3. **Chat is the default mode**, Advanced is the alternative. The default LLM is local **Ollama** (data stays on the user's machine). Users can switch to OpenAI, Anthropic, Gemini, DeepSeek, Groq, Mistral, OpenRouter (own key, relayed through the server's `/llm`, which only reaches those fixed hosts and their model-list/chat endpoints) or a custom OpenAI-compatible URL (called from the browser, so never an SSRF path through the server). Models are fetched live; provider, model per provider and keys are remembered in the browser. **Test connection** exists for LLM providers (also checks that the model calls tools) and, for admins, for MCP servers before saving (`POST /gateway/test`). Ollama models can be pulled from the chat's settings panel; that goes through `/proxy/ollama`, which is open to anyone who can reach the site.
+3. **Chat is the default mode**, Advanced is the alternative. The chat's model and tool calls run on the **server** (`/chat`): admins set up providers (Ollama by default, plus hosted ones) in Manage > AI providers, and their keys are stored encrypted (`SECRETS_KEY`), so browsers hold no provider keys. Models are fetched live. **Test connection** exists for LLM providers (also checks that the model calls tools) and, for admins, for MCP servers before saving (`POST /gateway/test`). Ollama models can be pulled by admins; that goes through `/proxy/ollama`, which is open to anyone who can reach the site.
 4. **MCP servers are managed through a shared gateway** on the backend, by users with the **admin role** (this replaced the earlier `GATEWAY_ADMIN_TOKEN`). It is not per browser. An admin can be seeded with `ADMIN_EMAIL`/`ADMIN_PASSWORD`.
 5. **Upstream keys are remembered in the browser** (localStorage), never stored on the server.
 6. **Accounts**: email + password, plus a unique username (sign-in accepts either), **guests can still use everything** (nothing is saved for them). Database: **PostgreSQL only**, one schema and one migration history managed by **Drizzle ORM** (replaced Prisma on request because Prisma's engine download from `binaries.prisma.sh` failed in Docker builds on the user's WSL network, where that host stalls TLS 1.3), configured with individual Laravel-style `DB_*` values (no `DATABASE_URL`). SQLite support was added and then removed on request. Migrations are SQL files in `packages/server/drizzle/` created by `pnpm db:generate` and applied by the server itself at start; the baseline is idempotent so databases that Prisma created are adopted without a manual step.
 7. Bootstrap (not Tailwind), with a light/dark toggle.
 8. No `network_mode: host` in compose.
+9. **MCP client keys are issued only by the Akilimo API** (playground, type "MCP key"); this server checks them through the API and keeps no key table of its own. Operator keys in `MCP_API_KEYS` stay for partner apps.
 
 ## 5. Non-obvious facts and gotchas
 
@@ -83,7 +62,7 @@ Latest commits, newest first:
 - **Weather server dependency**: `mcp_weather_server` 0.6.1 crashes with the `mcp` 2.x SDK (`McpError` was renamed); pin `mcp[cli]==1.30.0`. The `weather-mcp` compose service (`docker/weather-mcp/Dockerfile`) installs both pinned versions. **Its image has not been built or run**: the user builds it; an earlier unpinned build exited at start for the reason above. Registries are only seeded on first start, so in Docker add it via Manage (`http://weather-mcp:8080/mcp`).
 - **Small local models guess when data is truncated.** Keep tool results compact; the system prompt forbids facts not found in tool results.
 - **`think: false`** is sent to Ollama models with the thinking capability (otherwise answers take minutes). The native `/api/chat` is used so `num_ctx` can be 8192.
-- **CORS**: Akilimo 2.0 and Ollama reject browser origins. The web app reaches everything through same-origin paths (`/gateway`, `/api`, `/llm`, `/proxy/ollama`), via Vite in dev and nginx in Docker. Ollama proxies drop `Origin`.
+- **CORS**: Akilimo 2.0 and Ollama reject browser origins. The web app reaches everything through same-origin paths (`/gateway`, `/api`, `/chat`, `/proxy/ollama`), via Vite in dev and nginx in Docker. Ollama proxies drop `Origin`.
 - **Ports**: port 3000 is taken by Dokploy on the dev machine, so the server defaults to **3001** locally; containers use 3000.
 - **pnpm 12 lockfile bug**: it may write `@modelcontextprotocol/sdk` as `1.32.2` instead of `1.32.2(zod@3.25.76)` for `packages/web`, leaving a broken link. Fix the importer entry by hand and run `pnpm install --frozen-lockfile`.
 - **Vite on Windows sometimes misses rapid edits** and serves stale modules. Touch the file (`(Get-Item f).LastWriteTime = Get-Date`).
@@ -95,14 +74,14 @@ Latest commits, newest first:
 ```bash
 pnpm install
 pnpm dev:server:http   # server on :3001 (reads repo-root .env)
-pnpm dev:web           # UI on :5173, proxies /gateway, /api, /llm, /proxy/ollama
+pnpm dev:web           # UI on :5173, proxies /gateway, /api, /chat, /proxy/ollama
 ```
 
 Relevant `.env` settings (see `.env.example`): `AKILIMO_API_BASE_URL`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` (PostgreSQL; enables accounts), `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_NAME`, `ADMIN_USERNAME` (optional admin seed). Docker additionally needs the `DB_*` values (compose requires them; `DB_HOST=db` for the bundled PostgreSQL) and `WEBUI_SECRET_KEY`. The user does not use `DATABASE_URL`; it is not supported. The user's own `.env` had a malformed first line (a literal `\n` joining two variables); they were told, but it was not edited because it holds secrets.
 
 ## 7. Open items and suggested next steps
 
-1. **Push** the local commits (see section 2) once the user agrees. The first push to `main` runs `docker-publish.yml`, which creates the GHCR packages; check their visibility (packages under an org start private unless the org allows otherwise) so the server can pull them, or log the host in to ghcr.io.
+1. **Push** the hardening commit (section 2) once the user agrees; pushes to `main` run `docker-publish.yml`. To use API-issued MCP keys in production: deploy the `new-akilimo-api` change, create a key there with only **Verify MCP keys**, set it as this server's `AKILIMO_API_KEY`, then set `MCP_REQUIRE_KEY=true` if keys should be mandatory.
 2. **Production deployment** (`proxy-tool` repo, uncommitted there): service `mcp` added to `stacks/akilimo/docker-compose.yml` (`127.0.0.1:9101`, `AKILIMO_MCP_*` env, volume `akilimo-mcp-data`) and the Caddy site `akilimo-mcp.akilimo.org` in `config/caddy/snippets/domains/akilimo.caddy` (mirrored in `stacks/akilimo/Caddyfile`). Still needed: a DNS record for `akilimo-mcp.akilimo.org` pointing at the host, `AKILIMO_MCP_TAG` in the stack `.env`, optionally the `akilimo_mcp` database on the shared PostgreSQL for accounts, then `docker compose up -d mcp` and a Caddy reload.
 2. **Docker images have not been built** in this session (`docker compose up -d --build`), so the nginx template, the gateway volume and the `db` service are unverified at runtime. `docker compose config` passes.
 3. **Accounts**: no email verification, password reset, account deletion or data export. The rate limiter is in memory only (it resets on restart and is per instance).
