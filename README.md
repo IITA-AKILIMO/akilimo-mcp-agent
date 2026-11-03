@@ -77,18 +77,21 @@ The server list is shared by everyone using the UI and stored in the accounts da
 2. Add a server with its **streamable HTTP** endpoint URL and how its key is sent (none, `Authorization: Bearer`, or a custom header such as `X-API-Key`). The gateway calls the URL, so it works even if the server does not allow browser requests, and internal addresses (e.g. `http://akilimo-mcp:3000/mcp`) are allowed.
 3. Use **Test connection** in the form (with an optional key that is used only for the test) before saving, or the plug button on any listed server. The gateway connects and reports the server name, response time and its tools, or why it failed (unreachable, wrong path, key missing or rejected).
 
-Keys themselves are entered per user in the server panel and remembered in that browser only; the gateway forwards them per request and never stores them.
+A user can enter their own key for a server in the server panel; it is remembered in that browser only, the gateway forwards it per request and never stores it, and it is never limited. Admins can also save a **shared key** per server (Manage > AI providers > Shared keys, stored encrypted): a signed-in user without a key of their own is served with it, with a limited number of calls per user (`SHARED_KEY_RATE_PER_MINUTE`, `SHARED_KEY_RATE_PER_DAY`; admins are not limited), and the chat uses it too. Guests get no shared key.
 
 #### Example: Weather MCP server
 [mcp_weather_server](https://github.com/isdaniel/mcp_weather_server) adds current weather, forecasts, air quality and time-zone tools from the free Open-Meteo API (no key).
 
-- **Docker**: the `weather-mcp` compose service (`docker/weather-mcp/Dockerfile`) runs it on the internal network. Add it under **Manage** with id `weather`, URL `http://weather-mcp:8080/mcp`, no key.
+- **Docker**: the `weather-mcp` compose service (`docker/weather-mcp/Dockerfile`, published as `ghcr.io/iita-akilimo/akilimo-weather-mcp`) runs it on the internal network. Add it under **Manage** with id `weather`, URL `http://weather-mcp:8080/mcp`, no key. In production it is the `weather-mcp` service of the `akilimo-mcp` stack in `proxy-tool`, at `http://akilimo-weather-mcp:8080/mcp`.
 - **Locally** (needs Python and [uv](https://docs.astral.sh/uv/)), then add it under **Manage** with URL `http://127.0.0.1:8090/mcp`:
 
   ```bash
   uvx --from "mcp_weather_server==0.6.1" --with "mcp[cli]==1.30.0" python -m mcp_weather_server --mode streamable-http --stateless --host 127.0.0.1 --port 8090
   ```
  Version 0.6.1 does not declare an upper bound on the `mcp` SDK and fails to start with `mcp` 2.x (`cannot import name 'McpError'`), so keep the `mcp[cli]==1.30.0` pin. On Windows with a pyenv `uvx` shim, avoid `<` in version specifiers (cmd treats it as a redirect).
+
+#### Example: Agriculture MCP server
+The IITA fork of [agriculture-mcp-server](https://github.com/IITA-AKILIMO/agriculture-mcp-server) (its own repository, image `ghcr.io/iita-akilimo/agriculture-mcp-server`) adds soil conditions, crop weather forecasts, observed climate since 1981, monthly averages and national agriculture statistics from Open-Meteo, NASA POWER and the World Bank (no key). It has no authentication, so keep it on the internal network. In production it is the `agriculture-mcp` service of the `akilimo-mcp` stack in `proxy-tool`: add it under **Manage** with id `agriculture`, URL `http://akilimo-agriculture-mcp:8080/mcp`, no key. This server also has its own `get_soil_profile` and `get_climate_summary` tools (see `AGENTS.md`), which need no extra server.
 
 ### Step 3: Using it with Claude Desktop
 To make the actual Claude app use these tools:
@@ -112,9 +115,9 @@ If you don't want to install Node.js or pnpm manually, you can run everything us
    - Akilimo 1.0 MCP server: `http://localhost:3080/mcp` (streamable HTTP) or `/sse`; inside the compose network Open WebUI reaches it at `http://akilimo-mcp:3000/mcp`
 
 ### Published images (GHCR)
-`.github/workflows/docker-publish.yml` builds both images on every push to `main` and on `v*` tags and pushes them to GitHub Container Registry (not Docker Hub): `ghcr.io/iita-akilimo/akilimo-mcp-agent` (MCP server) and `ghcr.io/iita-akilimo/akilimo-mcp-agent-web` (web UI), tagged `latest` (main), the version (`v1.2.3` → `1.2.3`, `1.2`) and `sha-<commit>`. Pull requests only build. `docker compose build` tags local builds with the same names. The Node and nginx base images come from Docker Hub by default; set the repository variables `NODE_IMAGE` / `NGINX_IMAGE` (or the `--build-arg`s of the same names) to pull them from a mirror instead.
+`.github/workflows/docker-publish.yml` builds the images on every push to `main` and on `v*` tags and pushes them to GitHub Container Registry (not Docker Hub): `ghcr.io/iita-akilimo/akilimo-mcp-agent` (MCP server) , `ghcr.io/iita-akilimo/akilimo-mcp-agent-web` (web UI) and `ghcr.io/iita-akilimo/akilimo-weather-mcp` (weather MCP), tagged `latest` (main), the version (`v1.2.3` → `1.2.3`, `1.2`) and `sha-<commit>`. Pull requests only build. `docker compose build` tags local builds with the same names. The Node and nginx base images come from Docker Hub by default; set the repository variables `NODE_IMAGE` / `NGINX_IMAGE` (or the `--build-arg`s of the same names) to pull them from a mirror instead.
 
-In production the server runs in the `akilimo` stack of the hosting repo (`proxy-tool`), service `mcp`, behind Caddy at `https://akilimo-mcp.akilimo.org` (only `/mcp`, `/sse`, `/messages` and `/health` are public). `mcp.akilimo.org` is the Akilimo 2.0 MCP.
+In production the server runs in the `akilimo-mcp` stack of the hosting repo (`proxy-tool`; it also has the web UI at `agent.akilimo.org`, the weather MCP and the agriculture MCP, and needs the `akilimo` stack with the API), service `mcp`, behind Caddy at `https://akilimo-mcp.akilimo.org` (only `/mcp`, `/sse`, `/messages` and `/health` are public). `mcp.akilimo.org` is the Akilimo 2.0 MCP.
 
 Open WebUI uses **Ollama running on your machine** (not in Docker). On Linux, Ollama must listen beyond localhost (`OLLAMA_HOST=0.0.0.0`). With Docker in WSL and Ollama on Windows, enable `hostAddressLoopback=true` in `.wslconfig` and set `OLLAMA_BASE_URL=http://<Windows IP>:11434` in `.env`. Pick a model that supports tools (e.g. `qwen3:8b`, `llama3.1:8b`); plain `llama3` does not.
 
