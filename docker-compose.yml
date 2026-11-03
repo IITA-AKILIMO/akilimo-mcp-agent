@@ -17,11 +17,15 @@ services:
       AKILIMO_API_KEY: ${AKILIMO_API_KEY}
       AKILIMO_DEVICE_TOKEN: ${AKILIMO_DEVICE_TOKEN:-}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173}
-      # Optional client keys for /mcp and /sse (Bearer or X-API-Key); empty = public endpoints
+      # /mcp and /sse always need a key (Bearer or X-API-Key): operator keys here, or MCP keys users create in the
+      # Akilimo API playground (checked through the API, so AKILIMO_API_KEY needs the mcp:verify-keys ability)
       MCP_API_KEYS: ${MCP_API_KEYS:-}
-      # true = refuse MCP requests without a key; users create MCP keys in the Akilimo API playground,
-      # checked through the API, so AKILIMO_API_KEY needs the mcp:verify-keys ability
-      MCP_REQUIRE_KEY: ${MCP_REQUIRE_KEY:-}
+      # Calls a signed-in user may make through an admin-saved shared key (admins and own keys are not limited)
+      SHARED_KEY_RATE_PER_MINUTE: ${SHARED_KEY_RATE_PER_MINUTE:-}
+      SHARED_KEY_RATE_PER_DAY: ${SHARED_KEY_RATE_PER_DAY:-}
+      # Default limits of each MCP key an admin issues in Manage > MCP keys (a key can have its own)
+      MCP_KEY_RATE_PER_MINUTE: ${MCP_KEY_RATE_PER_MINUTE:-}
+      MCP_KEY_RATE_PER_DAY: ${MCP_KEY_RATE_PER_DAY:-}
       # Optional admin account ensured at start (admins manage MCP servers and user roles)
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}

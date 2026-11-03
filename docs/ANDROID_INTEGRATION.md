@@ -24,7 +24,7 @@ If the app only needs to show prices and request a recommendation, calling the R
 | Required header | `Accept: application/json, text/event-stream`. Without it the server answers `406 Not Acceptable` |
 | Session / `initialize` | Not needed. A `tools/call` sent on its own works. (Sending `initialize` first is allowed and harmless.) |
 | Response framing | Even a single answer arrives as one server-sent event: `event: message` then `data: {JSON-RPC response}`. A parser has to read the `data:` line |
-| Authentication | None while the server runs without `MCP_REQUIRE_KEY`/`MCP_API_KEYS`. When it requires a key, send `Authorization: Bearer <key>` (or `X-API-Key`) with an operator key from `MCP_API_KEYS`, kept on the app's backend rather than in the APK; a `401` with `WWW-Authenticate: Bearer` means a key is missing or wrong |
+| Authentication | A key is always required: send `Authorization: Bearer <key>` (or `X-API-Key`) with an operator key from `MCP_API_KEYS`, kept on the app's backend rather than in the APK; a `401` with `WWW-Authenticate: Bearer` means a key is missing or wrong |
 | CORS | Irrelevant for a native app; it only affects browsers |
 | Slow calls | `compute_recommendations` can take tens of seconds. Use a read timeout of about 120 s |
 

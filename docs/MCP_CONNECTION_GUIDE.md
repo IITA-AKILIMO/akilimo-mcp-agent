@@ -11,7 +11,7 @@ The agent built in this repository, backed by the Akilimo 1.0 API (the Laravel `
 - **Streamable HTTP** (current MCP transport): `/mcp`
 - **SSE** (older clients): `/sse`
 
-**Client key**: when the server has `MCP_REQUIRE_KEY =true` or `MCP_API_KEYS` set (comma-separated operator keys, e.g. one per partner app), `/mcp` and `/sse` need a key on every request, the same way as Akilimo 2.0: `Authorization: Bearer <key>` or `X-API-Key: <key>`. Without one the server answers `401` with a `WWW-Authenticate: Bearer` challenge; otherwise the endpoints are public. **Signed-in users create their own keys** in the web UI (account menu > **API keys**): a key starts with `akm_`, is shown once with a ready Claude Desktop configuration, and can be deleted at any time; the list shows each key's start, creation and last use. Up to 10 keys per user; deleting the account deletes its keys. Users of the **Akilimo API** can also create one there: sign in to the playground (`https://api.akilimo.org/playground`) > API keys > type **MCP key** (an `ak_…` key with only the `mcp:use` ability). This server checks such keys with the API's `POST /api/v1/mcp/verify-key`, using its own `AKILIMO_API_KEY`, which must be an API key with the `mcp:verify-keys` ability (an admin creates it in the API's admin area); answers are cached for a minute, so a revoked key stops working within a minute. stdio needs no key, and neither do this server's own web chat and gateway (they call it over `127.0.0.1`).
+**Client key**: `/mcp` and `/sse` always need a key on every request (a key an admin issued in Manage > MCP keys, an operator key from `MCP_API_KEYS`, or an MCP key you created in the Akilimo API playground), the same way as Akilimo 2.0: `Authorization: Bearer <key>` or `X-API-Key: <key>`. Without one the server answers `401` with a `WWW-Authenticate: Bearer` challenge; otherwise the endpoints are public. **Signed-in users create their own keys** in the web UI (account menu > **API keys**): a key starts with `akm_`, is shown once with a ready Claude Desktop configuration, and can be deleted at any time; the list shows each key's start, creation and last use. Up to 10 keys per user; deleting the account deletes its keys. Users of the **Akilimo API** can also create one there: sign in to the playground (`https://api.akilimo.org/playground`) > API keys > type **MCP key** (an `ak_…` key with only the `mcp:use` ability). This server checks such keys with the API's `POST /api/v1/mcp/verify-key`, using its own `AKILIMO_API_KEY`, which must be an API key with the `mcp:verify-keys` ability (an admin creates it in the API's admin area); answers are cached for a minute, so a revoked key stops working within a minute. stdio needs no key, and neither do this server's own web chat and gateway (they call it over `127.0.0.1`).
 
 | Where | Base URL |
 | :--- | :--- |
@@ -74,7 +74,7 @@ Add this to your `claude_desktop_config.json` (found in `%APPDATA%\Claude\claude
 
 ### Remote Connection
 For clients that support remote MCP servers:
-- Akilimo 1.0: `https://akilimo-mcp.akilimo.org/mcp` (streamable HTTP) or `https://akilimo-mcp.akilimo.org/sse` (SSE); key header required when the server has `MCP_REQUIRE_KEY` or `MCP_API_KEYS`
+- Akilimo 1.0: `https://akilimo-mcp.akilimo.org/mcp` (streamable HTTP) or `https://akilimo-mcp.akilimo.org/sse` (SSE); key header always required
 - Akilimo 2.0: `https://mcp.akilimo.org/mcp` (streamable HTTP, partner key header required)
 
 ### This repo's web UI and MCP gateway
@@ -135,5 +135,5 @@ Open WebUI is the most popular interface for Ollama that supports tool integrati
 - **Permission Denied**: Ensure `packages/server/dist/index.cjs` exists (`pnpm --filter @akilimo/server build`) and you have read access to the directory.
 - **Timeout**: The Akilimo API can take up to 120s for computations; ensure your client timeout is set high enough.
 - **API Key**: Reference data and recommendations are public on the Akilimo 1.0 API. `AKILIMO_API_KEY` is the server's own key for the upstream API, needed to check users' MCP keys (`ak_…`, ability `mcp:verify-keys`); `MCP_API_KEYS` and the users' MCP keys are the keys clients use to call this MCP server.
-- **401 API key required**: the server has `MCP_REQUIRE_KEY` or `MCP_API_KEYS` set; send a key as `Authorization: Bearer <key>` or `X-API-Key`. A `401` for a key you sent means it is unknown, revoked, expired or not an MCP key.
+- **401 API key required**: the server always requires a key; send one as `Authorization: Bearer <key>` or `X-API-Key`. A `401` for a key you sent means it is unknown, revoked, expired or not an MCP key.
 - **503 key check unavailable**: the server could not reach the Akilimo API to check an `ak_…` key; try again later.
