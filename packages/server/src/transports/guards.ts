@@ -1,6 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { ErrorRequestHandler, NextFunction, Request, RequestHandler, Response } from "express";
 import { rateLimit } from "../accounts/auth.js";
+import { clientKeyMessage, type CallQuota } from "../gateway/quota.js";
 
 const jsonRpcError = (code: number, message: string) => ({ jsonrpc: "2.0", error: { code, message }, id: null });
 
@@ -18,7 +19,15 @@ function presentedKey(req: Request): string | undefined {
   return typeof header === "string" ? header.trim() : undefined;
 }
 
-export type KeyVerifier = (key: string) => Promise<boolean>;
+// A key issued in the database, with the limits of its own (null = the server defaults)
+export interface KeyGrant {
+  id: string;
+  perMinute: number | null;
+  perDay: number | null;
+}
+
+// false = not valid; true = valid; a KeyGrant = valid and counted against that key's own request limits
+export type KeyVerifier = (key: string) => Promise<boolean | KeyGrant>;
 
 // The operator's keys from MCP_API_KEYS, compared as hashes so every comparison takes the same time
 export function staticKeyVerifier(keys: readonly string[]): KeyVerifier {
@@ -29,25 +38,27 @@ export function staticKeyVerifier(keys: readonly string[]): KeyVerifier {
   };
 }
 
-// A key is valid when any verifier accepts it (operator keys first, then users' own keys)
+// A key is valid when any verifier accepts it (operator keys, admin-issued keys, then users' own keys)
 export const anyKeyVerifier = (verifiers: KeyVerifier[]): KeyVerifier => async (key) => {
-  for (const verify of verifiers) if (await verify(key)) return true;
+  for (const verify of verifiers) {
+    const result = await verify(key);
+    if (result) return result;
+  }
   return false;
 };
 
 interface AccessOptions {
-  // Refuse requests without a valid key (MCP_REQUIRE_KEY, or MCP_API_KEYS set)
-  required: boolean;
   verifyKey: KeyVerifier;
+  // Counts the requests of keys issued in the database (each key has its own window, see KeyGrant)
+  keyQuota: CallQuota;
 }
 
-// Who may use the MCP endpoints:
+// Who may use the MCP endpoints (a key is always required, there is no switch to turn that off):
 // - a valid key (MCP_API_KEYS or a key a user created) passes, whatever its Origin;
-// - a wrong key gets 401, and so does a request without one when keys are required, except the
-//   server's own calls over loopback (the chat and the gateway);
-// - otherwise the endpoints are public, and only the spec's DNS-rebinding check applies:
-//   a browser Origin must be in ALLOWED_ORIGINS, clients that send none pass.
-export function checkAccess(allowedOrigins: readonly string[], { required, verifyKey }: AccessOptions): RequestHandler {
+// - a wrong key gets 401, and so does a request without one, except the server's own calls over
+//   loopback (the chat and the gateway), which still get the spec's DNS-rebinding check: a browser
+//   Origin must be in ALLOWED_ORIGINS, callers that send none pass.
+export function checkAccess(allowedOrigins: readonly string[], { verifyKey, keyQuota }: AccessOptions): RequestHandler {
   const refuse = (res: Response, keySent: boolean) => {
     res.status(401)
       .set("WWW-Authenticate", keySent ? 'Bearer realm="akilimo-mcp", error="invalid_token"' : 'Bearer realm="akilimo-mcp"')
@@ -57,7 +68,7 @@ export function checkAccess(allowedOrigins: readonly string[], { required, verif
   return async (req, res, next) => {
     const key = presentedKey(req);
     if (key) {
-      let valid: boolean;
+      let valid: boolean | KeyGrant;
       try {
         valid = await verifyKey(key);
       } catch (error) {
@@ -65,11 +76,22 @@ export function checkAccess(allowedOrigins: readonly string[], { required, verif
         res.status(503).json(jsonRpcError(-32000, "Could not check the API key, try again later"));
         return;
       }
-      if (valid) next();
-      else refuse(res, true);
+      if (!valid) {
+        refuse(res, true);
+        return;
+      }
+      if (typeof valid === "object") {
+        const verdict = keyQuota.take(valid.id, 1, valid);
+        if (!verdict.ok) {
+          res.setHeader("Retry-After", verdict.retryAfter);
+          res.status(429).json(jsonRpcError(-32000, clientKeyMessage(verdict)));
+          return;
+        }
+      }
+      next();
       return;
     }
-    if (required && !isLoopback(req)) {
+    if (!isLoopback(req)) {
       refuse(res, false);
       return;
     }

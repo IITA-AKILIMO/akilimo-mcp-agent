@@ -8,6 +8,8 @@ import { countriesRouter } from "./countries/routes.js";
 import { cropsRouter } from "./crops/routes.js";
 import { closeDb, connectDb } from "./db/index.js";
 import { DbRegistry, FileRegistry } from "./gateway/registry.js";
+import { CallQuota } from "./gateway/quota.js";
+import { ClientKeyStore } from "./mcpkeys/store.js";
 import { gatewayRouter } from "./gateway/routes.js";
 import { chatRouter } from "./chat/routes.js";
 import { ChatSettings } from "./chat/store.js";
@@ -66,30 +68,40 @@ async function main() {
 
     // MCP clients get in with an operator key (MCP_API_KEYS) or an MCP key users create in the
     // Akilimo API's playground, checked by the API with this server's AKILIMO_API_KEY
-    const keyRequired = config.mcpRequireKey || config.mcpApiKeys.length > 0;
+    // A key is always required (only the server's own loopback calls are exempt)
+    // Keys admins issue in the database (Manage > MCP keys), operator keys from MCP_API_KEYS, and the ak_ keys
+    // users create in the Akilimo API playground are all accepted
+    const clientKeys = db ? new ClientKeyStore(db) : null;
     const verifyKey = anyKeyVerifier([
       staticKeyVerifier(config.mcpApiKeys),
+      ...(clientKeys ? [clientKeys.verifier()] : []),
       ...(config.apiKey ? [akilimoKeyVerifier(api)] : []),
     ]);
     if (!config.apiKey) console.error("AKILIMO_API_KEY not set: MCP keys created in the Akilimo API (ak_...) cannot be checked");
-    console.error(keyRequired ? "MCP endpoints need an API key" : "MCP endpoints are public (set MCP_REQUIRE_KEY or MCP_API_KEYS to require a key)");
+    console.error(config.mcpApiKeys.length === 0 && !config.apiKey
+      ? "MCP endpoints need an API key and none can be accepted: set MCP_API_KEYS or AKILIMO_API_KEY, otherwise only the web UI and chat of this server can use them"
+      : "MCP endpoints need an API key");
+
+    // The keys admins saved for upstream servers are shared with signed-in users, within a per-user limit
+    const chatSettings = new ChatSettings(db, config.secretsKey ? new SecretBox(config.secretsKey) : null, config.ollamaBaseUrl);
+    const sharedKeyQuota = new CallQuota({ perMinute: config.sharedKeyPerMinute, perDay: config.sharedKeyPerDay });
 
     startHttp(() => createServer(api), {
       port: config.port,
       allowedOrigins: config.allowedOrigins,
-      access: { required: keyRequired, verifyKey },
+      access: { verifyKey, keyQuota: new CallQuota({ perMinute: config.clientKeyPerMinute, perDay: config.clientKeyPerDay }) },
       limits: {
         requestsPerMinute: config.mcpRateLimit,
         computePerMinute: config.mcpComputeRateLimit,
         sseSessions: config.sseMaxSessions,
         sseSessionsPerIp: config.sseMaxSessionsPerIp,
       },
-      gateway: gatewayRouter(registry, db),
-      api: apiRouter(db),
+      gateway: gatewayRouter(registry, db, chatSettings, sharedKeyQuota),
+      api: apiRouter(db, clientKeys),
       coverage: coverageRouter(api),
       crops: cropsRouter(api),
       countries: countriesRouter(api),
-      chat: chatRouter(new ChatSettings(db, config.secretsKey ? new SecretBox(config.secretsKey) : null, config.ollamaBaseUrl), registry, db, api),
+      chat: chatRouter(chatSettings, registry, db, api, sharedKeyQuota),
     });
   } else {
     await startStdio(createServer(api));

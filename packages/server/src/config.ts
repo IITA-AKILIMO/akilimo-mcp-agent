@@ -22,12 +22,17 @@ export const config = {
   port: Number(process.env.PORT) || 3001,
   // Browser origins allowed by CORS and by the MCP endpoints' Origin check
   allowedOrigins: process.env.ALLOWED_ORIGINS?.split(',').map((o) => o.trim()).filter(Boolean) || ['http://localhost:5173'],
-  // Client keys for the MCP endpoints (comma-separated); when set, /mcp and /sse need one as
-  // `Authorization: Bearer <key>` or `X-API-Key`, and a request with a valid key skips the Origin check
+  // Operator keys for the MCP endpoints (comma-separated). /mcp and /sse always need a key, sent as
+  // `Authorization: Bearer <key>` or `X-API-Key` (only the server's own calls over loopback are exempt);
+  // these keys and the MCP keys users create in the Akilimo API's playground are the ones accepted
   mcpApiKeys: process.env.MCP_API_KEYS?.split(',').map((k) => k.trim()).filter(Boolean) ?? [],
-  // Refuse MCP requests without a key even when MCP_API_KEYS is empty, e.g. when only the MCP keys
-  // users create in the Akilimo API's playground (checked through the API) should get in
-  mcpRequireKey: /^(1|true|yes)$/i.test(process.env.MCP_REQUIRE_KEY ?? ""),
+  // Calls of upstream tools through the shared key an admin saved for a server (the gateway and the chat)
+  // that one signed-in user may make, per minute and per day; admins and users with their own key are not limited
+  sharedKeyPerMinute: Number(process.env.SHARED_KEY_RATE_PER_MINUTE) || 20,
+  sharedKeyPerDay: Number(process.env.SHARED_KEY_RATE_PER_DAY) || 300,
+  // Requests per minute and per day of each MCP client key issued in the database (a key can have its own limits)
+  clientKeyPerMinute: Number(process.env.MCP_KEY_RATE_PER_MINUTE) || 60,
+  clientKeyPerDay: Number(process.env.MCP_KEY_RATE_PER_DAY) || 5000,
   // Requests per minute and client IP on the MCP endpoints, and calls of compute_recommendations among them
   mcpRateLimit: Number(process.env.MCP_RATE_LIMIT) || 120,
   mcpComputeRateLimit: Number(process.env.MCP_COMPUTE_RATE_LIMIT) || 10,

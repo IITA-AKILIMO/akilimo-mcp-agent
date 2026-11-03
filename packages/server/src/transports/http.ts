@@ -3,13 +3,14 @@ import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import express, { type Router } from "express";
 import cors from "cors";
+import type { CallQuota } from "../gateway/quota.js";
 import { checkAccess, computeRateLimit, finalErrors, jsonRpcErrors, mcpRateLimit, securityHeaders, type KeyVerifier } from "./guards.js";
 
 interface HttpOptions {
   port: number;
   allowedOrigins: readonly string[];
   // Key check for /mcp and /sse (see checkAccess in guards.ts)
-  access: { required: boolean; verifyKey: KeyVerifier };
+  access: { verifyKey: KeyVerifier; keyQuota: CallQuota };
   limits: {
     // Per client IP and minute, on /mcp, /sse and /messages
     requestsPerMinute: number;

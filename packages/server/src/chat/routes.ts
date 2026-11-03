@@ -5,6 +5,7 @@ import { loadUser, rateLimit, requireAdmin, requireJson, requireUser } from "../
 import type { AkilimoApiClient } from "../api/client.js";
 import { fetchCountries } from "../countries/list.js";
 import type { Db } from "../db/index.js";
+import { sharedKeyMessage, type CallQuota } from "../gateway/quota.js";
 import type { Registry } from "../gateway/registry.js";
 import { WEB_SERVER, runWebSearch, searchWeb, webSearchTool } from "./websearch.js";
 import { runAgent } from "./agent.js";
@@ -31,6 +32,8 @@ const ChatRequestSchema = z.object({
   // The crop chosen in the selector; it only changes what the assistant is told (see CropChoice)
   // Only used without accounts: with accounts the user's profile setting (users.web_search) decides
   webSearch: z.boolean().optional(),
+  // The user's own keys for upstream MCP servers, by server id; used instead of the shared key (and without its limit)
+  keys: z.record(z.string().max(40), z.string().max(500)).optional(),
   crop: z.object({ key: z.string().regex(/^[a-z0-9_]{1,50}$/), name: z.string().min(1).max(100), advice_available: z.boolean() }).optional(),
   messages: z.array(MessageSchema).min(1).max(400),
 });
@@ -59,7 +62,7 @@ const sendError = (res: Response, error: unknown) => {
 // The chat's server side: it holds the provider settings and keys (encrypted in the database), calls
 // the model, runs the MCP tool calls and streams the conversation back as newline-delimited JSON.
 // With accounts enabled only signed-in users can chat, because the keys belong to the organisation.
-export function chatRouter(settings: ChatSettings, registry: Registry, db: Db | null, api: AkilimoApiClient) {
+export function chatRouter(settings: ChatSettings, registry: Registry, db: Db | null, api: AkilimoApiClient, quota: CallQuota) {
   const router = express.Router();
   const withUser = db ? loadUser(db) : passThrough;
   const signedIn = db ? [withUser, requireUser] : [passThrough];
@@ -121,10 +124,15 @@ export function chatRouter(settings: ChatSettings, registry: Registry, db: Db | 
     let body: z.infer<typeof ChatRequestSchema>;
     let provider;
     let keys: Record<string, string>;
+    // Servers whose key is the shared one (no key of the user's own): their calls count against the user's limit
+    const sharedServers = new Set<string>();
     try {
       body = ChatRequestSchema.parse(req.body);
       provider = await settings.resolve(body.provider);
-      keys = await settings.serverKeys();
+      const shared = await settings.serverKeys();
+      const own = Object.fromEntries(Object.entries(body.keys ?? {}).map(([id, key]) => [id, key.trim()] as const).filter(([, key]) => key !== ""));
+      keys = { ...shared, ...own };
+      for (const id of Object.keys(shared)) if (!own[id]) sharedServers.add(id);
     } catch (error) {
       sendError(res, error);
       return;
@@ -158,7 +166,15 @@ export function chatRouter(settings: ChatSettings, registry: Registry, db: Db | 
         chat: (messages, tools, signal) => chat(provider, body.model, messages, tools, signal),
         history: body.messages as ChatMessage[],
         tools: webSearch ? [...session.tools, webSearchTool] : session.tools,
-        callTool: (server, name, args, signal) => (server === WEB_SERVER ? runWebSearch(searchConfig!, args, signal) : session.callTool(server, name, args, signal)),
+        callTool: (server, name, args, signal) => {
+          if (server === WEB_SERVER) return runWebSearch(searchConfig!, args, signal);
+          // Admins and users with their own key are not limited; everyone else shares the key's allowance
+          if (req.user && req.user.role !== "admin" && sharedServers.has(server)) {
+            const verdict = quota.take(req.user.id);
+            if (!verdict.ok) throw new Error(sharedKeyMessage(verdict));
+          }
+          return session.callTool(server, name, args, signal);
+        },
         webSearch,
         country: findCountry(countries, body.country),
         crop: body.crop,

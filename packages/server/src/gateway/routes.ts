@@ -4,8 +4,16 @@ import express, { type NextFunction, type Request, type Response } from "express
 import { z } from "zod/v4";
 import { loadUser, requireAdmin, requireJson } from "../accounts/auth.js";
 import type { Db } from "../db/index.js";
+import { countToolCalls, sharedKeyMessage, type CallQuota } from "./quota.js";
 import { RegistryError, ServerEntrySchema, type Registry } from "./registry.js";
 import { testConnection } from "./test.js";
+
+// The keys an admin saved for upstream servers (table mcp_server_keys): signed-in users without a key of
+// their own use them, within SharedKeyQuota
+export interface SharedKeySource {
+  serverKeys(): Promise<Record<string, string>>;
+  serverKeyHints(): Promise<Record<string, string>>;
+}
 
 // Request headers worth forwarding to an upstream MCP server, and response headers worth returning
 const FORWARD_REQUEST = ["content-type", "accept", "mcp-session-id", "mcp-protocol-version", "last-event-id"];
@@ -32,15 +40,18 @@ const sendError = (res: Response, error: unknown) => {
 
 // Registry edits need a signed-in admin: an open registry would let anyone point the gateway at
 // internal services (SSRF). Without a database there are no accounts, so the registry is read-only.
-export function gatewayRouter(registry: Registry, db: Db | null) {
+export function gatewayRouter(registry: Registry, db: Db | null, shared: SharedKeySource, quota: CallQuota) {
   const router = express.Router();
-  // Session lookup only on registry routes, not on proxied MCP traffic
+  // Session lookup on registry routes and on proxied calls that may use a shared key
   const withUser = db ? loadUser(db) : passThrough;
   const admin = db ? [withUser, requireJson, requireAdmin] : [noAccounts];
+  const lookUp = (req: Request, res: Response) => new Promise<void>((resolve, reject) => withUser(req, res, (error?: unknown) => (error ? reject(error) : resolve())));
 
   router.get("/servers", withUser, async (req, res) => {
     try {
-      res.json({ servers: await registry.list(), editable: req.user?.role === "admin" });
+      // Which servers have a shared key, so a signed-in user can connect without entering one (only ids, never the key)
+      const sharedKeys = req.user ? Object.keys(await shared.serverKeyHints().catch(() => ({}))) : [];
+      res.json({ servers: await registry.list(), editable: req.user?.role === "admin", shared_keys: sharedKeys });
     } catch (error) {
       sendError(res, error);
     }
@@ -99,7 +110,27 @@ export function gatewayRouter(registry: Registry, db: Db | null) {
       const value = req.header(name);
       if (value) headers[name] = value;
     }
-    const key = req.header(KEY_HEADER);
+    let key = req.header(KEY_HEADER);
+    // No key of their own: a signed-in user gets the shared key of this server, if an admin saved one. A
+    // user's own key is never limited here, and neither is an admin using the shared key; everyone else is.
+    if (!key && entry.auth.type !== "none" && db) {
+      try {
+        await lookUp(req, res);
+        if (req.user) {
+          key = (await shared.serverKeys())[entry.id];
+          const calls = key ? countToolCalls(req.body) : 0;
+          const verdict = req.user.role === "admin" ? ({ ok: true } as const) : quota.take(req.user.id, calls);
+          if (!verdict.ok) {
+            res.status(429).setHeader("Retry-After", verdict.retryAfter).json({ jsonrpc: "2.0", error: { code: -32000, message: sharedKeyMessage(verdict) }, id: null });
+            return;
+          }
+        }
+      } catch (error) {
+        console.error("Shared key lookup failed:", error);
+        res.status(503).json({ error: "Could not look up the shared key, try again later" });
+        return;
+      }
+    }
     if (key && entry.auth.type === "bearer") headers.authorization = `Bearer ${key}`;
     if (key && entry.auth.type === "header") headers[entry.auth.header.toLowerCase()] = key;
 

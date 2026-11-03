@@ -118,6 +118,27 @@ export const mcpServerKeys = pgTable("mcp_server_keys", {
   updatedAt: timestamptz("updated_at").notNull().defaultNow(),
 });
 
+// Keys that clients (partner apps, Open WebUI, desktop clients) send to /mcp and /sse, issued by admins.
+// Only the SHA-256 of a key is stored (the key itself is shown once, when it is created); key_hint is a
+// short non-secret piece to recognise it by. per_minute/per_day are the key's own limits (null = the
+// server defaults); revoked_at stops a key at once, expires_at at a date.
+export const mcpClientKeys = pgTable("mcp_client_keys", {
+  id: uuid("id").primaryKey().$defaultFn(randomUUID),
+  name: text("name").notNull(),
+  keyHash: text("key_hash").notNull(),
+  keyHint: text("key_hint").notNull(),
+  perMinute: integer("per_minute"),
+  perDay: integer("per_day"),
+  expiresAt: timestamptz("expires_at"),
+  revokedAt: timestamptz("revoked_at"),
+  lastUsedAt: timestamptz("last_used_at"),
+  createdBy: uuid("created_by"),
+  createdAt: timestamptz("created_at").notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex("mcp_client_keys_key_hash_key").on(t.keyHash),
+  foreignKey({ name: "mcp_client_keys_created_by_fkey", columns: [t.createdBy], foreignColumns: [users.id] }).onDelete("set null").onUpdate("cascade"),
+]);
+
 // The chat's web search service, set by an admin (one row, id "default"). The key is encrypted like the
 // provider keys; without a row the SEARCH_* environment variables are used, and enabled false turns
 // search off whatever the environment says.

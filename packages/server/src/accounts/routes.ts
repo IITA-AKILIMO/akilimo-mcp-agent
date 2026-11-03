@@ -1,12 +1,29 @@
 import { and, asc, desc, eq, ne, or } from "drizzle-orm";
 import express, { type Request, type Response } from "express";
 import { z } from "zod/v4";
+import type { ClientKeyStore } from "../mcpkeys/store.js";
 import type { Db } from "../db/index.js";
 import { activity, conversations, messages, users } from "../db/schema.js";
 import {
   endSession, hashPassword, loadUser, rateLimit, requireAdmin, requireJson, requireUser, startSession, USER_SELECT,
   UsernameSchema, verifyPassword,
 } from "./auth.js";
+
+// A limit is a whole number of requests; null = the server's default
+const LimitSchema = z.number().int().min(1).max(1_000_000).nullable();
+
+const NewMcpKeySchema = z.object({
+  name: z.string().trim().min(1, "Give the key a name, e.g. the app that will use it").max(80),
+  per_minute: LimitSchema.optional(),
+  per_day: LimitSchema.optional(),
+  expires_in_days: z.number().int().min(1).max(3650).nullable().optional(),
+});
+
+const McpKeyChangeSchema = z.object({
+  name: z.string().trim().min(1).max(80).optional(),
+  per_minute: LimitSchema.optional(),
+  per_day: LimitSchema.optional(),
+});
 
 const SignupSchema = z.object({
   name: z.string().trim().min(1, "Enter your name").max(100),
@@ -76,7 +93,7 @@ const sendError = (res: Response, error: unknown) => {
 const handle = (fn: (req: Request, res: Response) => Promise<void>) =>
   (req: Request, res: Response) => fn(req, res).catch((error) => sendError(res, error));
 
-export function apiRouter(db: Db | null) {
+export function apiRouter(db: Db | null, clientKeys: ClientKeyStore | null = null) {
   const router = express.Router();
   router.use(express.json({ limit: "1mb" }));
 
@@ -284,6 +301,52 @@ export function apiRouter(db: Db | null) {
     await db.update(users).set({ role }).where(eq(users.id, id));
     res.status(204).end();
   }));
+
+  // ── Admin: MCP client keys (the keys clients send to /mcp and /sse) ───────
+  if (clientKeys) {
+    router.get("/admin/mcp-keys", requireAdmin, handle(async (req, res) => {
+      res.json({ keys: await clientKeys.list() });
+    }));
+
+    // The key itself is in this answer only; it cannot be read back later
+    router.post("/admin/mcp-keys", requireAdmin, handle(async (req, res) => {
+      const input = NewMcpKeySchema.parse(req.body);
+      const created = await clientKeys.create({
+        name: input.name,
+        perMinute: input.per_minute ?? null,
+        perDay: input.per_day ?? null,
+        expiresAt: input.expires_in_days ? new Date(Date.now() + input.expires_in_days * 24 * 60 * 60 * 1000) : null,
+        createdBy: req.user!.id,
+      });
+      res.status(201).json({ key: created.key, record: created.record });
+    }));
+
+    router.patch("/admin/mcp-keys/:id", requireAdmin, handle(async (req, res) => {
+      const id = String(req.params.id);
+      const change = McpKeyChangeSchema.parse(req.body);
+      // Only the fields that were sent change (null puts a limit back to the server default)
+      const values = {
+        ...(change.name !== undefined && { name: change.name }),
+        ...(change.per_minute !== undefined && { perMinute: change.per_minute }),
+        ...(change.per_day !== undefined && { perDay: change.per_day }),
+      };
+      const found = isUuid(id) && await clientKeys.update(id, values);
+      if (!found) {
+        res.status(404).json({ error: "Key not found" });
+        return;
+      }
+      res.json({ keys: await clientKeys.list() });
+    }));
+
+    router.delete("/admin/mcp-keys/:id", requireAdmin, handle(async (req, res) => {
+      const id = String(req.params.id);
+      if (!isUuid(id) || !(await clientKeys.revoke(id))) {
+        res.status(404).json({ error: "Key not found" });
+        return;
+      }
+      res.json({ keys: await clientKeys.list() });
+    }));
+  }
 
   return router;
 }

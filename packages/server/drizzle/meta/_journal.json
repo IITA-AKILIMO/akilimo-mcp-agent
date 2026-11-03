@@ -43,6 +43,13 @@
       "when": 1793185689449,
       "tag": "0005_user_web_search",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793677271230,
+      "tag": "0006_mcp_client_keys",
+      "breakpoints": true
     }
   ]
 }
