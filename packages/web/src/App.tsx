@@ -42,10 +42,17 @@ export default function App() {
   }, []);
 
   // The hook loads the server registry and auto-connects servers that need no key or have one saved
-  const { configs, registryError, servers, events, connect, disconnect, reload, callTool, clearEvents, replaceEvents } = useMcpServers({ onLog });
+  const { configs, sharedKeys, registryError, servers, events, connect, disconnect, reload, refreshAccess, callTool, clearEvents, replaceEvents } = useMcpServers({ onLog });
 
   // Signing in shows the saved activity; signing out clears the feed on this screen
   const signedInAs = account.user?.id;
+  // Signing in or out changes which shared keys are on offer (the first run is covered by the hook's own load)
+  const seenAccount = useRef(false);
+  useEffect(() => {
+    if (!account.ready) return;
+    if (seenAccount.current) refreshAccess().catch(() => undefined);
+    seenAccount.current = true;
+  }, [signedInAs, account.ready, refreshAccess]);
   useEffect(() => {
     if (!account.ready) return;
     if (signedInAs) {
@@ -113,7 +120,7 @@ export default function App() {
               : <ToolRunner configs={configs} servers={servers} callTool={callTool} />}
           </div>
           <div className="col-12 col-lg-4 col-xxl-3 panel-col d-flex flex-column gap-3">
-            <ServerPanel configs={configs} servers={servers} registryError={registryError}
+            <ServerPanel configs={configs} servers={servers} registryError={registryError} sharedKeys={sharedKeys} isAdmin={isAdmin}
               onConnect={connect} onDisconnect={disconnect} canManage={isAdmin} onManage={() => setManaging(true)} />
             <ActivityFeed events={events} onClear={clearAll} />
           </div>

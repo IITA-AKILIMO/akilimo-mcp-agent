@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { CheckCircle2, Globe, Loader2, Pencil, Plug, Plus, Server, Shield, Sparkles, Trash2, Users, X, XCircle } from 'lucide-react';
+import { CheckCircle2, Globe, KeyRound, Loader2, Pencil, Plug, Plus, Server, Shield, Sparkles, Trash2, Users, X, XCircle } from 'lucide-react';
+import { McpKeysTab } from './McpKeysTab';
 import { listUsers, setUserRole, type AdminUser, type Role, type User } from '../account/api';
 import { ProvidersTab, WebSearchTab } from './ProvidersPanel';
 import { loadKeys } from '../mcp/keys';
@@ -332,7 +333,7 @@ const UsersTab: React.FC<{ currentUser: User }> = ({ currentUser }) => {
 
 // Admin-only dialog: shared MCP servers, AI providers and user roles
 export const AdminDialog: React.FC<Props> = ({ currentUser, onClose, onChanged }) => {
-  const [tab, setTab] = useState<'servers' | 'providers' | 'search' | 'users'>('servers');
+  const [tab, setTab] = useState<'servers' | 'providers' | 'search' | 'keys' | 'users'>('servers');
 
   return (
     <div className="modal d-block" tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="admin-dialog-title"
@@ -366,6 +367,12 @@ export const AdminDialog: React.FC<Props> = ({ currentUser, onClose, onChanged }
                 </button>
               </li>
               <li className="nav-item" role="presentation">
+                <button type="button" role="tab" aria-selected={tab === 'keys'} title="Keys that apps send to this server's MCP address"
+                  className={`nav-link d-inline-flex align-items-center gap-1 ${tab === 'keys' ? 'active' : ''}`} onClick={() => setTab('keys')}>
+                  <KeyRound size={14} /> MCP keys
+                </button>
+              </li>
+              <li className="nav-item" role="presentation">
                 <button type="button" role="tab" aria-selected={tab === 'users'}
                   className={`nav-link d-inline-flex align-items-center gap-1 ${tab === 'users' ? 'active' : ''}`} onClick={() => setTab('users')}>
                   <Users size={14} /> Users
@@ -375,6 +382,7 @@ export const AdminDialog: React.FC<Props> = ({ currentUser, onClose, onChanged }
             {tab === 'servers' && <ServersTab onChanged={onChanged} />}
             {tab === 'providers' && <ProvidersTab />}
             {tab === 'search' && <WebSearchTab />}
+            {tab === 'keys' && <McpKeysTab />}
             {tab === 'users' && <UsersTab currentUser={currentUser} />}
           </div>
         </div>

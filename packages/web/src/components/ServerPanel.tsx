@@ -8,6 +8,9 @@ interface Props {
   configs: McpServerConfig[];
   servers: Record<string, ServerState>;
   registryError: string | null;
+  // Servers with a key an admin saved for signed-in users, and whether this user is an admin (no limit for them)
+  sharedKeys: string[];
+  isAdmin: boolean;
   onConnect: (id: string) => void;
   onDisconnect: (id: string) => void;
   // Only admins see Manage; registry changes are checked server-side as well
@@ -22,7 +25,7 @@ const StatusBadge: Record<ConnectionStatus, string> = {
   error: 'text-bg-danger',
 };
 
-export const ServerPanel: React.FC<Props> = ({ configs, servers, registryError, onConnect, onDisconnect, canManage, onManage }) => {
+export const ServerPanel: React.FC<Props> = ({ configs, servers, registryError, sharedKeys, isAdmin, onConnect, onDisconnect, canManage, onManage }) => {
   // Remembered in this browser (see mcp/keys.ts); sent only with requests to that server
   const [keys, setKeys] = useState<Record<string, string>>(loadKeys);
 
@@ -69,9 +72,18 @@ export const ServerPanel: React.FC<Props> = ({ configs, servers, registryError, 
               {needsKey(s) && (
                 <div className="mt-2">
                   <input type="password" className="form-control form-control-sm" autoComplete="off"
-                    placeholder="Key" aria-label={`${s.label} key`} value={keys[s.id] ?? ''}
+                    placeholder={sharedKeys.includes(s.id) ? 'Your own key (optional)' : 'Key'} aria-label={`${s.label} key`} value={keys[s.id] ?? ''}
                     disabled={on} onChange={e => setKey(s.id, e.target.value)} />
-                  <div className="form-text mt-0">{describeAuth(s.auth)}; remembered in this browser</div>
+                  <div className="form-text mt-0">
+                    {describeAuth(s.auth)}; remembered in this browser
+                    {sharedKeys.includes(s.id) && (
+                      keys[s.id]
+                        ? '. Your own key is used, with no limit.'
+                        : isAdmin
+                          ? '. The shared key is used (no limit for admins).'
+                          : '. The shared key is used, with a limited number of calls; add your own key for no limit.'
+                    )}
+                  </div>
                 </div>
               )}
               {state.status === 'error' && state.error && (

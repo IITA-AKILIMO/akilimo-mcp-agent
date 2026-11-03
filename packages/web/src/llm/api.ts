@@ -3,6 +3,7 @@
 // tool calls; the browser only sends the conversation and shows what comes back.
 import type { LlmTest, ProviderId } from '@akilimo/llm';
 import type { ChatMessage } from '@akilimo/shared';
+import { loadKeys } from '../mcp/keys';
 
 // The provider code itself lives in @akilimo/llm and runs on the server; the browser only needs its types
 export type { LlmTest, ProviderId };
@@ -101,11 +102,14 @@ type StreamEvent =
 
 // One user turn: the server runs the agent loop and streams events as newline-delimited JSON
 export async function streamChat({ provider, model, country, crop, webSearch, messages, signal, onMessage, onStep, onWarning }: StreamOptions): Promise<void> {
+  // The user's own keys for MCP servers (kept in this browser) go with the request, so the server uses them
+  // instead of the shared key and its limit; they are not stored there
+  const keys = Object.fromEntries(Object.entries(loadKeys()).filter(([, key]) => key.trim() !== ''));
   const res = await fetch('/chat', {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ provider, model, country, crop, webSearch: webSearch === true, messages }),
+    body: JSON.stringify({ provider, model, country, crop, webSearch: webSearch === true, keys, messages }),
     signal,
   });
   if (!res.ok) await fail(res);

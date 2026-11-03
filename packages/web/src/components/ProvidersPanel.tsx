@@ -205,8 +205,8 @@ const ServerKeys: React.FC = () => {
   if (servers.length === 0 && !error) return null;
   return (
     <section className="mt-4">
-      <h3 className="h6 mb-1">Keys for MCP servers</h3>
-      <p className="small text-body-secondary">The chat runs its tool calls on the server, so servers that need a key use the one saved here (stored encrypted, shared by all users).</p>
+      <h3 className="h6 mb-1">Shared keys for MCP servers</h3>
+      <p className="small text-body-secondary">A key saved here (stored encrypted) is used by the chat and offered to every signed-in user who has not set their own key, so they can use the server without entering one. Their calls through it are limited per user (admins and users with their own key are not limited).</p>
       {error && <div className="alert alert-danger small">{error}</div>}
       <div className="d-flex flex-column gap-3">
         {servers.map(s => (

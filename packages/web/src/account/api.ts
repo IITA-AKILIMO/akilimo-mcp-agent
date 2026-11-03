@@ -82,3 +82,24 @@ export const clearActivity = () => request<void>('DELETE', '/activity');
 // Admin only
 export const listUsers = () => request<{ users: AdminUser[] }>('GET', '/admin/users');
 export const setUserRole = (id: string, role: Role) => request<void>('PATCH', `/admin/users/${id}`, { role });
+
+// Keys that clients send to the MCP endpoints, issued by admins; only the hint of a key is known after creation
+export interface McpClientKey {
+  id: string;
+  name: string;
+  key_hint: string;
+  per_minute: number | null; // null = the server's default
+  per_day: number | null;
+  expires_at: string | null;
+  revoked_at: string | null;
+  last_used_at: string | null;
+  created_at: string;
+  status: 'active' | 'expired' | 'revoked';
+}
+export interface NewMcpClientKey { name: string; per_minute?: number | null; per_day?: number | null; expires_in_days?: number | null }
+export const listMcpKeys = () => request<{ keys: McpClientKey[] }>('GET', '/admin/mcp-keys');
+// The plain key is only in this answer
+export const createMcpKey = (key: NewMcpClientKey) => request<{ key: string; record: McpClientKey }>('POST', '/admin/mcp-keys', key);
+export const updateMcpKey = (id: string, change: { name?: string; per_minute?: number | null; per_day?: number | null }) =>
+  request<{ keys: McpClientKey[] }>('PATCH', `/admin/mcp-keys/${id}`, change);
+export const revokeMcpKey = (id: string) => request<{ keys: McpClientKey[] }>('DELETE', `/admin/mcp-keys/${id}`);
