@@ -1,10 +1,12 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { ArrowLeft, Banknote, ChevronRight, Leaf, Loader2, Sprout, Store } from 'lucide-react';
 import type { Country, Crop } from '@akilimo/shared';
-import { AKILIMO2_TOOL, akilimo2Args, planBags, summarizeAkilimo2, type Akilimo2Args } from '@akilimo/shared';
+import { AKILIMO2_TOOL, akilimo2Args, planBags, summarizeAkilimo2, type Akilimo2Args, type FarmProfile } from '@akilimo/shared';
 import { Akilimo2Result, type SecondAnswer } from './Akilimo2Result';
 import { PriceSuggest } from './PriceSuggest';
+import { RememberBar } from './FarmMemory';
+import { defined, readRemember, useFarmProfile, writeRemember } from '../mcp/farmProfile';
 import type { ServerState } from '../mcp/useMcpServers';
 import { findCountry } from '@akilimo/shared';
 import { useCountries } from '../mcp/countries';
@@ -493,6 +495,11 @@ const RecommendScreen: React.FC<{ country: Country; call: Call; record: Record_;
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<GuidedEntry | null>(null);
 
+  // What the farmer already told us for this country fills the form; finishing the step remembers it again (if they agree)
+  const farm = useFarmProfile(country.code);
+  const [remember, setRemember] = useState(readRemember);
+  const filledFor = useRef<unknown>(null);
+
   // Prefill the prices with the typical ones once they are loaded
   const loaded = options.data;
   useEffect(() => {
@@ -501,6 +508,29 @@ const RecommendScreen: React.FC<{ country: Country; call: Call; record: Record_;
     setPrices(Object.fromEntries(loaded.fertilizers.fertilizers.map(f => [f.key, f.typical_price_per_bag !== null ? String(f.typical_price_per_bag) : ''])));
     setSelected({});
   }, [loaded]);
+
+  // Fill the form from what was remembered, once the typical prices are in (the remembered ones win)
+  useEffect(() => {
+    if (!loaded || !farm.ready || !farm.profile || filledFor.current === loaded) return;
+    filledFor.current = loaded;
+    const p = farm.profile;
+    if (p.location) setPos({ lat: p.location.lat, lon: p.location.lon });
+    if (p.size) setSize(String(p.size));
+    if (p.unit) setUnit(p.unit);
+    if (p.yieldClass !== undefined) setYieldClass(p.yieldClass);
+    if (p.risk !== undefined) setRisk(p.risk);
+    if (p.sellUnit) setSellUnit(p.sellUnit);
+    if (p.cassavaPrice) setRootPrice(String(p.cassavaPrice));
+    if (p.factory !== undefined) setFactory(p.factory);
+    if (p.plantingWindow !== undefined) setPlantingWindow(p.plantingWindow);
+    if (p.harvestWindow !== undefined) setHarvestWindow(p.harvestWindow);
+    if (p.fertilizers) {
+      const known = new Set(loaded.fertilizers.fertilizers.map(f => f.key));
+      const saved = Object.entries(p.fertilizers).filter(([key]) => known.has(key));
+      setSelected(Object.fromEntries(saved.filter(([, v]) => v.selected).map(([key]) => [key, true])));
+      setPrices(prev => ({ ...prev, ...Object.fromEntries(saved.filter(([, v]) => v.price !== undefined).map(([key, v]) => [key, String(v.price)])) }));
+    }
+  }, [loaded, farm.ready, farm.profile]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The budget choices, as totals for the whole field (maxInvestment is for the field; 0 means no limit).
   // Older servers lack the tool: then the question is simply not asked.
@@ -565,6 +595,17 @@ const RecommendScreen: React.FC<{ country: Country; call: Call; record: Record_;
       };
       setDone(entry);
       record(entry);
+      if (remember) {
+        farm.save({
+          ...defined({
+            location: pos.lat !== undefined && pos.lon !== undefined ? { lat: pos.lat, lon: pos.lon } : undefined,
+            size: Number(size), unit: unit as FarmProfile['unit'], yieldClass, risk, cassavaPrice: Number(rootPrice), sellUnit,
+            plantingWindow, harvestWindow,
+            fertilizers: Object.fromEntries(loaded.fertilizers.fertilizers.filter(f => selected[f.key]).map(f => [f.key, { selected: true, ...(Number(prices[f.key]) > 0 ? { price: Number(prices[f.key]) } : {}) }])),
+          }),
+          factory, // empty = the open market, so going back to it is remembered too
+        }).catch(() => undefined);
+      }
     } catch (err) {
       setError(message(err));
     } finally {
@@ -586,6 +627,8 @@ const RecommendScreen: React.FC<{ country: Country; call: Call; record: Record_;
   return (
     <form onSubmit={submit} className="mx-auto" style={{ maxWidth: '44rem' }}>
       <h2 className="h5 mb-3">Fertilizer recommendation for {country.name}</h2>
+      <RememberBar countryName={country.name} store={farm.store} hasProfile={!!farm.profile} remember={remember}
+        onRemember={on => { setRemember(on); writeRemember(on); }} onForget={farm.forget} />
       <Loading state={options} />
       {loaded && (
         <div className="d-flex flex-column gap-4">

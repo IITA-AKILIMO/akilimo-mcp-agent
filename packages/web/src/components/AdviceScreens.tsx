@@ -1,11 +1,13 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { CalendarDays, Loader2, Shovel, Wheat } from 'lucide-react';
-import { findCountry, type Country } from '@akilimo/shared';
+import { findCountry, type Country, type FarmProfile } from '@akilimo/shared';
 import { useCountries } from '../mcp/countries';
 import type { GuidedEntry } from '../mcp/guided';
 import { Loading, CassavaPriceInput, PriceHint, RiskSelect, SellSelect, WINDOWS, YieldSelect, dateProblem, harvestRange, label, message, monthsFromNow, plantingMin, useLoad, windowLabel, type Call, type PriceData, type PriceItem, type Record_, type Row } from './GuidedParts';
 import { MapPicker } from './MapPicker';
 import { PriceSuggest, perAcreIn } from './PriceSuggest';
+import { RememberBar } from './FarmMemory';
+import { defined, readRemember, useFarmProfile, writeRemember } from '../mcp/farmProfile';
 
 // The three recommendation types besides fertilizer advice, which share one short form:
 //   practices  = planting practices (PP): ploughing, ridging and their methods, compared with the current practice
@@ -121,6 +123,10 @@ export const AdviceScreen: React.FC<{ kind: AdviceKind; country: Country; call: 
     <PriceSuggest call={call} country={country.code} item="operations" match={key => key === k} webSearch={webSearch}
       convert={price => perAcreIn(unit, price)} onUse={price => onUse(String(Math.round(price)))} />
   );
+  // What the farmer already told us for this country fills the form; finishing the step remembers it again (if they agree)
+  const farm = useFarmProfile(country.code);
+  const [remember, setRemember] = useState(readRemember);
+  const filledFor = useRef<unknown>(null);
   const [done, setDone] = useState<Record<string, boolean>>({}); // practices: what the farmer does now
   const [method, setMethod] = useState<Record<string, Method>>({}); // ... and how: by hand or with a tractor
   const [plantingWindow, setPlantingWindow] = useState(1);
@@ -132,6 +138,23 @@ export const AdviceScreen: React.FC<{ kind: AdviceKind; country: Country; call: 
   useEffect(() => {
     if (price.data?.typical_price_per_tonne != null) setRootPrice(String(price.data.typical_price_per_tonne));
   }, [price.data]);
+
+  // Fill the form from what was remembered, once the typical price is in (the remembered one wins)
+  useEffect(() => {
+    if (price.loading || !farm.ready || !farm.profile || filledFor.current === price) return;
+    filledFor.current = price;
+    const p = farm.profile;
+    if (p.location) setPos({ lat: p.location.lat, lon: p.location.lon });
+    if (p.size) setSize(String(p.size));
+    if (p.unit) setUnit(p.unit);
+    if (p.yieldClass !== undefined) setYieldClass(p.yieldClass);
+    if (p.risk !== undefined) setRisk(p.risk);
+    if (p.sellUnit) setSellUnit(p.sellUnit);
+    if (p.cassavaPrice) setRootPrice(String(p.cassavaPrice));
+    if (p.factory !== undefined) setFactory(p.factory);
+    if (p.plantingWindow !== undefined) setPlantingWindow(p.plantingWindow);
+    if (p.harvestWindow !== undefined) setHarvestWindow(p.harvestWindow);
+  }, [price.loading, farm.ready, farm.profile]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Planting practices compare ploughing, ridging and weeding costs, so start from the country's typical ones
   // (an older server without this tool, or a failed call, just means no prefilled costs, not an error)
@@ -240,6 +263,16 @@ export const AdviceScreen: React.FC<{ kind: AdviceKind; country: Country; call: 
       };
       setEntry(saved);
       record(saved);
+      if (remember) {
+        farm.save({
+          ...defined({
+            location: pos.lat !== undefined && pos.lon !== undefined ? { lat: pos.lat, lon: pos.lon } : undefined,
+            size: Number(size), unit: unit as FarmProfile['unit'], yieldClass, risk, cassavaPrice: Number(rootPrice), sellUnit,
+            plantingWindow, harvestWindow,
+          }),
+          factory, // empty = the open market, so going back to it is remembered too
+        }).catch(() => undefined);
+      }
     } catch (err) {
       setError(message(err));
     } finally {
@@ -261,6 +294,8 @@ export const AdviceScreen: React.FC<{ kind: AdviceKind; country: Country; call: 
     <form onSubmit={submit} className="mx-auto" style={{ maxWidth: '44rem' }}>
       <h2 className="h5 mb-1">{info.title} in {country.name}{second ? `: cassava with ${second.crop}` : ''}</h2>
       <p className="small text-body-secondary mb-3">{info.text}</p>
+      <RememberBar countryName={country.name} store={farm.store} hasProfile={!!farm.profile} remember={remember}
+        onRemember={on => { setRemember(on); writeRemember(on); }} onForget={farm.forget} />
       {kind === 'intercrop' && !second && (
         <div className="alert alert-info small">Intercropping advice is available for Nigeria (maize) and Tanzania (sweet potato) only. Choose one of them above.</div>
       )}

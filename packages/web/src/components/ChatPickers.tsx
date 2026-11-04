@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import type { Country } from '@akilimo/shared';
+import type { Country, FarmProfile } from '@akilimo/shared';
+import { defined, readRemember, useFarmProfile, writeRemember } from '../mcp/farmProfile';
+import { RememberBar } from './FarmMemory';
 import type { ServerState } from '../mcp/useMcpServers';
 import { AREA_UNITS, intercropCrop, type CropOption, type CropPrices, type OperationCosts } from './AdviceScreens';
 import { CassavaPriceInput, PriceHint, RISK_OPTIONS, SellSelect, YIELD_CLASSES, makeCall, money, unitLabel, type PriceData } from './GuidedParts';
@@ -59,15 +61,33 @@ export const FieldPicker: React.FC<Props> = ({ country, servers, callTool, onSen
   const [risk, setRisk] = useState(1);
   const [factory, setFactory] = useState({ key: '', name: '' }); // starch factory, or the open market when the key is empty
 
+  // What the farmer already told us for this country fills the form (the typical price is applied first, theirs wins)
+  const farm = useFarmProfile(country.code);
+  const [remember, setRemember] = useState(readRemember);
+  const [typicalIn, setTypicalIn] = useState(false);
+  const filled = React.useRef(false);
+
   useEffect(() => {
     let live = true;
     call<PriceData>('get_cassava_price', { countryCode: country.code }).then(d => {
       if (!live) return;
       setCurrency(d.currency ?? '');
       if (d.typical_price_per_tonne != null) setPrice(String(d.typical_price_per_tonne));
-    }, () => undefined);
+    }, () => undefined).finally(() => { if (live) setTypicalIn(true); });
     return () => { live = false; };
   }, [country.code]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!typicalIn || !farm.ready || !farm.profile || filled.current) return;
+    filled.current = true;
+    const p = farm.profile;
+    if (p.size) setSize(String(p.size));
+    if (p.unit) setUnit(p.unit);
+    if (p.yieldClass !== undefined) setYieldClass(p.yieldClass);
+    if (p.risk !== undefined) setRisk(p.risk);
+    if (p.sellUnit) setSellUnit(p.sellUnit);
+    if (p.cassavaPrice) setPrice(String(p.cassavaPrice));
+  }, [typicalIn, farm.ready, farm.profile]);
 
   useEffect(() => {
     if (!(Number(size) > 0)) return;
@@ -87,6 +107,7 @@ export const FieldPicker: React.FC<Props> = ({ country, servers, callTool, onSen
     const budgetText = Number(budget) > 0
       ? `My fertilizer budget for the whole field is up to ${budget} ${budgets?.currency ?? currency} (maxInvestment ${budget}).`
       : 'I have no fertilizer budget limit.';
+    if (remember) farm.save(defined({ size: Number(size), unit: unit as FarmProfile['unit'], yieldClass, risk, cassavaPrice: Number(price), sellUnit })).catch(() => undefined);
     const sellText = factory.key
       ? ` I plan to sell my roots to ${factory.name}, a starch factory (sell_to_starch_factory true, starch_factory_name ${factory.key}).`
       : '';
@@ -103,6 +124,8 @@ export const FieldPicker: React.FC<Props> = ({ country, servers, callTool, onSen
         {problem && <span className="small text-body-secondary">{problem}</span>}
       </>
     )}>
+      <RememberBar countryName={country.name} store={farm.store} hasProfile={!!farm.profile} remember={remember}
+        onRemember={on => { setRemember(on); writeRemember(on); }} onForget={farm.forget} />
       <div className="row g-2">
         <div className="col-sm-6">
           <Field id="cp-size" label="Field size">

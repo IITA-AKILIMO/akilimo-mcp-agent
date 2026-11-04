@@ -1,6 +1,6 @@
 // Client for the accounts API on the Akilimo 1.0 server (packages/server/src/accounts), reached
 // through the same-origin /api path; the session is an HttpOnly cookie the browser sends itself
-import type { MCPEvent } from '@akilimo/shared';
+import type { FarmProfile, MCPEvent } from '@akilimo/shared';
 import type { ChatMessage } from '../llm/types';
 
 export type Role = 'user' | 'admin';
@@ -78,6 +78,12 @@ export const saveActivity = (events: MCPEvent[]) =>
     events: events.map(e => ({ type: e.type, server: e.server, message: e.message, payload: e.payload, timestamp: e.timestamp.toISOString() })),
   });
 export const clearActivity = () => request<void>('DELETE', '/activity');
+
+// Farm details remembered per country (location, size, prices, ...) in the signed-in user's account. A guest, or a server
+// without accounts, gets an error here and the forms keep the details in the browser instead (see mcp/farmProfile.ts).
+export const getFarmProfile = (country: string) => request<{ profile: FarmProfile | null }>('GET', `/farm-profiles/${country}`);
+export const saveFarmProfile = (country: string, data: FarmProfile) => request<{ profile: FarmProfile }>('PUT', `/farm-profiles/${country}`, { data });
+export const deleteFarmProfile = (country: string) => request<void>('DELETE', `/farm-profiles/${country}`);
 
 // Admin only
 export const listUsers = () => request<{ users: AdminUser[] }>('GET', '/admin/users');
