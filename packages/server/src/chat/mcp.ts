@@ -66,7 +66,7 @@ export async function openTools(registry: Registry, keys: Record<string, string>
   await Promise.all(entries.map(async (entry) => {
     // A server that needs a key and has none saved would only answer 401
     if (entry.auth.type !== "none" && !keys[entry.id]) {
-      warnings.push(`${entry.label} was skipped: no key is saved for it`);
+      warnings.push(`${entry.label} was skipped: this chat request carried no key of yours for it and no shared key is saved (enter your key in the MCP servers panel and reload the page, or ask an admin to save a shared key)`);
       return;
     }
     try {
