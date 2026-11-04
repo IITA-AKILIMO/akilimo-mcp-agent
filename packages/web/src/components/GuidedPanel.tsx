@@ -75,7 +75,7 @@ export const GuidedPanel: React.FC<Props> = ({ country, crop, servers, callTool,
   // Back to the menu when the country changes, so nothing stale is shown
   useEffect(() => setScreen('menu'), [country?.code]);
 
-  if (replay) return <ReplayPanel entries={replay} onLeave={() => onLeaveReplay?.()} />;
+  if (replay) return <ReplayPanel entries={replay} onLeave={() => onLeaveReplay?.()} call={call} />;
 
   if (!country) {
     return <div className="card-body d-flex align-items-center justify-content-center text-body-secondary">Choose your country above to start.</div>;
@@ -306,7 +306,8 @@ const FertilizerScreen: React.FC<{ country: Country; call: Call; record: Record_
 };
 
 // A saved session shown again: every step in order, read-only, straight from what was saved
-const ReplayPanel: React.FC<{ entries: GuidedEntry[]; onLeave: () => void }> = ({ entries, onLeave }) => {
+// `call` lets a replayed Akilimo 2.0 result be shown in local currency (at today's rate)
+const ReplayPanel: React.FC<{ entries: GuidedEntry[]; onLeave: () => void; call?: Call }> = ({ entries, onLeave, call }) => {
   const { countries } = useCountries();
   return (
   <div className="card-body overflow-auto min-h-0">
@@ -324,7 +325,7 @@ const ReplayPanel: React.FC<{ entries: GuidedEntry[]; onLeave: () => void }> = (
             {e.action === 'price' && country && <PriceView country={country} d={e.result as PriceData} />}
             {e.action === 'fertilizers' && country && <FertilizerView country={country} d={e.result as FertilizerData} />}
             {e.action === 'market' && <MarketView d={e.result as MarketOptions} />}
-            {e.action === 'recommend' && <RecommendationResult entry={e} />}
+            {e.action === 'recommend' && <RecommendationResult entry={e} {...(call ? { call } : {})} />}
             {(e.action === 'practices' || e.action === 'schedule' || e.action === 'intercrop') && <AdviceResult entry={e} />}
           </section>
         );
@@ -335,7 +336,7 @@ const ReplayPanel: React.FC<{ entries: GuidedEntry[]; onLeave: () => void }> = (
 };
 
 // What the farmer entered, then the answer
-const RecommendationResult: React.FC<{ entry: GuidedEntry }> = ({ entry }) => {
+const RecommendationResult: React.FC<{ entry: GuidedEntry; call?: Call }> = ({ entry, call }) => {
   const request = entry.request as { compute_request?: { farmInformation?: Row; planting?: Row; cassava?: Row }; fertilizer_list?: Row[] } | undefined;
   const farm = request?.compute_request?.farmInformation;
   const planting = request?.compute_request?.planting;
@@ -354,12 +355,18 @@ const RecommendationResult: React.FC<{ entry: GuidedEntry }> = ({ entry }) => {
         <div className="d-flex flex-column gap-4">
           <section>
             <h3 className="h6 text-uppercase text-body-secondary border-bottom pb-1">Akilimo 1.0</h3>
-            <FertilizerSummary entry={entry} />
-            <BagPlan entry={entry} />
+            {typeof (entry.result as { error?: unknown } | undefined)?.error === 'string' ? (
+              <div className="alert alert-warning small mb-0">Akilimo 1.0 could not answer this time: {(entry.result as { error: string }).error}</div>
+            ) : (
+              <>
+                <FertilizerSummary entry={entry} />
+                <BagPlan entry={entry} />
+              </>
+            )}
           </section>
           <section>
             <h3 className="h6 text-uppercase text-body-secondary border-bottom pb-1">Akilimo 2.0</h3>
-            <Akilimo2Result answer={entry.second as SecondAnswer} />
+            <Akilimo2Result answer={entry.second as SecondAnswer} call={call} country={entry.country} />
           </section>
         </div>
       ) : (
@@ -542,7 +549,12 @@ const RecommendScreen: React.FC<{ country: Country; call: Call; record: Record_;
       // a failure of 2.0 never hides the Akilimo 1.0 answer
       const args = withSecond ? akilimo2Args(request) : null;
       const asked = args ? askSecond(call, args) : Promise.resolve(undefined);
-      const [result, second] = await Promise.all([call('compute_recommendations', request), asked]);
+      type Outcome = { ok: true; r: unknown } | { ok: false; e: unknown };
+      const computed: Promise<Outcome> = call<unknown>('compute_recommendations', request).then((r): Outcome => ({ ok: true, r }), (e: unknown): Outcome => ({ ok: false, e }));
+      const [first, second] = await Promise.all([computed, asked]);
+      // Akilimo 1.0 failed but 2.0 answered: show 2.0's answer with the reason for 1.0, rather than losing both
+      if (first.ok === false && !(second && 'summary' in second)) throw first.e;
+      const result = first.ok === true ? first.r : { error: message((first as { e: unknown }).e) };
       const entry: GuidedEntry = {
         action: 'recommend', country: country.code, tool: 'compute_recommendations', request, result,
         ...(second ? { second } : {}),
@@ -561,7 +573,7 @@ const RecommendScreen: React.FC<{ country: Country; call: Call; record: Record_;
     return (
       <>
         <h2 className="h5">Your recommendation</h2>
-        <div className="mb-3"><RecommendationResult entry={done} /></div>
+        <div className="mb-3"><RecommendationResult entry={done} call={call} /></div>
         <button type="button" className="btn btn-outline-success btn-sm" onClick={() => setDone(null)}>Change my answers</button>
       </>
     );
