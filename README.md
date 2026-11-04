@@ -51,6 +51,8 @@ It has two modes, switched in the top bar. Inside **Chat** there is a **Guided |
   - **Test connection** (admins, in the chat's settings panel) checks the provider, refreshes the model list and sends the selected model one tiny request with a test tool, warning when the model does not call tools (it then cannot use the AKILIMO tools reliably). With Ollama admins can also **download models** (`ollama pull`, with progress) into the Ollama the site uses (through `/proxy/ollama`, so do not expose that path publicly with an Ollama you care about).
 - **Advanced**: pick a tool, fill in the form generated from its input schema (with prefill buttons and a map for coordinates), and press **Run tool**.
 
+The forms remember what you told them about your field in a country (location, field size, yield, prices, the fertilizers you can buy) and fill it in next time: in your account when you are signed in, otherwise in this browser only. Untick "Remember my farm details" to stop, or press "Forget them" to erase what was saved.
+
 Every connection, tool call and response appears under **Activity**.
 
 #### Accounts, saved chats and activity
