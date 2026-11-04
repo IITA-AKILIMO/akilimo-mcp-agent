@@ -8,6 +8,7 @@ import { read, write } from './keys';
 // stay in this browser. Loaded once per country; the forms save them when a step is finished and the user agreed.
 export type FarmStore = 'account' | 'browser';
 
+const VALID_COUNTRY = /^[A-Za-z]{2}$/; // only a real ISO 2-letter code is looked up or saved
 const localKey = (country: string) => `farm-profile-${country.toUpperCase()}`;
 const REMEMBER_KEY = 'farm-profile-remember';
 
@@ -30,7 +31,7 @@ export function useFarmProfile(country: string) {
     let live = true;
     setReady(false);
     // No country chosen yet: nothing to look up
-    if (!country) { setProfile(null); setReady(true); return () => { live = false; }; }
+    if (!VALID_COUNTRY.test(country)) { setProfile(null); setReady(true); return () => { live = false; }; }
     (async () => {
       try {
         const answer = await getFarmProfile(country);
@@ -50,7 +51,7 @@ export function useFarmProfile(country: string) {
 
   // Adds the given details to what is already remembered (details from other forms are kept)
   const save = useCallback(async (details: FarmProfile) => {
-    if (!country) return;
+    if (!VALID_COUNTRY.test(country)) return;
     const merged: FarmProfile = { ...(profile ?? {}), ...details };
     const checked = FarmProfileSchema.safeParse(merged);
     if (!checked.success) return; // never keep something the server would refuse
@@ -66,7 +67,7 @@ export function useFarmProfile(country: string) {
   }, [country, profile, store]);
 
   const forget = useCallback(async () => {
-    if (!country) return;
+    if (!VALID_COUNTRY.test(country)) return;
     if (store === 'account') await deleteFarmProfile(country).catch(() => undefined);
     write(localKey(country), undefined);
     setProfile(null);

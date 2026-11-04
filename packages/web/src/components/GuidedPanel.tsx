@@ -514,7 +514,6 @@ const RecommendScreen: React.FC<{ country: Country; call: Call; record: Record_;
     if (!loaded || !farm.ready || !farm.profile || filledFor.current === loaded) return;
     filledFor.current = loaded;
     const p = farm.profile;
-    if (p.location) setPos({ lat: p.location.lat, lon: p.location.lon });
     if (p.size) setSize(String(p.size));
     if (p.unit) setUnit(p.unit);
     if (p.yieldClass !== undefined) setYieldClass(p.yieldClass);
@@ -598,7 +597,6 @@ const RecommendScreen: React.FC<{ country: Country; call: Call; record: Record_;
       if (remember) {
         farm.save({
           ...defined({
-            location: pos.lat !== undefined && pos.lon !== undefined ? { lat: pos.lat, lon: pos.lon } : undefined,
             size: Number(size), unit: unit as FarmProfile['unit'], yieldClass, risk, cassavaPrice: Number(rootPrice), sellUnit,
             plantingWindow, harvestWindow,
             fertilizers: Object.fromEntries(loaded.fertilizers.fertilizers.filter(f => selected[f.key]).map(f => [f.key, { selected: true, ...(Number(prices[f.key]) > 0 ? { price: Number(prices[f.key]) } : {}) }])),

@@ -144,7 +144,6 @@ export const AdviceScreen: React.FC<{ kind: AdviceKind; country: Country; call: 
     if (price.loading || !farm.ready || !farm.profile || filledFor.current === price) return;
     filledFor.current = price;
     const p = farm.profile;
-    if (p.location) setPos({ lat: p.location.lat, lon: p.location.lon });
     if (p.size) setSize(String(p.size));
     if (p.unit) setUnit(p.unit);
     if (p.yieldClass !== undefined) setYieldClass(p.yieldClass);
@@ -266,7 +265,6 @@ export const AdviceScreen: React.FC<{ kind: AdviceKind; country: Country; call: 
       if (remember) {
         farm.save({
           ...defined({
-            location: pos.lat !== undefined && pos.lon !== undefined ? { lat: pos.lat, lon: pos.lon } : undefined,
             size: Number(size), unit: unit as FarmProfile['unit'], yieldClass, risk, cassavaPrice: Number(rootPrice), sellUnit,
             plantingWindow, harvestWindow,
           }),

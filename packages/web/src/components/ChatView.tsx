@@ -24,7 +24,6 @@ import { GuidedPanel } from './GuidedPanel';
 import { WINDOWS, dateProblem, harvestRange, monthsFromNow, plantingMin, windowLabel } from './GuidedParts';
 import { LlmSettings } from './LlmSettings';
 import { MapPicker } from './MapPicker';
-import { readRemember, useFarmProfile } from '../mcp/farmProfile';
 
 interface Props {
   configs: McpServerConfig[];
@@ -118,15 +117,6 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
   const [pickedInArea, setPickedInArea] = useState<boolean | null>(null); // is the picked spot inside the supported area
   const [dates, setDates] = useState({ planting: monthsFromNow(1), harvest: monthsFromNow(11), plantingWindow: 1, harvestWindow: 1 });
   const [picked, setPicked] = useState<{ lat?: number; lon?: number; country?: string }>(() => ({ country: countryCode || undefined }));
-  // The field location the farmer already gave for this country starts the map there, and sending a location remembers it
-  const farm = useFarmProfile(countryCode || '');
-  const locationFor = React.useRef<string>('');
-  useEffect(() => {
-    const spot = farm.profile?.location;
-    if (!farm.ready || !spot || locationFor.current === countryCode) return;
-    locationFor.current = countryCode;
-    setPicked(p => (p.lat === undefined ? { ...p, lat: spot.lat, lon: spot.lon } : p));
-  }, [farm.ready, farm.profile, countryCode]);
 
   // Saved conversation of a signed-in user; writes are chained so messages keep their order
   const conversationId = useRef<string | null>(null);
@@ -398,7 +388,6 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
   const sendLocation = () => {
     if (picked.lat === undefined || picked.lon === undefined) return;
     setShowMap(false);
-    if (readRemember()) farm.save({ location: { lat: picked.lat, lon: picked.lon } }).catch(() => undefined);
     send(`My field is at ${picked.lat}, ${picked.lon}${picked.country ? ` (${picked.country})` : ''}`);
   };
 

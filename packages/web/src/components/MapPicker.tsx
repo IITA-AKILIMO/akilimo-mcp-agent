@@ -5,6 +5,7 @@ import { MapPin, TriangleAlert } from 'lucide-react';
 import { findCountry, geoJsonContains, type Country, type GeoJsonLike } from '@akilimo/shared';
 import { useCountries } from '../mcp/countries';
 import { useCoverage } from '../mcp/coverage';
+import { readRemember, useFarmProfile } from '../mcp/farmProfile';
 
 // The map starts on the country's position from the Akilimo API (fitted to its supported area or its bounds when
 // known); with no country it starts on sub-Saharan Africa
@@ -104,12 +105,24 @@ export const MapPicker: React.FC<Props> = ({ lat, lon, country, onChange, onCoun
     ? { center: [lat, lon] as [number, number], zoom: 10 }
     : supportedCountry?.latitude != null && supportedCountry.longitude != null ? { center: [supportedCountry.latitude, supportedCountry.longitude] as [number, number], zoom: COUNTRY_ZOOM } : DEFAULT_VIEW;
 
+  // The field location already given for this country starts the map there (when nothing is picked yet), and every pick
+  // is remembered at once, so it need not be clicked again; only when the user keeps 'Remember my farm details' on
+  const farm = useFarmProfile(country ?? '');
+  const restoredFor = useRef('');
+  useEffect(() => {
+    const spot = farm.profile?.location;
+    if (!farm.ready || !spot || hasPoint || restoredFor.current === (country ?? '')) return;
+    restoredFor.current = country ?? '';
+    onChange(spot.lat, spot.lon);
+  }, [farm.ready, farm.profile, hasPoint, country]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const [lookup, setLookup] = useState<Lookup>({ state: 'idle' });
   const pending = useRef<AbortController | null>(null);
   useEffect(() => () => pending.current?.abort(), []);
 
   const pick = async (pickedLat: number, pickedLon: number) => {
     onChange(pickedLat, pickedLon);
+    if (readRemember()) farm.save({ location: { lat: pickedLat, lon: pickedLon } }).catch(() => undefined);
     if (!onCountry) return;
 
     // Only the latest click counts
