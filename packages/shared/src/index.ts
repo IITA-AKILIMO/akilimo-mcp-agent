@@ -172,6 +172,7 @@ export interface MCPEvent {
   payload?: unknown;
 }
 
+export * from './akilimo2.js';
 export * from './chat.js';
 export * from './countries.js';
 export * from './geo.js';

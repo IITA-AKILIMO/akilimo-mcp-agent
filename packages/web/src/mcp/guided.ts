@@ -14,6 +14,9 @@ export interface GuidedEntry {
   tool: string; // the MCP tool that produced the result
   request: unknown;
   result: unknown;
+  // Fertilizer advice only: what Akilimo 2.0 answered to the same field when it was switched on too (the
+  // figures from summarizeAkilimo2, or the reason there are none), shown next to the Akilimo 1.0 result
+  second?: { summary: unknown } | { error: string };
 }
 
 export const isGuidedEntry = (value: unknown): value is GuidedEntry => {

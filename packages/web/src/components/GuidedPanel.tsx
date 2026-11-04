@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { ArrowLeft, Banknote, ChevronRight, Leaf, Loader2, Sprout, Store } from 'lucide-react';
 import type { Country, Crop } from '@akilimo/shared';
-import { planBags } from '@akilimo/shared';
+import { AKILIMO2_TOOL, akilimo2Args, planBags, summarizeAkilimo2, type Akilimo2Args } from '@akilimo/shared';
+import { Akilimo2Result, type SecondAnswer } from './Akilimo2Result';
 import type { ServerState } from '../mcp/useMcpServers';
 import { findCountry } from '@akilimo/shared';
 import { useCountries } from '../mcp/countries';
@@ -53,6 +54,13 @@ export const GuidedPanel: React.FC<Props> = ({ country, crop, servers, callTool,
     [servers],
   );
 
+  // Akilimo 2.0 (or any server with its recommendation tool) switched on next to the one that computes: fertilizer
+  // advice is then asked of both and shown together
+  const withSecond = useMemo(
+    () => Object.entries(servers).some(([id, s]) => id !== serverId && s.status === 'connected' && s.tools.some(t => t.name === AKILIMO2_TOOL)),
+    [servers, serverId],
+  );
+
   // Several servers can offer the AKILIMO tools (for example a hosted copy of an older version), and a
   // newer tool exists on only some of them: call the tool on a server that really lists it
   const call = async <T,>(name: string, args: Record<string, unknown>): Promise<T> => {
@@ -91,7 +99,7 @@ export const GuidedPanel: React.FC<Props> = ({ country, crop, servers, callTool,
       {screen === 'price' && <PriceScreen country={country} call={call} record={record} />}
       {screen === 'market' && <MarketScreen country={country} call={call} record={record} />}
       {screen === 'fertilizers' && <FertilizerScreen country={country} call={call} record={record} />}
-      {screen === 'recommend' && <RecommendScreen country={country} call={call} record={record} />}
+      {screen === 'recommend' && <RecommendScreen country={country} call={call} record={record} withSecond={withSecond} />}
       {(screen === 'practices' || screen === 'schedule' || screen === 'intercrop') && (
         <AdviceScreen key={screen} kind={screen} country={country} call={call} record={record} />
       )}
@@ -341,8 +349,25 @@ const RecommendationResult: React.FC<{ entry: GuidedEntry }> = ({ entry }) => {
           {chosen.length ? ` · fertilizers: ${chosen.join(', ')}` : ''}
         </div>
       )}
-      <FertilizerSummary entry={entry} />
-      <BagPlan entry={entry} />
+      {entry.second ? (
+        // Both versions answered the same field: shown together, each under its own label
+        <div className="d-flex flex-column gap-4">
+          <section>
+            <h3 className="h6 text-uppercase text-body-secondary border-bottom pb-1">Akilimo 1.0</h3>
+            <FertilizerSummary entry={entry} />
+            <BagPlan entry={entry} />
+          </section>
+          <section>
+            <h3 className="h6 text-uppercase text-body-secondary border-bottom pb-1">Akilimo 2.0</h3>
+            <Akilimo2Result answer={entry.second as SecondAnswer} />
+          </section>
+        </div>
+      ) : (
+        <>
+          <FertilizerSummary entry={entry} />
+          <BagPlan entry={entry} />
+        </>
+      )}
     </>
   );
 };
@@ -416,7 +441,21 @@ const AREA_UNITS = ['acre', 'ha', 'm2', 'are'];
 
 interface InvestmentData { currency: string | null; options: { amount_per_unit: number; max_investment_for_field?: number }[] }
 
-const RecommendScreen: React.FC<{ country: Country; call: Call; record: Record_ }> = ({ country, call, record }) => {
+// Puts the field to Akilimo 2.0 and turns its answer (or its failure) into what the step keeps; waits at most a minute
+const askSecond = async (call: Call, args: Akilimo2Args): Promise<SecondAnswer> => {
+  try {
+    const answer = await Promise.race([
+      call<unknown>(AKILIMO2_TOOL, { ...args }),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('it did not answer within a minute')), 60_000)),
+    ]);
+    const summary = summarizeAkilimo2(answer);
+    return summary ? { summary } : { error: 'its answer was in a format that was not understood' };
+  } catch (err) {
+    return { error: message(err) };
+  }
+};
+
+const RecommendScreen: React.FC<{ country: Country; call: Call; record: Record_; withSecond: boolean }> = ({ country, call, record, withSecond }) => {
   const options = useLoad(async () => {
     const [fertilizers, price] = await Promise.all([
       call<FertilizerData>('get_fertilizer_options', { countryCode: country.code }),
@@ -499,9 +538,14 @@ const RecommendScreen: React.FC<{ country: Country; call: Call; record: Record_ 
           price: Number(prices[f.key]) || 0, selected: !!selected[f.key],
         })),
       };
-      const result = await call('compute_recommendations', request);
+      // With Akilimo 2.0 switched on too, it answers the same field at the same time and both are shown at once;
+      // a failure of 2.0 never hides the Akilimo 1.0 answer
+      const args = withSecond ? akilimo2Args(request) : null;
+      const asked = args ? askSecond(call, args) : Promise.resolve(undefined);
+      const [result, second] = await Promise.all([call('compute_recommendations', request), asked]);
       const entry: GuidedEntry = {
         action: 'recommend', country: country.code, tool: 'compute_recommendations', request, result,
+        ...(second ? { second } : {}),
         title: `Fertilizer recommendation: ${Number(size)} ${unit} in ${country.name}`,
       };
       setDone(entry);

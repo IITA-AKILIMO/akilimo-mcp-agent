@@ -9,6 +9,7 @@ import { sharedKeyMessage, type CallQuota } from "../gateway/quota.js";
 import type { Registry } from "../gateway/registry.js";
 import { WEB_SERVER, runWebSearch, searchWeb, webSearchTool } from "./websearch.js";
 import { runAgent } from "./agent.js";
+import { recommendOnBoth } from "./dual.js";
 import { openTools } from "./mcp.js";
 import { chat, listModels, pickDefaultModel, testProvider } from "@akilimo/llm";
 import { ChatSettings, SettingsError } from "./store.js";
@@ -172,10 +173,15 @@ export function chatRouter(settings: ChatSettings, registry: Registry, db: Db | 
         callTool: (server, name, args, signal) => {
           if (server === WEB_SERVER) return runWebSearch(searchConfig!, args, signal);
           // Admins and users with their own key are not limited; everyone else shares the key's allowance
-          if (req.user && req.user.role !== "admin" && sharedServers.has(server)) {
-            const verdict = quota.take(req.user.id);
-            if (!verdict.ok) throw new Error(sharedKeyMessage(verdict));
-          }
+          const countCall = (target: string) => {
+            if (req.user && req.user.role !== "admin" && sharedServers.has(target)) {
+              const verdict = quota.take(req.user.id);
+              if (!verdict.ok) throw new Error(sharedKeyMessage(verdict));
+            }
+          };
+          countCall(server);
+          // With Akilimo 1.0 and 2.0 both on, a fertilizer request goes to both and the answers come back together
+          if (name === "compute_recommendations") return recommendOnBoth(session, server, args, { beforeCall: countCall, ...(signal ? { signal } : {}) });
           return session.callTool(server, name, args, signal);
         },
         webSearch,
