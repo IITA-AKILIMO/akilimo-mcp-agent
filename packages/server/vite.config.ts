@@ -20,6 +20,8 @@ export default defineConfig({
         // Drizzle and the PostgreSQL driver stay in node_modules
         /^drizzle-orm(\/|$)/,
         'pg',
+        // Reads the World Bank price spreadsheet (zip)
+        'fflate',
       ],
     },
     target: 'node20',

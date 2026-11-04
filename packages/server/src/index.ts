@@ -9,6 +9,7 @@ import { cropsRouter } from "./crops/routes.js";
 import { closeDb, connectDb } from "./db/index.js";
 import { DbRegistry, FileRegistry } from "./gateway/registry.js";
 import { CallQuota } from "./gateway/quota.js";
+import { setSearchConfigResolver } from "./prices/search.js";
 import { ClientKeyStore } from "./mcpkeys/store.js";
 import { gatewayRouter } from "./gateway/routes.js";
 import { chatRouter } from "./chat/routes.js";
@@ -84,6 +85,8 @@ async function main() {
 
     // The keys admins saved for upstream servers are shared with signed-in users, within a per-user limit
     const chatSettings = new ChatSettings(db, config.secretsKey ? new SecretBox(config.secretsKey) : null, config.ollamaBaseUrl);
+    // The price tool searches the web with the same service the chat uses (the admin's setting, then SEARCH_*)
+    setSearchConfigResolver(() => chatSettings.webSearchConfig());
     const sharedKeyQuota = new CallQuota({ perMinute: config.sharedKeyPerMinute, perDay: config.sharedKeyPerDay });
 
     startHttp(() => createServer(api), {

@@ -182,6 +182,8 @@ export function chatRouter(settings: ChatSettings, registry: Registry, db: Db | 
           };
           countCall(server);
           // With Akilimo 1.0 and 2.0 both on, a fertilizer request goes to both and the answers come back together
+          // Searching the web for prices follows the user's own web search switch, whatever the model asks for
+          if (name === "find_missing_prices") return session.callTool(server, name, { ...args, onlineSearch: webSearch }, signal);
           if (name === "compute_recommendations") return recommendOnBoth(session, server, args, { beforeCall: countCall, ...(signal ? { signal } : {}) });
           return session.callTool(server, name, args, signal);
         },
