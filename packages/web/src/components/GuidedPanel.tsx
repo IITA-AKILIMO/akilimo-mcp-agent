@@ -543,7 +543,8 @@ const RecommendScreen: React.FC<{ country: Country; call: Call; record: Record_ 
                 {AREA_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
               </select>
             </div>
-            <div style={{ maxWidth: '24rem' }}><YieldSelect id="g-yield" value={yieldClass} onChange={setYieldClass} /></div>`n            <div className="mt-3" style={{ maxWidth: '30rem' }}><RiskSelect id="g-risk" value={risk} onChange={setRisk} /></div>
+            <div style={{ maxWidth: '24rem' }}><YieldSelect id="g-yield" value={yieldClass} onChange={setYieldClass} /></div>
+            <div className="mt-3" style={{ maxWidth: '30rem' }}><RiskSelect id="g-risk" value={risk} onChange={setRisk} /></div>
           </section>
 
           <section>

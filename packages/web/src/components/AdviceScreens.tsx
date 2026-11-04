@@ -271,7 +271,8 @@ export const AdviceScreen: React.FC<{ kind: AdviceKind; country: Country; call: 
                 {AREA_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
               </select>
             </div>
-            <div style={{ maxWidth: '24rem' }}><YieldSelect id={`a-yield-${kind}`} value={yieldClass} onChange={setYieldClass} /></div>`n            <div className="mt-3" style={{ maxWidth: '30rem' }}><RiskSelect id={`a-risk-${kind}`} value={risk} onChange={setRisk} /></div>
+            <div style={{ maxWidth: '24rem' }}><YieldSelect id={`a-yield-${kind}`} value={yieldClass} onChange={setYieldClass} /></div>
+            <div className="mt-3" style={{ maxWidth: '30rem' }}><RiskSelect id={`a-risk-${kind}`} value={risk} onChange={setRisk} /></div>
           </section>
 
           <section>
