@@ -139,6 +139,19 @@ export const userMcpKeys = pgTable("user_mcp_keys", {
   foreignKey({ name: "user_mcp_keys_user_id_fkey", columns: [t.userId], foreignColumns: [users.id] }).onDelete("cascade").onUpdate("cascade"),
 ]);
 
+// What a signed-in user told the forms about their field in one country (location, size, prices, ...), so it need not
+// be typed again; FarmProfileSchema in @akilimo/shared says what is in `data`. A location is personal data: it belongs to
+// the account only, can be forgotten by the user at any time and is removed with the account.
+export const farmProfiles = pgTable("farm_profiles", {
+  userId: uuid("user_id").notNull(),
+  country: text("country").notNull(), // ISO 2-letter code
+  data: jsonb("data").notNull(),
+  updatedAt: timestamptz("updated_at").notNull().defaultNow(),
+}, (t) => [
+  primaryKey({ name: "farm_profiles_pkey", columns: [t.userId, t.country] }),
+  foreignKey({ name: "farm_profiles_user_id_fkey", columns: [t.userId], foreignColumns: [users.id] }).onDelete("cascade").onUpdate("cascade"),
+]);
+
 // What happened to the keys, for the admins: who created, saved, changed, revoked or removed which key and when.
 // kind is "client" (a key for /mcp, ref = its id) or "shared" (an upstream server's key, ref = the server id);
 // label is the name to show; detail never holds a key, only things like the hint or the new limits.

@@ -64,6 +64,13 @@
       "when": 1793826175302,
       "tag": "0008_user_mcp_keys",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793827033079,
+      "tag": "0009_farm_profiles",
+      "breakpoints": true
     }
   ]
 }

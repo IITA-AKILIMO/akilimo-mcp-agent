@@ -5,7 +5,8 @@ import { config } from "../config.js";
 import { listKeyEvents } from "../mcpkeys/events.js";
 import type { ClientKeyStore } from "../mcpkeys/store.js";
 import type { Db } from "../db/index.js";
-import { activity, conversations, messages, users } from "../db/schema.js";
+import { FarmProfileSchema } from "@akilimo/shared";
+import { activity, conversations, farmProfiles, messages, users } from "../db/schema.js";
 import {
   endSession, hashPassword, loadUser, rateLimit, requireAdmin, requireJson, requireUser, startSession, USER_SELECT,
   UsernameSchema, verifyPassword,
@@ -275,6 +276,32 @@ export function apiRouter(db: Db | null, clientKeys: ClientKeyStore | null = nul
 
   router.delete("/activity", handle(async (req, res) => {
     await db.delete(activity).where(eq(activity.userId, req.user!.id));
+    res.status(204).end();
+  }));
+
+  // ── Farm details remembered per country (location, size, prices, ...), only ever the signed-in user's own ──
+  const CountryParam = z.string().regex(/^[A-Za-z]{2}$/, "Use a 2-letter country code").transform((c) => c.toUpperCase());
+
+  router.get("/farm-profiles/:country", handle(async (req, res) => {
+    const country = CountryParam.parse(req.params.country);
+    const [row] = await db.select({ data: farmProfiles.data }).from(farmProfiles)
+      .where(and(eq(farmProfiles.userId, req.user!.id), eq(farmProfiles.country, country))).limit(1);
+    // What was saved is read through the schema again, so an old or damaged row never reaches the forms
+    const parsed = FarmProfileSchema.safeParse(row?.data);
+    res.json({ profile: parsed.success ? parsed.data : null });
+  }));
+
+  router.put("/farm-profiles/:country", handle(async (req, res) => {
+    const country = CountryParam.parse(req.params.country);
+    const data = FarmProfileSchema.parse(req.body?.data);
+    await db.insert(farmProfiles).values({ userId: req.user!.id, country, data })
+      .onConflictDoUpdate({ target: [farmProfiles.userId, farmProfiles.country], set: { data, updatedAt: new Date() } });
+    res.json({ profile: data });
+  }));
+
+  router.delete("/farm-profiles/:country", handle(async (req, res) => {
+    const country = CountryParam.parse(req.params.country);
+    await db.delete(farmProfiles).where(and(eq(farmProfiles.userId, req.user!.id), eq(farmProfiles.country, country)));
     res.status(204).end();
   }));
 

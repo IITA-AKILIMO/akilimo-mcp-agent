@@ -174,6 +174,7 @@ export interface MCPEvent {
 
 export * from './akilimo2.js';
 export * from './chat.js';
+export * from './farm.js';
 export * from './countries.js';
 export * from './geo.js';
 export * from './plan.js';
