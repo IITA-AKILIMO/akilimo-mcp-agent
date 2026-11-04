@@ -486,7 +486,7 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
           </div>
         )}
       </div>
-      {view === 'guided' ? <GuidedPanel country={country} crop={crop} servers={servers} callTool={callTool} onRecord={recordGuided} replay={replay} onLeaveReplay={() => setReplay(null)} /> : (
+      {view === 'guided' ? <GuidedPanel country={country} crop={crop} servers={servers} callTool={callTool} webSearch={webSearch} onRecord={recordGuided} replay={replay} onLeaveReplay={() => setReplay(null)} /> : (
       <>
       {showSettings && <LlmSettings llm={llm} />}
 
@@ -688,7 +688,7 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
           return picker === 'field' ? <FieldPicker {...props} /> : picker === 'practices' ? <PracticesPicker {...props} /> : <IntercropPicker {...props} />;
         })()}
         {showFertilizers && country && (
-          <FertilizerPicker country={country} servers={servers} callTool={callTool} onClose={() => setShowFertilizers(false)}
+          <FertilizerPicker country={country} servers={servers} callTool={callTool} webSearch={webSearch} onClose={() => setShowFertilizers(false)}
             onSend={text => { setShowFertilizers(false); send(text); }} />
         )}
         {showAdvice && country && (

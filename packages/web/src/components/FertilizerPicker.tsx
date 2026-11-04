@@ -4,6 +4,7 @@ import type { Country } from '@akilimo/shared';
 import type { ServerState } from '../mcp/useMcpServers';
 import { Shell } from './ChatPickers';
 import { Loading, PriceHint, useLoad, type Call, type FertilizerData } from './GuidedParts';
+import { PriceSuggest } from './PriceSuggest';
 
 // The chat's fertilizer chooser: the fertilizers of the country with their typical prices, to tick and
 // correct, sent as one message the assistant can read exactly (key, type, bag weight and price)
@@ -13,9 +14,11 @@ interface Props {
   callTool: (server: string, name: string, args: Record<string, unknown>) => Promise<CallToolResult>;
   onSend: (text: string) => void;
   onClose: () => void;
+  // The user's own web search switch (prices with no default may then be looked up on the web too)
+  webSearch?: boolean;
 }
 
-export const FertilizerPicker: React.FC<Props> = ({ country, servers, callTool, onSend, onClose }) => {
+export const FertilizerPicker: React.FC<Props> = ({ country, servers, callTool, onSend, onClose, webSearch = false }) => {
   const call: Call = async <T,>(name: string, args: Record<string, unknown>): Promise<T> => {
     const target = Object.entries(servers).find(([, s]) => s.status === 'connected' && s.tools.some(t => t.name === name))?.[0];
     if (!target) throw new Error('The AKILIMO server is not connected yet');
@@ -72,6 +75,10 @@ export const FertilizerPicker: React.FC<Props> = ({ country, servers, callTool, 
                     <span className="input-group-text">{data.currency ?? ''}</span>
                   </div>
                   {selected[f.key] && <PriceHint call={call} country={country.code} item="fertilizer" fertilizerKey={f.key} value={prices[f.key] ?? ''} />}
+                  {!(Number(prices[f.key]) > 0) && (
+                    <PriceSuggest call={call} country={country.code} item="fertilizers" fertilizerKey={f.key} match={k => k === f.key} webSearch={webSearch}
+                      onUse={p => setPrices(prev => ({ ...prev, [f.key]: String(Math.round(p)) }))} />
+                  )}
                 </div>
               </div>
             ))}

@@ -4,6 +4,7 @@ import { ArrowLeft, Banknote, ChevronRight, Leaf, Loader2, Sprout, Store } from 
 import type { Country, Crop } from '@akilimo/shared';
 import { AKILIMO2_TOOL, akilimo2Args, planBags, summarizeAkilimo2, type Akilimo2Args } from '@akilimo/shared';
 import { Akilimo2Result, type SecondAnswer } from './Akilimo2Result';
+import { PriceSuggest } from './PriceSuggest';
 import type { ServerState } from '../mcp/useMcpServers';
 import { findCountry } from '@akilimo/shared';
 import { useCountries } from '../mcp/countries';
@@ -28,6 +29,8 @@ interface Props {
   // A saved session being viewed again (read-only); null in normal use
   replay?: GuidedEntry[] | null;
   onLeaveReplay?: () => void;
+  // The user's own web search switch: prices and costs with no default may then be looked up on the web too
+  webSearch?: boolean;
 }
 
 // ── the panel ───────────────────────────────────────────────────────────────────────────────────
@@ -44,7 +47,7 @@ function useRecordOnce<T>(data: T | undefined, record: Record_, build: (data: T)
   }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
-export const GuidedPanel: React.FC<Props> = ({ country, crop, servers, callTool, onRecord, replay, onLeaveReplay }) => {
+export const GuidedPanel: React.FC<Props> = ({ country, crop, servers, callTool, onRecord, replay, onLeaveReplay, webSearch = false }) => {
   const [screen, setScreen] = useState<Screen>('menu');
   const record: Record_ = entry => onRecord?.(entry);
 
@@ -99,9 +102,9 @@ export const GuidedPanel: React.FC<Props> = ({ country, crop, servers, callTool,
       {screen === 'price' && <PriceScreen country={country} call={call} record={record} />}
       {screen === 'market' && <MarketScreen country={country} call={call} record={record} />}
       {screen === 'fertilizers' && <FertilizerScreen country={country} call={call} record={record} />}
-      {screen === 'recommend' && <RecommendScreen country={country} call={call} record={record} withSecond={withSecond} />}
+      {screen === 'recommend' && <RecommendScreen country={country} call={call} record={record} withSecond={withSecond} webSearch={webSearch} />}
       {(screen === 'practices' || screen === 'schedule' || screen === 'intercrop') && (
-        <AdviceScreen key={screen} kind={screen} country={country} call={call} record={record} />
+        <AdviceScreen key={screen} kind={screen} country={country} call={call} record={record} webSearch={webSearch} />
       )}
     </div>
   );
@@ -462,7 +465,7 @@ const askSecond = async (call: Call, args: Akilimo2Args): Promise<SecondAnswer> 
   }
 };
 
-const RecommendScreen: React.FC<{ country: Country; call: Call; record: Record_; withSecond: boolean }> = ({ country, call, record, withSecond }) => {
+const RecommendScreen: React.FC<{ country: Country; call: Call; record: Record_; withSecond: boolean; webSearch: boolean }> = ({ country, call, record, withSecond, webSearch }) => {
   const options = useLoad(async () => {
     const [fertilizers, price] = await Promise.all([
       call<FertilizerData>('get_fertilizer_options', { countryCode: country.code }),
@@ -631,6 +634,10 @@ const RecommendScreen: React.FC<{ country: Country; call: Call; record: Record_;
               onChange={(price, unit) => { setRootPrice(price); setSellUnit(unit); }} />
             <SellSelect id="g-sell" call={call} country={country.code} value={factory} onChange={key => setFactory(key)} />
             <div className="form-text">We filled in the typical price for {country.name}; change it if yours is different.</div>
+            {!(Number(rootPrice) > 0) && (
+              <PriceSuggest call={call} country={country.code} item="cassava" match={k => k === 'cassava_roots'} webSearch={webSearch}
+                convert={p => (p * sellUnit) / 1000} onUse={p => setRootPrice(String(Math.round(p)))} />
+            )}
           </section>
 
           {budgetOptions && budgetOptions.options.length > 0 && (
@@ -668,6 +675,10 @@ const RecommendScreen: React.FC<{ country: Country; call: Call; record: Record_;
                       <span className="input-group-text">{currency}</span>
                     </div>
                     {selected[f.key] && <PriceHint call={call} country={country.code} item="fertilizer" fertilizerKey={f.key} value={prices[f.key] ?? ''} />}
+                    {!(Number(prices[f.key]) > 0) && (
+                      <PriceSuggest call={call} country={country.code} item="fertilizers" fertilizerKey={f.key} match={k => k === f.key} webSearch={webSearch}
+                        onUse={p => setPrices(prev => ({ ...prev, [f.key]: String(Math.round(p)) }))} />
+                    )}
                   </div>
                 </div>
               ))}

@@ -5,6 +5,7 @@ import { useCountries } from '../mcp/countries';
 import type { GuidedEntry } from '../mcp/guided';
 import { Loading, CassavaPriceInput, PriceHint, RiskSelect, SellSelect, WINDOWS, YieldSelect, dateProblem, harvestRange, label, message, monthsFromNow, plantingMin, useLoad, windowLabel, type Call, type PriceData, type PriceItem, type Record_, type Row } from './GuidedParts';
 import { MapPicker } from './MapPicker';
+import { PriceSuggest, perAcreIn } from './PriceSuggest';
 
 // The three recommendation types besides fertilizer advice, which share one short form:
 //   practices  = planting practices (PP): ploughing, ridging and their methods, compared with the current practice
@@ -95,7 +96,10 @@ const OPERATIONS = [
   { key: 'ridging', text: 'Ridging' },
 ];
 
-export const AdviceScreen: React.FC<{ kind: AdviceKind; country: Country; call: Call; record: Record_ }> = ({ kind, country, call, record }) => {
+// costValues keys are camelCase (manualPloughing, weedingOne); the tool's are manual_ploughing, weeding_one
+const camelToSnake = (key: string) => key.replace(/[A-Z]/g, c => `_${c.toLowerCase()}`);
+
+export const AdviceScreen: React.FC<{ kind: AdviceKind; country: Country; call: Call; record: Record_; webSearch?: boolean }> = ({ kind, country, call, record, webSearch = false }) => {
   const info = ADVICE[kind];
   const second = kind === 'intercrop' ? intercropCrop(country.code) : undefined;
 
@@ -112,6 +116,11 @@ export const AdviceScreen: React.FC<{ kind: AdviceKind; country: Country; call: 
   const [planting, setPlanting] = useState(monthsFromNow(1));
   const [harvest, setHarvest] = useState(monthsFromNow(11));
   const [rootPrice, setRootPrice] = useState('');
+  // A cost with no default can be looked up online; the tool answers per acre, the form's costs are per its area unit
+  const suggestCost = (k: string, onUse: (value: string) => void) => (
+    <PriceSuggest call={call} country={country.code} item="operations" match={key => key === k} webSearch={webSearch}
+      convert={price => perAcreIn(unit, price)} onUse={price => onUse(String(Math.round(price)))} />
+  );
   const [done, setDone] = useState<Record<string, boolean>>({}); // practices: what the farmer does now
   const [method, setMethod] = useState<Record<string, Method>>({}); // ... and how: by hand or with a tractor
   const [plantingWindow, setPlantingWindow] = useState(1);
@@ -305,6 +314,10 @@ export const AdviceScreen: React.FC<{ kind: AdviceKind; country: Country; call: 
               onChange={(value, unit) => { setRootPrice(value); setSellUnit(unit); }} />
             <SellSelect id={`a-sell-${kind}`} call={call} country={country.code} value={factory} onChange={key => setFactory(key)} />
             <div className="form-text">The typical price for {country.name} is filled in when there is one; change it if yours is different.</div>
+            {!(Number(rootPrice) > 0) && (
+              <PriceSuggest call={call} country={country.code} item="cassava" match={k => k === 'cassava_roots'} webSearch={webSearch}
+                convert={p => (p * sellUnit) / 1000} onUse={p => setRootPrice(String(Math.round(p)))} />
+            )}
           </section>
 
           {kind === 'intercrop' && second && cropOptions.length > 0 && (
@@ -367,14 +380,23 @@ export const AdviceScreen: React.FC<{ kind: AdviceKind; country: Country; call: 
                     {([['Ploughing', 'manualPloughing', 'tractorPloughing'], ['Harrowing', 'manualHarrowing', 'tractorHarrowing'], ['Ridging', 'manualRidging', 'tractorRidging']] as const).map(([text, manualKey, tractorKey]) => (
                       <tr key={text}>
                         <td className="small">{text}</td>
-                        <td><CostInput label={`${text} by hand`} value={costValues[manualKey]} onChange={v => setCostValues(p => ({ ...p, [manualKey]: v }))} /></td>
-                        <td><CostInput label={`${text} with a tractor`} value={costValues[tractorKey]} onChange={v => setCostValues(p => ({ ...p, [tractorKey]: v }))} /></td>
+                        <td>
+                          <CostInput label={`${text} by hand`} value={costValues[manualKey]} onChange={v => setCostValues(p => ({ ...p, [manualKey]: v }))} />
+                          {!(Number(costValues[manualKey]) > 0) && suggestCost(camelToSnake(manualKey), v => setCostValues(p => ({ ...p, [manualKey]: v })))}
+                        </td>
+                        <td>
+                          <CostInput label={`${text} with a tractor`} value={costValues[tractorKey]} onChange={v => setCostValues(p => ({ ...p, [tractorKey]: v }))} />
+                          {!(Number(costValues[tractorKey]) > 0) && suggestCost(camelToSnake(tractorKey), v => setCostValues(p => ({ ...p, [tractorKey]: v })))}
+                        </td>
                       </tr>
                     ))}
                     {([['First weeding', 'weedingOne'], ['Second weeding', 'weedingTwo']] as const).map(([text, key]) => (
                       <tr key={key}>
                         <td className="small">{text}</td>
-                        <td colSpan={2}><CostInput label={text} value={costValues[key]} onChange={v => setCostValues(p => ({ ...p, [key]: v }))} /></td>
+                        <td colSpan={2}>
+                          <CostInput label={text} value={costValues[key]} onChange={v => setCostValues(p => ({ ...p, [key]: v }))} />
+                          {!(Number(costValues[key]) > 0) && suggestCost(camelToSnake(key), v => setCostValues(p => ({ ...p, [key]: v })))}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
