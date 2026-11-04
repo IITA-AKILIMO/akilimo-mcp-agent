@@ -2,6 +2,7 @@ import { and, asc, desc, eq, ne, or } from "drizzle-orm";
 import express, { type Request, type Response } from "express";
 import { z } from "zod/v4";
 import { config } from "../config.js";
+import { listKeyEvents } from "../mcpkeys/events.js";
 import type { ClientKeyStore } from "../mcpkeys/store.js";
 import type { Db } from "../db/index.js";
 import { activity, conversations, messages, users } from "../db/schema.js";
@@ -305,6 +306,11 @@ export function apiRouter(db: Db | null, clientKeys: ClientKeyStore | null = nul
 
   // ── Admin: MCP client keys (the keys clients send to /mcp and /sse) ───────
   if (clientKeys) {
+    // What admins did with the keys (who created, saved, changed, revoked or removed which key and when); no key is in it
+    router.get("/admin/key-events", requireAdmin, handle(async (req, res) => {
+      res.json({ events: await listKeyEvents(db, Number(req.query.limit) || 50) });
+    }));
+
     router.get("/admin/mcp-keys", requireAdmin, handle(async (req, res) => {
       res.json({ keys: await clientKeys.list() });
     }));
@@ -331,7 +337,7 @@ export function apiRouter(db: Db | null, clientKeys: ClientKeyStore | null = nul
         ...(change.per_minute !== undefined && { perMinute: change.per_minute }),
         ...(change.per_day !== undefined && { perDay: change.per_day }),
       };
-      const found = isUuid(id) && await clientKeys.update(id, values);
+      const found = isUuid(id) && await clientKeys.update(id, values, req.user!.id);
       if (!found) {
         res.status(404).json({ error: "Key not found" });
         return;
@@ -341,7 +347,7 @@ export function apiRouter(db: Db | null, clientKeys: ClientKeyStore | null = nul
 
     router.delete("/admin/mcp-keys/:id", requireAdmin, handle(async (req, res) => {
       const id = String(req.params.id);
-      if (!isUuid(id) || !(await clientKeys.revoke(id))) {
+      if (!isUuid(id) || !(await clientKeys.revoke(id, req.user!.id))) {
         res.status(404).json({ error: "Key not found" });
         return;
       }

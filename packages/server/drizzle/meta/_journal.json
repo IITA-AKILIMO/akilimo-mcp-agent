@@ -50,6 +50,20 @@
       "when": 1793677271230,
       "tag": "0006_mcp_client_keys",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793826088478,
+      "tag": "0007_key_tracking",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793826175302,
+      "tag": "0008_user_mcp_keys",
+      "breakpoints": true
     }
   ]
 }

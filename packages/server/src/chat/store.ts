@@ -1,6 +1,7 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { Db } from "../db/index.js";
-import { llmProviders, mcpServerKeys, webSearchSettings } from "../db/schema.js";
+import { llmProviders, mcpServerKeys, userMcpKeys, webSearchSettings } from "../db/schema.js";
+import { recordKeyEvent } from "../mcpkeys/events.js";
 import { keyHint, SecretBox } from "../secrets/crypto.js";
 import { PROVIDERS, providerInfo, type ProviderId, type ProviderInfo, type ResolvedProvider } from "@akilimo/llm";
 import { envSearchConfig, isSearchProvider, validConfig, type SearchConfig, type SearchProviderId } from "./websearch.js";
@@ -185,13 +186,54 @@ export class ChatSettings {
     return Object.fromEntries(rows.map((r) => [r.serverId, box.decrypt(r.keyEnc)]));
   }
 
-  async setServerKey(serverId: string, key: string): Promise<void> {
+  async setServerKey(serverId: string, key: string, actorId?: string): Promise<void> {
     const db = this.requireDb();
-    const values = { keyEnc: this.requireBox().encrypt(key), keyHint: keyHint(key), updatedAt: new Date() };
+    const hint = keyHint(key);
+    const values = { keyEnc: this.requireBox().encrypt(key), keyHint: hint, updatedAt: new Date(), updatedBy: actorId ?? null };
     await db.insert(mcpServerKeys).values({ serverId, ...values }).onConflictDoUpdate({ target: mcpServerKeys.serverId, set: values });
+    await recordKeyEvent(db, { actorId, kind: "shared", ref: serverId, label: serverId, action: "saved", detail: { hint } });
   }
 
-  async deleteServerKey(serverId: string): Promise<void> {
-    await this.requireDb().delete(mcpServerKeys).where(eq(mcpServerKeys.serverId, serverId));
+  async deleteServerKey(serverId: string, actorId?: string): Promise<void> {
+    const db = this.requireDb();
+    await db.delete(mcpServerKeys).where(eq(mcpServerKeys.serverId, serverId));
+    await recordKeyEvent(db, { actorId, kind: "shared", ref: serverId, label: serverId, action: "removed" });
+  }
+
+  // ── keys a user saved for themselves (user_mcp_keys), encrypted, per account ──────────────────────
+
+  async userKeyHints(userId: string): Promise<Record<string, string>> {
+    if (!this.db) return {};
+    return Object.fromEntries((await this.db.select().from(userMcpKeys).where(eq(userMcpKeys.userId, userId))).map((r) => [r.serverId, r.keyHint]));
+  }
+
+  // The user's keys in plain text, for the server's own calls on their behalf; a key that cannot be read (SECRETS_KEY
+  // changed) is left out, as if the user had not saved one
+  async userKeys(userId: string): Promise<Record<string, string>> {
+    if (!this.db || !this.box) return {};
+    const rows = await this.db.select().from(userMcpKeys).where(eq(userMcpKeys.userId, userId));
+    const keys: Record<string, string> = {};
+    for (const r of rows) {
+      try {
+        keys[r.serverId] = this.box.decrypt(r.keyEnc);
+      } catch { /* unreadable: ignore */ }
+    }
+    return keys;
+  }
+
+  async setUserKey(userId: string, serverId: string, key: string): Promise<void> {
+    const db = this.requireDb();
+    const values = { keyEnc: this.requireBox().encrypt(key), keyHint: keyHint(key), updatedAt: new Date() };
+    await db.insert(userMcpKeys).values({ userId, serverId, ...values }).onConflictDoUpdate({ target: [userMcpKeys.userId, userMcpKeys.serverId], set: values });
+  }
+
+  async deleteUserKey(userId: string, serverId: string): Promise<void> {
+    await this.requireDb().delete(userMcpKeys).where(and(eq(userMcpKeys.userId, userId), eq(userMcpKeys.serverId, serverId)));
+  }
+
+  // Remember when the key was last used (called when a key is used for a tool call)
+  async touchUserKey(userId: string, serverId: string): Promise<void> {
+    if (!this.db) return;
+    await this.db.update(userMcpKeys).set({ lastUsedAt: new Date() }).where(and(eq(userMcpKeys.userId, userId), eq(userMcpKeys.serverId, serverId)));
   }
 }

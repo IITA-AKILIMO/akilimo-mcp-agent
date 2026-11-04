@@ -130,13 +130,16 @@ export function chatRouter(settings: ChatSettings, registry: Registry, db: Db | 
     let keys: Record<string, string>;
     // Servers whose key is the shared one (no key of the user's own): their calls count against the user's limit
     const sharedServers = new Set<string>();
+    let savedKeys: Record<string, string> = {};
     try {
       body = ChatRequestSchema.parse(req.body);
       provider = await settings.resolve(body.provider);
       const shared = await settings.serverKeys();
+      // The keys the signed-in user saved for themselves come before the shared key and are never limited
+      savedKeys = req.user ? await settings.userKeys(req.user.id) : {};
       const own = Object.fromEntries(Object.entries(body.keys ?? {}).map(([id, key]) => [id, key.trim()] as const).filter(([, key]) => key !== ""));
-      keys = { ...shared, ...own };
-      for (const id of Object.keys(shared)) if (!own[id]) sharedServers.add(id);
+      keys = { ...shared, ...savedKeys, ...own };
+      for (const id of Object.keys(shared)) if (!own[id] && !savedKeys[id]) sharedServers.add(id);
     } catch (error) {
       sendError(res, error);
       return;
@@ -181,6 +184,7 @@ export function chatRouter(settings: ChatSettings, registry: Registry, db: Db | 
             }
           };
           countCall(server);
+          if (req.user && savedKeys[server]) settings.touchUserKey(req.user.id, server).catch(() => undefined);
           // With Akilimo 1.0 and 2.0 both on, a fertilizer request goes to both and the answers come back together
           // Searching the web for prices follows the user's own web search switch, whatever the model asks for
           if (name === "find_missing_prices") return session.callTool(server, name, { ...args, onlineSearch: webSearch }, signal);
@@ -253,6 +257,39 @@ export function chatRouter(settings: ChatSettings, registry: Registry, db: Db | 
     }
   });
 
+  // ── keys the signed-in user saves for themselves, encrypted in the database (they follow the account) ──
+  const mine = db ? [withUser, requireJson, requireUser] : [(req: Request, res: Response) => { res.status(403).json({ error: "Saving keys needs user accounts" }); }];
+
+  router.get("/keys", ...signedIn, async (req, res) => {
+    try {
+      res.json({ keys: req.user ? await settings.userKeyHints(req.user.id) : {} });
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  router.put("/keys/:id", express.json(), ...mine, async (req, res) => {
+    try {
+      const id = String(req.params.id);
+      const entry = await registry.get(id);
+      if (!entry) throw new SettingsError(404, `No server with id '${id}'`);
+      if (entry.auth.type === "none") throw new SettingsError(400, `${entry.label} does not use a key`);
+      await settings.setUserKey(req.user!.id, id, z.object({ key: z.string().trim().min(1).max(2000) }).parse(req.body).key);
+      res.json({ keys: await settings.userKeyHints(req.user!.id) });
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  router.delete("/keys/:id", ...mine, async (req, res) => {
+    try {
+      await settings.deleteUserKey(req.user!.id, String(req.params.id));
+      res.json({ keys: await settings.userKeyHints(req.user!.id) });
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
   router.get("/admin/server-keys", ...admin, async (req, res) => {
     try {
       res.json({ keys: await settings.serverKeyHints() });
@@ -265,7 +302,7 @@ export function chatRouter(settings: ChatSettings, registry: Registry, db: Db | 
     try {
       const id = String(req.params.id);
       if (!(await registry.get(id))) throw new SettingsError(404, `No server with id '${id}'`);
-      await settings.setServerKey(id, z.object({ key: z.string().trim().min(1).max(2000) }).parse(req.body).key);
+      await settings.setServerKey(id, z.object({ key: z.string().trim().min(1).max(2000) }).parse(req.body).key, req.user?.id);
       res.json({ keys: await settings.serverKeyHints() });
     } catch (error) {
       sendError(res, error);
@@ -274,7 +311,7 @@ export function chatRouter(settings: ChatSettings, registry: Registry, db: Db | 
 
   router.delete("/admin/server-keys/:id", ...admin, async (req, res) => {
     try {
-      await settings.deleteServerKey(String(req.params.id));
+      await settings.deleteServerKey(String(req.params.id), req.user?.id);
       res.json({ keys: await settings.serverKeyHints() });
     } catch (error) {
       sendError(res, error);

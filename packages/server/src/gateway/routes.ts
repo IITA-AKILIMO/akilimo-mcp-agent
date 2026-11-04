@@ -13,6 +13,10 @@ import { testConnection } from "./test.js";
 export interface SharedKeySource {
   serverKeys(): Promise<Record<string, string>>;
   serverKeyHints(): Promise<Record<string, string>>;
+  // The keys a user saved for themselves (encrypted in the database): used before the shared key, never limited
+  userKeys(userId: string): Promise<Record<string, string>>;
+  userKeyHints(userId: string): Promise<Record<string, string>>;
+  touchUserKey(userId: string, serverId: string): Promise<void>;
 }
 
 // Request headers worth forwarding to an upstream MCP server, and response headers worth returning
@@ -51,7 +55,9 @@ export function gatewayRouter(registry: Registry, db: Db | null, shared: SharedK
     try {
       // Which servers have a shared key, so a signed-in user can connect without entering one (only ids, never the key)
       const sharedKeys = req.user ? Object.keys(await shared.serverKeyHints().catch(() => ({}))) : [];
-      res.json({ servers: await registry.list(), editable: req.user?.role === "admin", shared_keys: sharedKeys });
+      // ... and which servers the user already saved a key for (the last characters only), so nothing is asked of them
+      const ownKeys = req.user ? await shared.userKeyHints(req.user.id).catch(() => ({})) : {};
+      res.json({ servers: await registry.list(), editable: req.user?.role === "admin", shared_keys: sharedKeys, own_keys: ownKeys });
     } catch (error) {
       sendError(res, error);
     }
@@ -117,8 +123,11 @@ export function gatewayRouter(registry: Registry, db: Db | null, shared: SharedK
       try {
         await lookUp(req, res);
         if (req.user) {
-          key = (await shared.serverKeys())[entry.id];
-          const calls = key ? countToolCalls(req.body) : 0;
+          // The key the user saved for this server comes first and is never limited; else the admin's shared key
+          const mine = (await shared.userKeys(req.user.id))[entry.id];
+          if (mine) shared.touchUserKey(req.user.id, entry.id).catch(() => undefined);
+          key = mine ?? (await shared.serverKeys())[entry.id];
+          const calls = key && !mine ? countToolCalls(req.body) : 0;
           const verdict = req.user.role === "admin" ? ({ ok: true } as const) : quota.take(req.user.id, calls);
           if (!verdict.ok) {
             res.status(429).setHeader("Retry-After", verdict.retryAfter).json({ jsonrpc: "2.0", error: { code: -32000, message: sharedKeyMessage(verdict) }, id: null });

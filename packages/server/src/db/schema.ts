@@ -5,7 +5,7 @@
 // Table, index and constraint names match what Prisma created before this project moved to Drizzle,
 // so databases created by either tool are the same.
 import { randomUUID } from "node:crypto";
-import { boolean, foreignKey, index, integer, jsonb, pgEnum, pgTable, serial, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { boolean, foreignKey, index, integer, jsonb, pgEnum, pgTable, primaryKey, serial, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
 const timestamptz = (name: string) => timestamp(name, { withTimezone: true, precision: 6, mode: "date" });
 
@@ -110,13 +110,51 @@ export const llmProviders = pgTable("llm_providers", {
 });
 
 // Keys for upstream MCP servers that need one (e.g. Akilimo 2.0), used when the server runs the
-// chat's tool calls; encrypted like the provider keys
+// chat's tool calls and for signed-in users without a key of their own; encrypted like the provider keys.
+// updated_by is the admin who saved it; last_used_at and use_count track the tool calls made with it.
 export const mcpServerKeys = pgTable("mcp_server_keys", {
   serverId: text("server_id").primaryKey(),
   keyEnc: text("key_enc").notNull(),
   keyHint: text("key_hint").notNull(),
   updatedAt: timestamptz("updated_at").notNull().defaultNow(),
-});
+  updatedBy: uuid("updated_by"),
+  lastUsedAt: timestamptz("last_used_at"),
+  useCount: integer("use_count").notNull().default(0),
+}, (t) => [
+  foreignKey({ name: "mcp_server_keys_updated_by_fkey", columns: [t.updatedBy], foreignColumns: [users.id] }).onDelete("set null").onUpdate("cascade"),
+]);
+
+// The keys a user saved for upstream MCP servers that need one (the bearer key of Akilimo 2.0, ...), encrypted like the
+// other secrets, so they follow the account to every device and survive signing out instead of living in one browser.
+// A user's own key always wins over the shared key an admin saved and is never limited.
+export const userMcpKeys = pgTable("user_mcp_keys", {
+  userId: uuid("user_id").notNull(),
+  serverId: text("server_id").notNull(),
+  keyEnc: text("key_enc").notNull(),
+  keyHint: text("key_hint").notNull(),
+  updatedAt: timestamptz("updated_at").notNull().defaultNow(),
+  lastUsedAt: timestamptz("last_used_at"),
+}, (t) => [
+  primaryKey({ name: "user_mcp_keys_pkey", columns: [t.userId, t.serverId] }),
+  foreignKey({ name: "user_mcp_keys_user_id_fkey", columns: [t.userId], foreignColumns: [users.id] }).onDelete("cascade").onUpdate("cascade"),
+]);
+
+// What happened to the keys, for the admins: who created, saved, changed, revoked or removed which key and when.
+// kind is "client" (a key for /mcp, ref = its id) or "shared" (an upstream server's key, ref = the server id);
+// label is the name to show; detail never holds a key, only things like the hint or the new limits.
+export const keyEvents = pgTable("key_events", {
+  id: uuid("id").primaryKey().$defaultFn(randomUUID),
+  at: timestamptz("at").notNull().defaultNow(),
+  actorId: uuid("actor_id"),
+  kind: text("kind").notNull(),
+  ref: text("ref").notNull(),
+  label: text("label").notNull(),
+  action: text("action").notNull(),
+  detail: jsonb("detail"),
+}, (t) => [
+  foreignKey({ name: "key_events_actor_id_fkey", columns: [t.actorId], foreignColumns: [users.id] }).onDelete("set null").onUpdate("cascade"),
+  index("key_events_at_idx").on(t.at.desc().nullsFirst()),
+]);
 
 // Keys that clients (partner apps, Open WebUI, desktop clients) send to /mcp and /sse, issued by admins.
 // Only the SHA-256 of a key is stored (the key itself is shown once, when it is created); key_hint is a
@@ -132,6 +170,7 @@ export const mcpClientKeys = pgTable("mcp_client_keys", {
   expiresAt: timestamptz("expires_at"),
   revokedAt: timestamptz("revoked_at"),
   lastUsedAt: timestamptz("last_used_at"),
+  useCount: integer("use_count").notNull().default(0), // requests made with the key (flushed together with last_used_at)
   createdBy: uuid("created_by"),
   createdAt: timestamptz("created_at").notNull().defaultNow(),
 }, (t) => [
