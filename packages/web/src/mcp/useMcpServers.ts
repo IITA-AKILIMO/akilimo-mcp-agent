@@ -3,6 +3,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { CallToolResult, Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { MCPEvent } from '@akilimo/shared';
+import { deleteMyKey, saveMyKey } from '../llm/api';
 import { loadKeys } from './keys';
 import { gatewayUrl, listServers, needsKey, type McpServerConfig } from './servers';
 
@@ -32,6 +33,9 @@ export function useMcpServers({ onLog }: Options = {}) {
   // Servers an admin saved a shared key for (offered to signed-in users)
   const [sharedKeys, setSharedKeys] = useState<string[]>([]);
   const sharedKeysRef = useRef<string[]>([]);
+  // The keys the signed-in user saved in their account (last characters), so nothing is asked of them for those servers
+  const [ownKeys, setOwnKeys] = useState<Record<string, string>>({});
+  const ownKeysRef = useRef<Record<string, string>>({});
   const [registryError, setRegistryError] = useState<string | null>(null);
   const [servers, setServers] = useState<Record<string, ServerState>>({});
   const [events, setEvents] = useState<MCPEvent[]>([]);
@@ -61,9 +65,19 @@ export function useMcpServers({ onLog }: Options = {}) {
     if (!config) return;
     const key = loadKeys()[id];
     // Without a key of their own, a signed-in user is served with the shared key (the gateway adds it, within a limit)
-    if (needsKey(config) && !key && !sharedKeysRef.current.includes(id)) {
-      update(id, { status: 'error', tools: [], error: 'Enter a key first' });
-      return;
+    if (needsKey(config) && !key && !ownKeysRef.current[id] && !sharedKeysRef.current.includes(id)) {
+      // The list can be out of date (an admin saved a shared key after this page loaded): ask the gateway again first
+      try {
+        const fresh = await listServers();
+        sharedKeysRef.current = fresh.shared_keys ?? [];
+        setSharedKeys(sharedKeysRef.current);
+        ownKeysRef.current = fresh.own_keys ?? {};
+        setOwnKeys(ownKeysRef.current);
+      } catch { /* keep the old list */ }
+      if (!ownKeysRef.current[id] && !sharedKeysRef.current.includes(id)) {
+        update(id, { status: 'error', tools: [], error: 'Enter your key in the box above, or ask an admin to save a shared key' });
+        return;
+      }
     }
 
     await disconnect(id, true);
@@ -91,10 +105,12 @@ export function useMcpServers({ onLog }: Options = {}) {
   // Reloads the registry; servers that were removed or disabled are disconnected
   const reload = useCallback(async () => {
     try {
-      const { servers: list, editable: canEdit, shared_keys } = await listServers();
+      const { servers: list, editable: canEdit, shared_keys, own_keys } = await listServers();
       const enabled = list.filter(s => s.enabled);
       sharedKeysRef.current = shared_keys ?? [];
       setSharedKeys(sharedKeysRef.current);
+      ownKeysRef.current = own_keys ?? {};
+      setOwnKeys(ownKeysRef.current);
       for (const id of Object.keys(clients.current)) {
         if (!enabled.some(s => s.id === id)) await disconnect(id);
       }
@@ -117,7 +133,7 @@ export function useMcpServers({ onLog }: Options = {}) {
     started.current = true;
     reload().then(list => {
       const keys = loadKeys();
-      list.filter(s => !needsKey(s) || keys[s.id] || sharedKeysRef.current.includes(s.id)).forEach(s => connect(s.id));
+      list.filter(s => !needsKey(s) || keys[s.id] || ownKeysRef.current[s.id] || sharedKeysRef.current.includes(s.id)).forEach(s => connect(s.id));
     });
   }, [reload, connect]);
 
@@ -127,7 +143,7 @@ export function useMcpServers({ onLog }: Options = {}) {
     const list = await reload();
     const own = loadKeys();
     for (const s of list.filter(needsKey)) {
-      const eligible = Boolean(own[s.id]) || sharedKeysRef.current.includes(s.id);
+      const eligible = Boolean(own[s.id]) || Boolean(ownKeysRef.current[s.id]) || sharedKeysRef.current.includes(s.id);
       if (!eligible && clients.current[s.id]) await disconnect(s.id);
       else if (eligible && !clients.current[s.id]) await connect(s.id);
     }
@@ -154,5 +170,17 @@ export function useMcpServers({ onLog }: Options = {}) {
   // Shows saved history (e.g. after sign-in) followed by anything logged in this visit
   const replaceEvents = useCallback((saved: MCPEvent[]) => setEvents(prev => [...saved, ...prev]), []);
 
-  return { configs, editable, sharedKeys, registryError, servers, events, connect, disconnect, reload, refreshAccess, callTool, clearEvents, replaceEvents };
+  // Save or remove the key of the signed-in user for a server in their account, then connect or drop it accordingly
+  const saveOwnKey = useCallback(async (id: string, key: string) => {
+    await saveMyKey(id, key);
+    await refreshAccess();
+    await disconnect(id, true);
+    await connect(id);
+  }, [refreshAccess, disconnect, connect]);
+  const removeOwnKey = useCallback(async (id: string) => {
+    await deleteMyKey(id);
+    await refreshAccess();
+  }, [refreshAccess]);
+
+  return { configs, editable, sharedKeys, ownKeys, saveOwnKey, removeOwnKey, registryError, servers, events, connect, disconnect, reload, refreshAccess, callTool, clearEvents, replaceEvents };
 }

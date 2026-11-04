@@ -3,6 +3,7 @@ import { CheckCircle2, Globe, KeyRound, Loader2, Pencil, Plug, Plus, Server, Shi
 import { McpKeysTab } from './McpKeysTab';
 import { listUsers, setUserRole, type AdminUser, type Role, type User } from '../account/api';
 import { ProvidersTab, WebSearchTab } from './ProvidersPanel';
+import { deleteServerKey, getServerKeys, setServerKey } from '../llm/api';
 import { loadKeys } from '../mcp/keys';
 import {
   addServer, describeAuth, listServers, needsKey, removeServer, testServer, updateServer,
@@ -56,14 +57,18 @@ const TestResult: React.FC<{ state: TestState }> = ({ state }) => {
 const ServerForm: React.FC<{
   initial: McpServerConfig;
   isNew: boolean;
-  onSave: (server: McpServerConfig) => Promise<void>;
+  // The shared key typed in the form is passed with the server and saved by the caller (encrypted, on the server)
+  onSave: (server: McpServerConfig, sharedKey: string) => Promise<void>;
   onCancel: () => void;
-}> = ({ initial, isNew, onSave, onCancel }) => {
+  // The last characters of the shared key already saved for this server, if any
+  savedHint?: string | undefined;
+  onRemoveKey: (id: string) => Promise<void>;
+}> = ({ initial, isNew, onSave, onCancel, savedHint, onRemoveKey }) => {
   const [form, setForm] = useState<McpServerConfig>(initial);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Only for the test; prefilled with the key this browser remembers for the server, never saved
-  const [testKey, setTestKey] = useState(() => loadKeys()[initial.id] ?? '');
+  // The key an admin shares with every signed-in user of this server: saved when the form is saved, used by the test too
+  const [sharedKey, setSharedKey] = useState('');
   const [test, setTest] = useState<TestState>(null);
   const set = <K extends keyof McpServerConfig>(key: K, value: McpServerConfig[K]) => {
     setForm(f => ({ ...f, [key]: value }));
@@ -79,13 +84,16 @@ const ServerForm: React.FC<{
     setSaving(true);
     setError(null);
     try {
-      await onSave(form);
+      await onSave(form, form.auth.type === 'none' ? '' : sharedKey);
     } catch (err) {
       setError(message(err));
     } finally {
       setSaving(false);
     }
   };
+
+  // The test uses the key typed here, else the one this browser remembers for the server (never saved from there)
+  const testWith = form.auth.type === 'none' ? undefined : (sharedKey || loadKeys()[form.id] || undefined);
 
   return (
     <form className="border rounded p-3 bg-body-tertiary" onSubmit={submit} noValidate>
@@ -121,7 +129,7 @@ const ServerForm: React.FC<{
             <option value="bearer">Authorization: Bearer</option>
             <option value="header">Custom header</option>
           </select>
-          <div className="form-text mt-0">Users enter the key itself in the server panel; it is not stored here</div>
+          <div className="form-text mt-0">How the key is sent. Give one key for everyone below, or users enter their own in the server panel</div>
         </div>
         {form.auth.type === 'header' && (
           <div className="col-sm-6">
@@ -132,10 +140,23 @@ const ServerForm: React.FC<{
         )}
         {form.auth.type !== 'none' && (
           <div className="col-12">
-            <label className="form-label small mb-1" htmlFor="srv-test-key">Key for testing (optional)</label>
-            <input id="srv-test-key" type="password" className="form-control form-control-sm" autoComplete="off" value={testKey}
-              onChange={e => { setTestKey(e.target.value.trim()); setTest(null); }} />
-            <div className="form-text mt-0">Used only for “Test connection”; not saved</div>
+            <label className="form-label small mb-1" htmlFor="srv-shared-key">
+              Key shared with signed-in users {savedHint ? <span className="badge text-bg-success ms-1">saved ({savedHint})</span> : <span className="badge text-bg-warning ms-1">none saved</span>}
+            </label>
+            <div className="input-group input-group-sm">
+              <input id="srv-shared-key" type="password" className="form-control" autoComplete="off" value={sharedKey}
+                placeholder={savedHint ? `Saved (${savedHint}) · type to replace` : 'Paste the key to share'}
+                onChange={e => { setSharedKey(e.target.value.trim()); setTest(null); }} />
+              {savedHint && (
+                <button type="button" className="btn btn-outline-danger" title="Remove the saved shared key" aria-label="Remove the saved shared key" disabled={saving}
+                  onClick={async () => { try { await onRemoveKey(form.id); } catch (err) { setError(message(err)); } }}>
+                  <Trash2 size={14} />
+                </button>
+              )}
+            </div>
+            <div className="form-text mt-0">
+              Saved encrypted when you press Save. Every signed-in user without a key of their own is connected with it, with a limit per user (admins and users with their own key are not limited). Leave it empty to keep the saved key. Also used by “Test connection”.
+            </div>
           </div>
         )}
         <div className="col-12">
@@ -151,7 +172,7 @@ const ServerForm: React.FC<{
       <div className="d-flex gap-2 mt-3">
         <button type="submit" className="btn btn-sm btn-akilimo" disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
         <button type="button" className="btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-1"
-          onClick={() => runTest(form, form.auth.type === 'none' ? undefined : testKey, setTest)} disabled={saving || !form.url.trim() || test?.running}>
+          onClick={() => runTest(form, testWith, setTest)} disabled={saving || !form.url.trim() || test?.running}>
           <Plug size={14} /> Test connection
         </button>
         <button type="button" className="btn btn-sm btn-outline-secondary ms-auto" onClick={onCancel} disabled={saving}>Cancel</button>
@@ -166,6 +187,8 @@ const ServersTab: React.FC<{ onChanged: () => void }> = ({ onChanged }) => {
   const [editing, setEditing] = useState<{ server: McpServerConfig; isNew: boolean } | null>(null);
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const [tests, setTests] = useState<Record<string, TestState>>({});
+  // The last characters of the shared key saved for each server (never the key itself)
+  const [hints, setHints] = useState<Record<string, string>>({});
 
   // Registered servers are tested with the key this browser remembers for them, if any
   const testRow = (s: McpServerConfig) =>
@@ -175,6 +198,7 @@ const ServersTab: React.FC<{ onChanged: () => void }> = ({ onChanged }) => {
     try {
       setTests({});
       setServers((await listServers()).servers);
+      setHints((await getServerKeys()).keys);
       setError(null);
     } catch (e) {
       setError(`Cannot load servers: ${message(e)}`);
@@ -182,10 +206,18 @@ const ServersTab: React.FC<{ onChanged: () => void }> = ({ onChanged }) => {
   };
   useEffect(() => { refresh(); }, []);
 
-  const save = async (server: McpServerConfig) => {
+  const save = async (server: McpServerConfig, sharedKey: string) => {
     if (editing?.isNew) await addServer(server);
     else await updateServer(editing!.server.id, server);
+    // The server exists now, so the key shared with signed-in users can be saved (encrypted) for it
+    if (sharedKey) await setServerKey(server.id, sharedKey);
     setEditing(null);
+    await refresh();
+    onChanged();
+  };
+
+  const removeKey = async (id: string) => {
+    await deleteServerKey(id);
     await refresh();
     onChanged();
   };
@@ -214,7 +246,7 @@ const ServersTab: React.FC<{ onChanged: () => void }> = ({ onChanged }) => {
       {editing && (
         <div className="mb-3">
           <ServerForm key={editing.isNew ? 'new' : editing.server.id} initial={editing.server} isNew={editing.isNew}
-            onSave={save} onCancel={() => setEditing(null)} />
+            onSave={save} onCancel={() => setEditing(null)} savedHint={hints[editing.server.id]} onRemoveKey={removeKey} />
         </div>
       )}
       {error && <div className="alert alert-danger small">{error}</div>}
@@ -229,7 +261,14 @@ const ServersTab: React.FC<{ onChanged: () => void }> = ({ onChanged }) => {
                   {!s.enabled && <span className="badge text-bg-secondary ms-2">disabled</span>}
                 </div>
                 <div className="small font-monospace text-break">{s.url}</div>
-                <div className="small text-body-secondary">{describeAuth(s.auth)}{s.description ? ` · ${s.description}` : ''}</div>
+                <div className="small text-body-secondary">
+                  {describeAuth(s.auth)}{s.description ? ` · ${s.description}` : ''}
+                  {needsKey(s) && (
+                    hints[s.id]
+                      ? <span className="badge text-bg-success ms-2">shared key saved</span>
+                      : <span className="badge text-bg-warning ms-2">no shared key</span>
+                  )}
+                </div>
               </div>
               {confirmRemove !== s.id ? (
                 <div className="d-flex gap-1 flex-shrink-0">
@@ -380,7 +419,7 @@ export const AdminDialog: React.FC<Props> = ({ currentUser, onClose, onChanged }
               </li>
             </ul>
             {tab === 'servers' && <ServersTab onChanged={onChanged} />}
-            {tab === 'providers' && <ProvidersTab />}
+            {tab === 'providers' && <ProvidersTab onKeysChanged={onChanged} />}
             {tab === 'search' && <WebSearchTab />}
             {tab === 'keys' && <McpKeysTab />}
             {tab === 'users' && <UsersTab currentUser={currentUser} />}

@@ -175,7 +175,7 @@ const ProviderCard: React.FC<{ provider: ProviderStatus; onSaved: (providers: Pr
 };
 
 // Keys the server uses when it calls MCP servers that need one (e.g. Akilimo 2.0), stored encrypted
-const ServerKeys: React.FC = () => {
+const ServerKeys: React.FC<{ onChanged?: (() => void) | undefined }> = ({ onChanged }) => {
   const [servers, setServers] = useState<McpServerConfig[]>([]);
   const [hints, setHints] = useState<Record<string, string>>({});
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -197,6 +197,7 @@ const ServerKeys: React.FC = () => {
       setHints((await run()).keys);
       setDrafts(prev => ({ ...prev, [id]: '' }));
       setError(null);
+      onChanged?.(); // the MCP servers panel learns that a shared key now exists (or no longer does)
     } catch (e) {
       setError(message(e));
     }
@@ -369,7 +370,7 @@ const WebSearchCard: React.FC = () => {
 // Its own tab in the admin dialog, so the search service is easy to find
 export const WebSearchTab: React.FC = () => <WebSearchCard />;
 
-export const ProvidersTab: React.FC = () => {
+export const ProvidersTab: React.FC<{ onKeysChanged?: () => void }> = ({ onKeysChanged }) => {
   const [providers, setProviders] = useState<ProviderStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -402,7 +403,7 @@ export const ProvidersTab: React.FC = () => {
       <div className="d-flex flex-column gap-3">
         {providers.map(p => <ProviderCard key={p.id} provider={p} onSaved={setProviders} />)}
       </div>
-      <ServerKeys />
+      <ServerKeys onChanged={onKeysChanged} />
     </>
   );
 };

@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import type { MCPEvent } from '@akilimo/shared';
-import { AlertTriangle, Database, Plug, Terminal, Zap } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronRight, Database, Plug, Terminal, Zap } from 'lucide-react';
+import { read, write } from '../mcp/keys';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface Props {
@@ -24,17 +25,24 @@ const IconMap: Record<MCPEvent['type'], React.ReactNode> = {
 };
 
 export const ActivityFeed: React.FC<Props> = ({ events, onClear }) => {
+  // Can be folded away to give the chat more room; remembered in this browser
+  const [collapsed, setCollapsed] = useState<boolean>(() => read('panel-activity-collapsed', false));
+  const toggle = () => setCollapsed(c => { write('panel-activity-collapsed', !c); return !c; });
   return (
-    <div className="card shadow-sm flex-grow-1 min-h-0">
+    <div className={`card shadow-sm min-h-0 ${collapsed ? 'flex-shrink-0' : 'flex-grow-1'}`}>
       <div className="card-header d-flex align-items-center gap-2">
-        <Terminal size={16} className="text-body-secondary" />
-        <h2 className="h6 mb-0 text-uppercase small fw-semibold text-body-secondary">Activity</h2>
+        <button type="button" className="btn btn-sm p-0 border-0 d-inline-flex align-items-center gap-2 text-start" aria-expanded={!collapsed} onClick={toggle}
+          title={collapsed ? 'Show the activity' : 'Hide the activity'}>
+          {collapsed ? <ChevronRight size={16} className="text-body-secondary" /> : <ChevronDown size={16} className="text-body-secondary" />}
+          <Terminal size={16} className="text-body-secondary" />
+          <h2 className="h6 mb-0 text-uppercase small fw-semibold text-body-secondary">Activity</h2>
+        </button>
         <span className="badge text-bg-secondary ms-auto">{events.length}</span>
         <button type="button" className="btn btn-sm btn-link p-0 small" onClick={onClear} disabled={events.length === 0} title="Clear the activity list">
           Clear
         </button>
       </div>
-      <div className="card-body overflow-y-auto overflow-x-hidden min-h-0 p-2">
+      <div className={`card-body overflow-y-auto overflow-x-hidden min-h-0 p-2 ${collapsed ? 'd-none' : ''}`}>
         {events.length === 0 && (
           <p className="text-center text-body-secondary small mt-4 mb-0">
             Connections, tool calls and responses will appear here.

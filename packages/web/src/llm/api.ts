@@ -75,6 +75,10 @@ export interface WebSearchTest { ok: boolean; ms: number; hits?: number; first?:
 export const getWebSearch = () => request<WebSearchStatus>('GET', '/admin/web-search');
 export const updateWebSearch = (change: WebSearchChange) => request<WebSearchStatus>('PUT', '/admin/web-search', change);
 export const testWebSearch = () => request<WebSearchTest>('POST', '/admin/web-search/test', {});
+// The keys the signed-in user saves for themselves (stored encrypted in their account; only the last characters come back)
+export const getMyKeys = () => request<{ keys: Record<string, string> }>('GET', '/keys');
+export const saveMyKey = (id: string, key: string) => request<{ keys: Record<string, string> }>('PUT', `/keys/${encodeURIComponent(id)}`, { key });
+export const deleteMyKey = (id: string) => request<{ keys: Record<string, string> }>('DELETE', `/keys/${encodeURIComponent(id)}`);
 export const getServerKeys = () => request<{ keys: Record<string, string> }>('GET', '/admin/server-keys');
 export const setServerKey = (id: string, key: string) => request<{ keys: Record<string, string> }>('PUT', `/admin/server-keys/${id}`, { key });
 export const deleteServerKey = (id: string) => request<{ keys: Record<string, string> }>('DELETE', `/admin/server-keys/${id}`);

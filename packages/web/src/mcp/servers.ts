@@ -36,10 +36,11 @@ const request = async <T,>(method: string, path: string, body?: unknown, extraHe
   return (res.status === 204 ? undefined : await res.json()) as T;
 };
 
+// `own_keys` holds, for a signed-in user, the last characters of the key they saved in their account for each server;
 // `editable` is true when the signed-in user is an admin; `shared_keys` lists the servers (ids only) for which
 // an admin saved a key that a signed-in user may use without entering one
 export const listServers = () =>
-  request<{ servers: McpServerConfig[]; editable: boolean; shared_keys?: string[] }>('GET', '/servers');
+  request<{ servers: McpServerConfig[]; editable: boolean; shared_keys?: string[]; own_keys?: Record<string, string> }>('GET', '/servers');
 export const addServer = (server: McpServerConfig) => request<McpServerConfig>('POST', '/servers', server);
 export const updateServer = (id: string, server: McpServerConfig) =>
   request<McpServerConfig>('PUT', `/servers/${encodeURIComponent(id)}`, server);

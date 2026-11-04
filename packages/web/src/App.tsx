@@ -45,12 +45,14 @@ export default function App() {
     const {
         configs,
         sharedKeys,
+        ownKeys,
+        saveOwnKey,
+        removeOwnKey,
         registryError,
         servers,
         events,
         connect,
         disconnect,
-        reload,
         refreshAccess,
         callTool,
         clearEvents,
@@ -145,6 +147,10 @@ export default function App() {
                                          registryError={registryError}
                                          sharedKeys={sharedKeys}
                                          isAdmin={isAdmin}
+                                         ownKeys={ownKeys}
+                                         accountSaves={!!account.user}
+                                         onSaveOwnKey={saveOwnKey}
+                                         onRemoveOwnKey={removeOwnKey}
                                          onConnect={connect}
                                          onDisconnect={disconnect}
                                          canManage={isAdmin}
@@ -156,7 +162,7 @@ export default function App() {
             </main>
 
             {managing && isAdmin && account.user && (
-                <AdminDialog currentUser={account.user} onClose={() => setManaging(false)} onChanged={reload}/>
+                <AdminDialog currentUser={account.user} onClose={() => setManaging(false)} onChanged={() => { refreshAccess().catch(() => undefined); }}/>
             )}
         </div>
     );
