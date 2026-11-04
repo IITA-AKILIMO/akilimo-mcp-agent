@@ -31,6 +31,7 @@ The agent built in this repository, backed by the Akilimo 1.0 API (the Laravel `
   - `compute_recommendations` — fertilizer, planting practices, scheduled planting and intercropping advice for a farm
   - `convert_currency` — prevailing exchange rates
   - `get_soil_profile`, `get_climate_summary` — soil (ISRIC SoilGrids) and climate (NASA POWER) context for a point
+  - `find_missing_prices` — suggests a price or cost where AKILIMO has no default (fertilizers, cassava, operation costs; world benchmark, and the web only when `onlineSearch` is true); suggestions only, to be confirmed by the farmer
   - `get_reference_data` — any raw reference list (all pages merged)
 
 ### Akilimo 2.0 Agent (Hosted)
