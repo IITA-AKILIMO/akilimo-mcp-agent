@@ -120,8 +120,11 @@ export default function App() {
               : <ToolRunner configs={configs} servers={servers} callTool={callTool} />}
           </div>
           <div className="col-12 col-lg-4 col-xxl-3 panel-col d-flex flex-column gap-3">
-            <ServerPanel configs={configs} servers={servers} registryError={registryError} sharedKeys={sharedKeys} isAdmin={isAdmin}
-              onConnect={connect} onDisconnect={disconnect} canManage={isAdmin} onManage={() => setManaging(true)} />
+            {/* The MCP servers (and their keys) are for signed-in users; a server without accounts has nobody to sign in, so it shows there */}
+            {account.ready && (!account.enabled || account.user) && (
+              <ServerPanel configs={configs} servers={servers} registryError={registryError} sharedKeys={sharedKeys} isAdmin={isAdmin}
+                onConnect={connect} onDisconnect={disconnect} canManage={isAdmin} onManage={() => setManaging(true)} />
+            )}
             <ActivityFeed events={events} onClear={clearAll} />
           </div>
         </div>
