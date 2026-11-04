@@ -34,6 +34,8 @@ const ChatRequestSchema = z.object({
   webSearch: z.boolean().optional(),
   // The user's own keys for upstream MCP servers, by server id; used instead of the shared key (and without its limit)
   keys: z.record(z.string().max(40), z.string().max(500)).optional(),
+  // The MCP servers the user has switched on; the chat only uses these (all enabled servers when it is left out)
+  servers: z.array(z.string().max(40)).max(50).optional(),
   crop: z.object({ key: z.string().regex(/^[a-z0-9_]{1,50}$/), name: z.string().min(1).max(100), advice_available: z.boolean() }).optional(),
   messages: z.array(MessageSchema).min(1).max(400),
 });
@@ -149,7 +151,8 @@ export function chatRouter(settings: ChatSettings, registry: Registry, db: Db | 
     res.on("close", () => { if (!res.writableEnded) abort.abort(); });
     // The supported countries come from the API; if they cannot be read the chat still works, just without the country note
     const countries = await fetchCountries(api).catch(() => []);
-    const session = await openTools(registry, keys);
+    const session = await openTools(registry, keys, body.servers);
+    if (body.servers?.length === 0) session.warnings.push("No MCP server is switched on in the MCP servers panel, so the assistant cannot use the AKILIMO tools");
     // The user's choice, and only if a search service is set up; otherwise the model never sees the tool
     // A signed-in user's profile decides (their setting applies to every conversation and the request cannot
     // override it); without accounts there is no profile, so the request's own switch is used

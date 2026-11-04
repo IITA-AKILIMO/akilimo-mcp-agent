@@ -85,6 +85,7 @@ interface StreamOptions {
   country?: string;
   crop?: { key: string; name: string; advice_available: boolean };
   webSearch?: boolean; // true only when the user switched web search on
+  servers?: string[]; // ids of the MCP servers the chat may use (those switched on in the panel)
   messages: ChatMessage[]; // user/assistant/tool messages so far, without the system prompt
   signal?: AbortSignal;
   onMessage: (message: ChatMessage) => void; // every message the server adds to the conversation
@@ -101,7 +102,7 @@ type StreamEvent =
   | { type: 'done' };
 
 // One user turn: the server runs the agent loop and streams events as newline-delimited JSON
-export async function streamChat({ provider, model, country, crop, webSearch, messages, signal, onMessage, onStep, onWarning }: StreamOptions): Promise<void> {
+export async function streamChat({ provider, model, country, crop, webSearch, servers, messages, signal, onMessage, onStep, onWarning }: StreamOptions): Promise<void> {
   // The user's own keys for MCP servers (kept in this browser) go with the request, so the server uses them
   // instead of the shared key and its limit; they are not stored there
   const keys = Object.fromEntries(Object.entries(loadKeys()).filter(([, key]) => key.trim() !== ''));
@@ -109,7 +110,7 @@ export async function streamChat({ provider, model, country, crop, webSearch, me
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ provider, model, country, crop, webSearch: webSearch === true, keys, messages }),
+    body: JSON.stringify({ provider, model, country, crop, webSearch: webSearch === true, keys, servers, messages }),
     signal,
   });
   if (!res.ok) await fail(res);

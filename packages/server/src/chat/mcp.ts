@@ -57,12 +57,13 @@ async function connect(entry: ServerEntry, key: string | undefined): Promise<{ c
   }
 }
 
-export async function openTools(registry: Registry, keys: Record<string, string>): Promise<ToolSession> {
+// `only` limits the session to the servers the user has switched on (every enabled server when it is undefined)
+export async function openTools(registry: Registry, keys: Record<string, string>, only?: readonly string[]): Promise<ToolSession> {
   const clients = new Map<string, Client>();
   const tools: AgentTool[] = [];
   const warnings: string[] = [];
 
-  const entries = (await registry.list()).filter((e) => e.enabled);
+  const entries = (await registry.list()).filter((e) => e.enabled && (!only || only.includes(e.id)));
   await Promise.all(entries.map(async (entry) => {
     // A server that needs a key and has none saved would only answer 401
     if (entry.auth.type !== "none" && !keys[entry.id]) {

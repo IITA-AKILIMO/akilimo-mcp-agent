@@ -247,6 +247,8 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
         model,
         country: country?.code,
         webSearch,
+        // Only the servers the user has switched on in the MCP servers panel (or that are still connecting)
+        servers: Object.entries(servers).filter(([, s]) => s.status === 'connected' || s.status === 'connecting').map(([id]) => id),
         ...(crop ? { crop: { key: crop.key, name: crop.name, advice_available: crop.advice_available } } : {}),
         messages: history.current,
         signal: controller.signal,
