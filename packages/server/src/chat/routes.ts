@@ -3,6 +3,7 @@ import { z } from "zod/v4";
 import { findCountry, type ChatMessage } from "@akilimo/shared";
 import { loadUser, rateLimit, requireAdmin, requireJson, requireUser } from "../accounts/auth.js";
 import type { AkilimoApiClient } from "../api/client.js";
+import { config } from "../config.js";
 import { fetchCountries } from "../countries/list.js";
 import type { Db } from "../db/index.js";
 import { sharedKeyMessage, type CallQuota } from "../gateway/quota.js";
@@ -70,7 +71,7 @@ export function chatRouter(settings: ChatSettings, registry: Registry, db: Db | 
   const withUser = db ? loadUser(db) : passThrough;
   const signedIn = db ? [withUser, requireUser] : [passThrough];
   const admin = db ? [withUser, requireJson, requireAdmin] : [(req: Request, res: Response) => { res.status(403).json({ error: "Managing providers needs user accounts" }); }];
-  const limit = rateLimit(60, 60_000);
+  const limit = rateLimit(config.chatRateLimit, 60_000);
 
   router.get("/providers", ...signedIn, async (req, res) => {
     try {

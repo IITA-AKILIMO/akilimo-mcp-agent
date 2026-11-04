@@ -36,6 +36,9 @@ export const config = {
   // Requests per minute and client IP on the MCP endpoints, and calls of compute_recommendations among them
   mcpRateLimit: Number(process.env.MCP_RATE_LIMIT) || 120,
   mcpComputeRateLimit: Number(process.env.MCP_COMPUTE_RATE_LIMIT) || 10,
+  // Requests per minute and client IP to the chat (POST /chat), and sign-up / sign-in attempts per 15 minutes and IP
+  chatRateLimit: Number(process.env.CHAT_RATE_LIMIT) || 60,
+  authRateLimit: Number(process.env.AUTH_RATE_LIMIT) || 10,
   // Open legacy SSE sessions, in total and per client IP
   sseMaxSessions: Number(process.env.SSE_MAX_SESSIONS) || 200,
   sseMaxSessionsPerIp: Number(process.env.SSE_MAX_SESSIONS_PER_IP) || 5,

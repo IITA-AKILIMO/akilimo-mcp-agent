@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, ne, or } from "drizzle-orm";
 import express, { type Request, type Response } from "express";
 import { z } from "zod/v4";
+import { config } from "../config.js";
 import type { ClientKeyStore } from "../mcpkeys/store.js";
 import type { Db } from "../db/index.js";
 import { activity, conversations, messages, users } from "../db/schema.js";
@@ -106,7 +107,7 @@ export function apiRouter(db: Db | null, clientKeys: ClientKeyStore | null = nul
 
   router.use(requireJson);
   router.use(loadUser(db));
-  const authLimit = rateLimit(10, 15 * 60 * 1000);
+  const authLimit = rateLimit(config.authRateLimit, 15 * 60 * 1000);
 
   // ── Accounts ──────────────────────────────────────────────────────────────
   router.get("/auth/status", (req, res) => {
