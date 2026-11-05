@@ -1,6 +1,6 @@
 import express, { type NextFunction, type Request, type Response } from "express";
 import { z } from "zod/v4";
-import { findCountry, type ChatMessage } from "@akilimo/shared";
+import { defaultAdviceLanguage, findCountry, type ChatMessage } from "@akilimo/shared";
 import { loadUser, rateLimit, requireAdmin, requireJson, requireUser } from "../accounts/auth.js";
 import type { AkilimoApiClient } from "../api/client.js";
 import { config } from "../config.js";
@@ -16,6 +16,15 @@ import { chat, listModels, pickDefaultModel, testProvider } from "@akilimo/llm";
 import { ChatSettings, SettingsError } from "./store.js";
 
 const passThrough = (req: Request, res: Response, next: NextFunction) => next();
+
+// The advice language the model chose (the prompt asks for the farmer's language); when it gave none, the country's
+// usual one (Kiswahili in Tanzania and Kenya), so a model that forgets does not fall back to English for everyone
+const withAdviceLanguage = (args: Record<string, unknown>, country: string | undefined): Record<string, unknown> => {
+  const request = (args.compute_request ?? {}) as Record<string, unknown>;
+  const settings = (request.recommendations ?? {}) as Record<string, unknown>;
+  if (typeof settings.lang === "string" && settings.lang.trim()) return args;
+  return { ...args, compute_request: { ...request, recommendations: { ...settings, lang: defaultAdviceLanguage(country) } } };
+};
 
 const MessageSchema = z.object({
   role: z.enum(["user", "assistant", "tool"]),
@@ -188,7 +197,9 @@ export function chatRouter(settings: ChatSettings, registry: Registry, db: Db | 
           // With Akilimo 1.0 and 2.0 both on, a fertilizer request goes to both and the answers come back together
           // Searching the web for prices follows the user's own web search switch, whatever the model asks for
           if (name === "find_missing_prices") return session.callTool(server, name, { ...args, onlineSearch: webSearch }, signal);
-          if (name === "compute_recommendations") return recommendOnBoth(session, server, args, { beforeCall: countCall, ...(signal ? { signal } : {}) });
+          if (name === "compute_recommendations") {
+            return recommendOnBoth(session, server, withAdviceLanguage(args, body.country), { beforeCall: countCall, ...(signal ? { signal } : {}) });
+          }
           return session.callTool(server, name, args, signal);
         },
         webSearch,

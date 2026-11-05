@@ -1,9 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { CalendarDays, Loader2, Shovel, Wheat } from 'lucide-react';
-import { findCountry, type Country, type FarmProfile } from '@akilimo/shared';
+import { defaultAdviceLanguage, findCountry, type AdviceLanguage, type Country, type FarmProfile } from '@akilimo/shared';
 import { useCountries } from '../mcp/countries';
 import type { GuidedEntry } from '../mcp/guided';
-import { Loading, CassavaPriceInput, PriceHint, RiskSelect, SellSelect, WINDOWS, YieldSelect, dateProblem, harvestRange, label, message, monthsFromNow, plantingMin, useLoad, windowLabel, type Call, type PriceData, type PriceItem, type Record_, type Row } from './GuidedParts';
+import { Loading, CassavaPriceInput, LanguageSelect, PriceHint, RiskSelect, SellSelect, WINDOWS, YieldSelect, dateProblem, harvestRange, label, message, monthsFromNow, plantingMin, useLoad, windowLabel, type Call, type PriceData, type PriceItem, type Record_, type Row } from './GuidedParts';
 import { MapPicker } from './MapPicker';
 import { PriceSuggest, perAcreIn } from './PriceSuggest';
 import { RememberBar } from './FarmMemory';
@@ -114,6 +114,7 @@ export const AdviceScreen: React.FC<{ kind: AdviceKind; country: Country; call: 
   const [unit, setUnit] = useState('acre');
   const [yieldClass, setYieldClass] = useState(11.25); // t/ha class sent as yieldInfo.current_field_yield
   const [risk, setRisk] = useState(1); // user_info.risk_attitude
+  const [lang, setLang] = useState<AdviceLanguage>(defaultAdviceLanguage(country.code)); // recommendations.lang
   const [factory, setFactory] = useState(''); // starch factory key, or '' for the open market
   const [sellUnit, setSellUnit] = useState(1000); // the unit the cassava price is quoted in, in kg (the API's cassava units)
   const [planting, setPlanting] = useState(monthsFromNow(1));
@@ -149,6 +150,7 @@ export const AdviceScreen: React.FC<{ kind: AdviceKind; country: Country; call: 
     if (p.unit) setUnit(p.unit);
     if (p.yieldClass !== undefined) setYieldClass(p.yieldClass);
     if (p.risk !== undefined) setRisk(p.risk);
+    if (p.lang) setLang(p.lang);
     if (p.sellUnit) setSellUnit(p.sellUnit);
     if (p.cassavaPrice) setRootPrice(String(p.cassavaPrice));
     if (p.factory !== undefined) setFactory(p.factory);
@@ -221,7 +223,7 @@ export const AdviceScreen: React.FC<{ kind: AdviceKind; country: Country; call: 
           planting: { planting_date: planting, harvest_date: harvest, planting_date_window: plantingWindow, harvest_date_window: harvestWindow },
           cassava: { unit_price: Number(rootPrice), unit_weight: sellUnit },
           yieldInfo: { current_field_yield: yieldClass, ...(factory ? { sell_to_starch_factory: true, starch_factory_name: factory } : {}) },
-          recommendations: { lang: 'en', ...info.flags },
+          recommendations: { lang, ...info.flags },
           ...(kind === 'intercrop' && second ? {
             interCropping: { inter_cropped_crop: second.key, inter_cropping_maize_rec: second.key === 'maize', inter_cropping_potato_rec: second.key === 'potato' },
           } : {}),
@@ -266,7 +268,7 @@ export const AdviceScreen: React.FC<{ kind: AdviceKind; country: Country; call: 
       if (remember) {
         farm.save({
           ...defined({
-            size: Number(size), unit: unit as FarmProfile['unit'], yieldClass, risk, cassavaPrice: Number(rootPrice), sellUnit,
+            size: Number(size), unit: unit as FarmProfile['unit'], yieldClass, risk, lang, cassavaPrice: Number(rootPrice), sellUnit,
             plantingWindow, harvestWindow,
           }),
           factory, // empty = the open market, so going back to it is remembered too
@@ -439,6 +441,10 @@ export const AdviceScreen: React.FC<{ kind: AdviceKind; country: Country; call: 
               {defaultCosts.loading && <div className="small text-body-secondary d-flex align-items-center gap-1 mt-1"><Loader2 size={14} className="spin" /> Loading typical costs…</div>}
             </section>
           )}
+
+          <section style={{ maxWidth: '20rem' }}>
+            <LanguageSelect id={`a-lang-${kind}`} value={lang} onChange={setLang} />
+          </section>
 
           {error && <div className="alert alert-danger small mb-0" style={{ whiteSpace: 'pre-wrap' }}>{error}</div>}
           <div className="d-flex align-items-center gap-3 pb-2">

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import { ADVICE_LANGUAGES, adviceLanguage, type AdviceLanguage } from '@akilimo/shared';
 import type { GuidedEntry } from '../mcp/guided';
 import type { ServerState } from '../mcp/useMcpServers';
 
@@ -162,6 +163,17 @@ export const RiskSelect: React.FC<{ id: string; value: number; onChange: (value:
       {RISK_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
     </select>
     <div className="form-text">A careful farmer is only advised to use fertilizer when it clearly pays, so the advice can be "do not use fertilizer" more often.</div>
+  </>
+);
+
+// The language of the advice text and its PDF report (compute_request.recommendations.lang): the ones the compute
+// service writes, from @akilimo/shared, so a new language appears here once it is added there
+export const LanguageSelect: React.FC<{ id: string; value: AdviceLanguage; onChange: (value: AdviceLanguage) => void }> = ({ id, value, onChange }) => (
+  <>
+    <label className="form-label small mb-1" htmlFor={id}>Language of the advice and its PDF report</label>
+    <select id={id} className="form-select" value={value} onChange={e => onChange(adviceLanguage(e.target.value))}>
+      {ADVICE_LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.name}</option>)}
+    </select>
   </>
 );
 

@@ -16,6 +16,7 @@ export const FarmProfileSchema = z.object({
   plantingWindow: z.number().int().min(0).max(12).optional(),
   harvestWindow: z.number().int().min(0).max(12).optional(),
   fertilizers: z.record(z.string().max(80), z.object({ selected: z.boolean(), price: z.number().min(0).max(1_000_000_000).optional() })).optional(),
+  lang: z.enum(['en', 'sw']).optional(), // the language the farmer wants the advice and its PDF report in
 }).strict();
 
 export type FarmProfile = z.infer<typeof FarmProfileSchema>;

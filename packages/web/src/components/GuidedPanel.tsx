@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { ArrowLeft, Banknote, ChevronRight, Leaf, Loader2, Sprout, Store } from 'lucide-react';
 import type { Country, Crop } from '@akilimo/shared';
-import { AKILIMO2_TOOL, akilimo2Args, planBags, summarizeAkilimo2, type Akilimo2Args, type FarmProfile } from '@akilimo/shared';
+import { AKILIMO2_TOOL, akilimo2Args, defaultAdviceLanguage, planBags, summarizeAkilimo2, type AdviceLanguage, type Akilimo2Args, type FarmProfile } from '@akilimo/shared';
 import { Akilimo2Result, type SecondAnswer } from './Akilimo2Result';
 import { PriceSuggest } from './PriceSuggest';
 import { RememberBar } from './FarmMemory';
@@ -14,7 +14,7 @@ import { useCountries } from '../mcp/countries';
 import type { GuidedEntry } from '../mcp/guided';
 import { ADVICE, ADVICE_ICONS, AdviceResult, AdviceScreen, intercropCrop, type AdviceKind } from './AdviceScreens';
 import {
-  Loading, CassavaPriceInput, PriceHint, RiskSelect, SellSelect, WINDOWS, YieldSelect, dateProblem, harvestRange, message, money, monthsFromNow, plantingMin, useLoad, windowLabel,
+  Loading, CassavaPriceInput, LanguageSelect, PriceHint, RiskSelect, SellSelect, WINDOWS, YieldSelect, dateProblem, harvestRange, message, money, monthsFromNow, plantingMin, useLoad, windowLabel,
   type Call, type FertilizerData, type MarketOptions, type PriceData, type Record_, type Row,
 } from './GuidedParts';
 import { MapPicker } from './MapPicker';
@@ -488,6 +488,7 @@ const RecommendScreen: React.FC<{ country: Country; call: Call; record: Record_;
   const [rootPrice, setRootPrice] = useState('');
   const [yieldClass, setYieldClass] = useState(11.25); // t/ha class sent as yieldInfo.current_field_yield
   const [risk, setRisk] = useState(1); // user_info.risk_attitude
+  const [lang, setLang] = useState<AdviceLanguage>(defaultAdviceLanguage(country.code)); // recommendations.lang
   const [factory, setFactory] = useState(''); // starch factory key, or '' for the open market
   const [sellUnit, setSellUnit] = useState(1000); // the unit the cassava price is quoted in, in kg (the API's cassava units)
   const [plantingWindow, setPlantingWindow] = useState(1);
@@ -521,6 +522,7 @@ const RecommendScreen: React.FC<{ country: Country; call: Call; record: Record_;
     if (p.unit) setUnit(p.unit);
     if (p.yieldClass !== undefined) setYieldClass(p.yieldClass);
     if (p.risk !== undefined) setRisk(p.risk);
+    if (p.lang) setLang(p.lang);
     if (p.sellUnit) setSellUnit(p.sellUnit);
     if (p.cassavaPrice) setRootPrice(String(p.cassavaPrice));
     if (p.factory !== undefined) setFactory(p.factory);
@@ -572,7 +574,7 @@ const RecommendScreen: React.FC<{ country: Country; call: Call; record: Record_;
           cassava: { unit_price: Number(rootPrice), unit_weight: sellUnit },
           yieldInfo: { current_field_yield: yieldClass, ...(factory ? { sell_to_starch_factory: true, starch_factory_name: factory } : {}) },
           ...(Number(budget) > 0 ? { maxInvestment: Number(budget) } : {}),
-          recommendations: { lang: 'en' },
+          recommendations: { lang },
         },
         user_info: { risk_attitude: risk },
         fertilizer_list: loaded.fertilizers.fertilizers.map(f => ({
@@ -600,7 +602,7 @@ const RecommendScreen: React.FC<{ country: Country; call: Call; record: Record_;
       if (remember) {
         farm.save({
           ...defined({
-            size: Number(size), unit: unit as FarmProfile['unit'], yieldClass, risk, cassavaPrice: Number(rootPrice), sellUnit,
+            size: Number(size), unit: unit as FarmProfile['unit'], yieldClass, risk, lang, cassavaPrice: Number(rootPrice), sellUnit,
             plantingWindow, harvestWindow,
             fertilizers: Object.fromEntries(loaded.fertilizers.fertilizers.filter(f => selected[f.key]).map(f => [f.key, { selected: true, ...(Number(prices[f.key]) > 0 ? { price: Number(prices[f.key]) } : {}) }])),
           }),
@@ -728,6 +730,10 @@ const RecommendScreen: React.FC<{ country: Country; call: Call; record: Record_;
               ))}
             </div>
             <div className="form-text">Price per bag; typical prices are filled in.</div>
+          </section>
+
+          <section style={{ maxWidth: '20rem' }}>
+            <LanguageSelect id="g-lang" value={lang} onChange={setLang} />
           </section>
 
           {error && <div className="alert alert-danger small mb-0" style={{ whiteSpace: 'pre-wrap' }}>{error}</div>}

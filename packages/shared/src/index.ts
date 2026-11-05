@@ -25,8 +25,22 @@ export const InterCroppingSchema = z.object({
     inter_cropping_potato_rec: z.boolean().default(false).describe('IC in Tanzania: set true to get sweet potato intercropping advice'),
 });
 
+// Languages the compute service writes the advice text and its PDF report in (R's tr()/html_label(): en, sw).
+// Any other code is answered in English, so it is turned into 'en' here rather than sent and silently ignored.
+export const ADVICE_LANGUAGES = [
+    { code: 'en', name: 'English' },
+    { code: 'sw', name: 'Kiswahili' },
+] as const;
+export type AdviceLanguage = (typeof ADVICE_LANGUAGES)[number]['code'];
+export const adviceLanguage = (code: unknown): AdviceLanguage =>
+    ADVICE_LANGUAGES.find(l => l.code === String(code ?? '').toLowerCase())?.code ?? 'en';
+// What a country's farmers most likely read: Kiswahili in Tanzania and Kenya, English elsewhere (a farmer can change it)
+export const defaultAdviceLanguage = (countryCode: string | undefined): AdviceLanguage =>
+    ['TZ', 'KE'].includes(String(countryCode ?? '').toUpperCase()) ? 'sw' : 'en';
+
 export const RecommendationSettingsSchema = z.object({
-    lang: z.string().length(2).default('en'),
+    lang: z.string().length(2).default('en').transform(adviceLanguage)
+        .describe("Language of the advice text and the PDF report: 'en' (English) or 'sw' (Kiswahili); any other code gives English"),
     fertilizer_rec: z.boolean().default(true).describe('FR: fertilizer recommendation (needs fertilizer_list). Set false for the other types'),
     planting_practices_rec: z.boolean().default(false).describe('PP: ploughing and ridging advice compared with the current practice'),
     scheduled_planting_rec: z.boolean().default(false).describe('SPHS: best planting date; use together with scheduled_harvest_rec'),

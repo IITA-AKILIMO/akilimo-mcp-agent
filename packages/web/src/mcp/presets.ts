@@ -1,4 +1,5 @@
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import { defaultAdviceLanguage } from '@akilimo/shared';
 
 type Args = Record<string, unknown>;
 type CallTool = (name: string, args: Args) => Promise<CallToolResult>;
@@ -58,7 +59,7 @@ const computePresets: ToolPreset[] = [
         compute_request: {
           farmInformation: { use_case: 'FR', field_size: 1, area_unit: 'acre' },
           planting: { planting_date: monthsFromNow(1), harvest_date: monthsFromNow(11) },
-          recommendations: { lang: 'en' },
+          recommendations: { lang: defaultAdviceLanguage(countryOf(args)) },
         },
       }),
       message: 'Defaults filled in. Set the country and pick the field on the map.',
