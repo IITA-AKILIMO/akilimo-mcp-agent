@@ -8,6 +8,7 @@ import { climateSummaryTool, soilProfileTool } from "./environment.js";
 import { marketOptionsTool } from "./market.js";
 import { missingPricesTool } from "./missing-prices.js";
 import { referenceDataTool } from "./reference-data.js";
+import { recommendationReportTool } from "./report.js";
 import type { ToolDefinition } from "./types.js";
 
 // Register new tools here; server.ts lists and dispatches whatever is in this array
@@ -28,5 +29,6 @@ export const tools: ToolDefinition[] = [
   missingPricesTool,
   investmentOptionsTool,
   computeRecommendationsTool,
+  recommendationReportTool,
   fertilizerPlanTool,
 ];

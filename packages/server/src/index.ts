@@ -100,7 +100,7 @@ async function main() {
         sseSessionsPerIp: config.sseMaxSessionsPerIp,
       },
       gateway: gatewayRouter(registry, db, chatSettings, sharedKeyQuota),
-      api: apiRouter(db, clientKeys),
+      api: apiRouter(db, clientKeys, api),
       coverage: coverageRouter(api),
       crops: cropsRouter(api),
       countries: countriesRouter(api),

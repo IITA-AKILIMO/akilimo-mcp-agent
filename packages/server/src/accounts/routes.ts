@@ -1,6 +1,7 @@
-import { and, asc, desc, eq, ne, or } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, ne, or, sql } from "drizzle-orm";
 import express, { type Request, type Response } from "express";
 import { z } from "zod/v4";
+import type { AkilimoApiClient } from "../api/client.js";
 import { config } from "../config.js";
 import { listKeyEvents } from "../mcpkeys/events.js";
 import type { ClientKeyStore } from "../mcpkeys/store.js";
@@ -96,7 +97,8 @@ const sendError = (res: Response, error: unknown) => {
 const handle = (fn: (req: Request, res: Response) => Promise<void>) =>
   (req: Request, res: Response) => fn(req, res).catch((error) => sendError(res, error));
 
-export function apiRouter(db: Db | null, clientKeys: ClientKeyStore | null = null) {
+// `api` lets the user renew the download link of a PDF report in their saved history (/reports/:id/link)
+export function apiRouter(db: Db | null, clientKeys: ClientKeyStore | null = null, api: AkilimoApiClient | null = null) {
   const router = express.Router();
   router.use(express.json({ limit: "1mb" }));
 
@@ -246,6 +248,37 @@ export function apiRouter(db: Db | null, clientKeys: ClientKeyStore | null = nul
       ? await db.delete(conversations).where(and(eq(conversations.id, id), eq(conversations.userId, req.user!.id))).returning({ id: conversations.id })
       : [];
     res.status(deleted.length ? 204 : 404).end();
+  }));
+
+  // ── PDF reports ───────────────────────────────────────────────────────────
+  // A recommendation's PDF is kept by the Akilimo API, but its download link expires after a week. A saved
+  // conversation keeps the old link, so this gets a new one, only for a report that is in the user's own history
+  // (a guided step's data or a chat's tool result names its id). The API needs this server's key to have reports:read.
+  router.get("/reports/:id/link", handle(async (req, res) => {
+    const id = String(req.params.id).toLowerCase();
+    if (!api || !isUuid(id)) {
+      res.status(404).json({ error: "No such report" });
+      return;
+    }
+    const pattern = `%${id}%`;
+    const [owned] = await db.select({ id: messages.id }).from(messages)
+      .innerJoin(conversations, eq(messages.conversationId, conversations.id))
+      .where(and(eq(conversations.userId, req.user!.id), or(sql`${messages.data}::text ilike ${pattern}`, ilike(messages.content, pattern))))
+      .limit(1);
+    if (!owned) {
+      res.status(404).json({ error: "This report is not in your saved history" });
+      return;
+    }
+    try {
+      const { data } = await api.get<{ data: unknown }>(`/v1/recommendations/reports/${id}`);
+      res.setHeader("Cache-Control", "no-store").json({ report: data });
+    } catch (error) {
+      const status = Number(/\[Akilimo API (\d{3})\]/.exec(String((error as Error).message))?.[1]);
+      if (status === 401 || status === 403) console.error("Renewing a report link failed: AKILIMO_API_KEY needs the reports:read ability");
+      res.status(status === 404 ? 404 : 503).json({
+        error: status === 404 ? "This report is no longer kept" : "A new link could not be made right now, try again later",
+      });
+    }
   }));
 
   // ── Activity ──────────────────────────────────────────────────────────────

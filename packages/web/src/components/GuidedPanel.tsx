@@ -6,6 +6,7 @@ import { AKILIMO2_TOOL, akilimo2Args, planBags, summarizeAkilimo2, type Akilimo2
 import { Akilimo2Result, type SecondAnswer } from './Akilimo2Result';
 import { PriceSuggest } from './PriceSuggest';
 import { RememberBar } from './FarmMemory';
+import { ReportLink } from './ReportLink';
 import { defined, readRemember, useFarmProfile, writeRemember } from '../mcp/farmProfile';
 import type { ServerState } from '../mcp/useMcpServers';
 import { findCountry } from '@akilimo/shared';
@@ -366,6 +367,7 @@ const RecommendationResult: React.FC<{ entry: GuidedEntry; call?: Call }> = ({ e
               <>
                 <FertilizerSummary entry={entry} />
                 <BagPlan entry={entry} />
+                <ReportLink result={entry.result} />
               </>
             )}
           </section>
@@ -378,6 +380,7 @@ const RecommendationResult: React.FC<{ entry: GuidedEntry; call?: Call }> = ({ e
         <>
           <FertilizerSummary entry={entry} />
           <BagPlan entry={entry} />
+          <ReportLink result={entry.result} />
         </>
       )}
     </>

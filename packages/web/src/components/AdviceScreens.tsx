@@ -7,6 +7,7 @@ import { Loading, CassavaPriceInput, PriceHint, RiskSelect, SellSelect, WINDOWS,
 import { MapPicker } from './MapPicker';
 import { PriceSuggest, perAcreIn } from './PriceSuggest';
 import { RememberBar } from './FarmMemory';
+import { ReportLink } from './ReportLink';
 import { defined, readRemember, useFarmProfile, writeRemember } from '../mcp/farmProfile';
 
 // The three recommendation types besides fertilizer advice, which share one short form:
@@ -529,6 +530,7 @@ export const AdviceResult: React.FC<{ entry: GuidedEntry }> = ({ entry }) => {
         <IntercropTable row={rows[0]} rates={(answer.data as { fertilizer_rates?: Row[] } | undefined)?.fertilizer_rates} />
       )}
       {!text && !notice && rows.length === 0 && <div className="alert alert-info small">The service returned no advice for these answers. Check the location and dates and try again.</div>}
+      <ReportLink result={entry.result} />
     </>
   );
 };

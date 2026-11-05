@@ -19,6 +19,7 @@ import { isGuidedEntry, type GuidedEntry } from '../mcp/guided';
 import { ADVICE, ADVICE_ICONS, intercropCrop } from './AdviceScreens';
 import { useCrops, savedCropKey, saveCropKey } from '../mcp/crops';
 import { FertilizerPicker } from './FertilizerPicker';
+import { isReportUrl, openReport } from './ReportLink';
 import { FieldPicker, IntercropPicker, PracticesPicker, Shell } from './ChatPickers';
 import { GuidedPanel } from './GuidedPanel';
 import { WINDOWS, dateProblem, harvestRange, monthsFromNow, plantingMin, windowLabel } from './GuidedParts';
@@ -575,7 +576,7 @@ export const ChatView: React.FC<Props> = ({ configs, servers, callTool, accounts
                 {mine ? <User size={18} color="white" /> : <Bot size={18} color="white" />}
               </div>
               <div className={`chat-bubble px-3 py-2 rounded-3 ${mine ? 'bg-akilimo text-white' : 'bg-body-tertiary border'}`}>
-                {mine ? item.text : <div className="markdown"><ReactMarkdown remarkPlugins={[remarkGfm]} components={{ table: ({ children }) => <div className="table-responsive"><table className="table table-sm table-striped">{children}</table></div> }}>{item.text}</ReactMarkdown></div>}
+                {mine ? item.text : <div className="markdown"><ReactMarkdown remarkPlugins={[remarkGfm]} components={{ table: ({ children }) => <div className="table-responsive"><table className="table table-sm table-striped">{children}</table></div>, a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer" onClick={isReportUrl(href) ? (e) => { e.preventDefault(); openReport(href).catch(err => window.alert(err instanceof Error ? err.message : String(err))); } : undefined}>{children}</a> }}>{item.text}</ReactMarkdown></div>}
               </div>
             </div>
           );

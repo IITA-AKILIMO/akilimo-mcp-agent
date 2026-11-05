@@ -28,7 +28,8 @@ The agent built in this repository, backed by the Akilimo 1.0 API (the Laravel `
   - `get_cassava_price` — cassava root price bands and a typical price per tonne
   - `get_market_options` — open market and starch factory prices for cassava roots
   - `get_crop_prices`, `check_price`, `get_investment_options`, `get_operation_costs`, `fertilizer_plan` — inputs for the compute request and bag plans
-  - `compute_recommendations` — fertilizer, planting practices, scheduled planting and intercropping advice for a farm
+  - `compute_recommendations` — fertilizer, planting practices, scheduled planting and intercropping advice for a farm; its answer has `report.url`, a download link to the PDF report (no key; the link lasts 7 days, the report is kept and a signed-in web UI user gets a new link from their saved history)
+  - `get_recommendation_report` — the PDF report itself, as an embedded file, for clients that can show or save files
   - `convert_currency` — prevailing exchange rates
   - `get_soil_profile`, `get_climate_summary` — soil (ISRIC SoilGrids) and climate (NASA POWER) context for a point
   - `find_missing_prices` — suggests a price or cost where AKILIMO has no default (fertilizers, cassava, operation costs; world benchmark, and the web only when `onlineSearch` is true); suggestions only, to be confirmed by the farmer

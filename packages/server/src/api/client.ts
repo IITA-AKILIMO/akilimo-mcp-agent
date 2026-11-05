@@ -42,6 +42,22 @@ export class AkilimoApiClient {
         return { data, total: Number(first.meta?.total) || data.length };
     }
 
+    // A file such as a PDF report: the raw bytes and the type the API gave them
+    async getFile(url: string): Promise<{ bytes: Buffer; contentType: string }> {
+        try {
+            const response = await this.client.get<ArrayBuffer>(url, { responseType: 'arraybuffer', headers: { Accept: 'application/pdf' } });
+            return { bytes: Buffer.from(response.data), contentType: String(response.headers['content-type'] ?? 'application/octet-stream') };
+        } catch (error: any) {
+            // A signed link that expired or was changed (403) or a file already deleted (404)
+            const status = axios.isAxiosError(error) ? error.response?.status : undefined;
+            if (status === 403 || status === 404) {
+                throw new ToolError(`[Akilimo API ${status}] The report link has expired or is no longer valid; compute the recommendation again for a new one`);
+            }
+            if (axios.isAxiosError(error) && error.response) error.response.data = {}; // bytes (often an HTML page), not a message
+            throw this.handleError(error);
+        }
+    }
+
     async post<T>(url: string, data?: object): Promise<T> {
         try {
             const response = await this.client.post<T>(url, data);

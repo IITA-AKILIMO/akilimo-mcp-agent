@@ -31,7 +31,7 @@ const ComputeToolInputSchema = z.object({
 
 export const computeRecommendationsTool: ToolDefinition = {
   name: "compute_recommendations",
-  description: "Compute a recommendation for a cassava field. Four types, chosen by farmInformation.use_case and the flags under recommendations: FR fertilizer (needs fertilizer_list with prices and selected), PP planting practices (ploughing and ridging), SPHS scheduled planting and harvest dates, IC intercropping (maize in Nigeria, sweet potato in Tanzania only). Location, field size, planting and harvest dates and the cassava root price are required; other fields default to neutral values. The answer holds rec_type, a recommendation text and data rows.",
+  description: "Compute a recommendation for a cassava field. Four types, chosen by farmInformation.use_case and the flags under recommendations: FR fertilizer (needs fertilizer_list with prices and selected), PP planting practices (ploughing and ridging), SPHS scheduled planting and harvest dates, IC intercropping (maize in Nigeria, sweet potato in Tanzania only). Location, field size, planting and harvest dates and the cassava root price are required; other fields default to neutral values. The answer holds rec_type, a recommendation text and data rows, and report {url, expires_at}: a download link to the PDF report (no key needed, valid about 7 days), or null when none could be made; share the link with the farmer.",
   // Generated from the shared schema so the model sees exactly what validation accepts
   inputSchema: z.toJSONSchema(ComputeToolInputSchema, { io: "input" }) as ToolDefinition["inputSchema"],
 
@@ -51,6 +51,8 @@ export const computeRecommendationsTool: ToolDefinition = {
       );
     }
 
-    return jsonResult(await api.post("/v1/recommendations/compute", validation.data));
+    // The report link goes first so a caller that shortens long results (the chat keeps 6000 characters) keeps it
+    const { report = null, ...rest } = await api.post<Record<string, unknown>>("/v1/recommendations/compute", validation.data);
+    return jsonResult({ report, ...rest });
   },
 };

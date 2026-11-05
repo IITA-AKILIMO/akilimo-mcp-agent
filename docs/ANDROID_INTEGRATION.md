@@ -132,6 +132,8 @@ A real answer (inside `content[0].text`, parsed):
 }
 ```
 
+Newer answers start with `"report": {"url": "...", "expires_at": "...", "files": [...]}` (or `"report": null`), a link to the recommendation's PDF report. The app can open it in the browser or download it: it needs no key and works until `expires_at` (7 days). The report itself is kept: keep `report.id`, and the app's backend can get a new link with `GET /v1/recommendations/reports/{id}` on the Akilimo API using a key with the `reports:read` ability (never put that key in the APK). The report shows the farmer's name and farm, so only show the link to that farmer. (The example above predates it.)
+
 Show `data.recommendation` to the farmer as the headline. When the location is outside the area AKILIMO serves, the text says so and `data` and `fertilizer_rates` are empty; the app should suggest checking the field location. `fertilizer_rates` lists the amounts per fertilizer when a recommendation exists; it was empty in this example, so check its exact fields against a response for a recommended field before you build the screen.
 
 ### Checking the field location first

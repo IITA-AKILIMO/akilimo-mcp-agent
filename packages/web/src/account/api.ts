@@ -68,6 +68,10 @@ export const appendMessages = (id: string, messages: StoredMessage[]) =>
   request<void>('POST', `/conversations/${id}/messages`, { messages });
 export const deleteConversation = (id: string) => request<void>('DELETE', `/conversations/${id}`);
 
+// A new download link for a PDF report in the user's own saved history (the old one lasts a week)
+export interface ReportLinks { id: string; url: string; expires_at: string; files: { name: string; url: string }[] }
+export const renewReportLink = (id: string) => request<{ report: ReportLinks }>('GET', `/reports/${id}/link`);
+
 interface StoredEvent { id: string; type: MCPEvent['type']; server: string; message: string; payload: unknown; created_at: string }
 export const loadActivity = async (): Promise<MCPEvent[]> => {
   const { activity } = await request<{ activity: StoredEvent[] }>('GET', '/activity');
