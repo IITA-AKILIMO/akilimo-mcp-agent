@@ -12,7 +12,7 @@ export const AREA_UNITS = ['acre', 'ha', 'm2', 'are'] as const;
 
 export const FarmInformationSchema = z.object({
     country_code: z.string().length(2).describe('ISO 2-letter country code, e.g. NG, TZ, RW'),
-    use_case: z.string().max(10).default('FR').describe('Akilimo use case code: FR = fertilizer recommendation, PP = planting practices, SPHS = scheduled planting and harvest, IC = intercropping. Set the matching flags under recommendations (and interCropping for IC)'),
+    use_case: z.string().max(10).default('FR').describe('Akilimo use case code: FR = fertilizer recommendation, PP = planting practices, SPHS = scheduled planting and harvest, IC = intercropping, PDC = planting date and cultivar (maize, Nigeria only). Set the matching flags under recommendations (and interCropping for IC)'),
     map_lat: z.number().min(-90).max(90),
     map_long: z.number().min(-180).max(180),
     field_size: z.number().min(1),
@@ -45,6 +45,7 @@ export const RecommendationSettingsSchema = z.object({
     planting_practices_rec: z.boolean().default(false).describe('PP: ploughing and ridging advice compared with the current practice'),
     scheduled_planting_rec: z.boolean().default(false).describe('SPHS: best planting date; use together with scheduled_harvest_rec'),
     scheduled_harvest_rec: z.boolean().default(false).describe('SPHS: best harvest date; use together with scheduled_planting_rec'),
+    planting_date_cultivar_rec: z.boolean().default(false).describe('PDC: best planting date and maize cultivar for the location; Nigeria only. Set fertilizer_rec false'),
 });
 
 export const PlantingSchema = z.object({
