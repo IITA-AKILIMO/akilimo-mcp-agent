@@ -24,6 +24,7 @@ The agent built in this repository, backed by the Akilimo 1.0 API (the Laravel `
 - **Tools**:
   - `get_countries`, `get_crops` — supported countries (with currency) and crops
   - `check_location` — whether a point is inside the area where recommendations can be computed
+  - `get_announcements` — the messages AKILIMO sent to farmers' phones (`GET /v1/messages`), by country, language and time
   - `get_fertilizer_options` — a country's available fertilizers with bag weight, price bands and a typical price (compact; best for chat models)
   - `get_cassava_price` — cassava root price bands and a typical price per tonne
   - `get_market_options` — open market and starch factory prices for cassava roots

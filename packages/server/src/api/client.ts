@@ -84,7 +84,10 @@ export class AkilimoApiClient {
             // Validation (422) and compute errors carry field-level details the model can act on
             const details = data?.errors ? `\n${JSON.stringify(data.errors, null, 2).slice(0, 4000)}` : '';
 
-            return new ToolError(`[Akilimo API ${status}] ${message}${details}`);
+            // A stable reason the API passes on from the compute service (outside_coverage, rec_type_unavailable, ...)
+            const reason = typeof data?.code === 'string' ? ` (code: ${data.code})` : '';
+
+            return new ToolError(`[Akilimo API ${status}] ${message}${reason}${details}`);
         }
         return error instanceof Error ? error : new Error(String(error));
     }
